@@ -77,6 +77,7 @@
           <button data-k="^d">^D</button>
           <button data-k="^z">^Z</button>
           <button data-k="^l">^L</button>
+          <button data-k="copy">复制</button>
           <button data-k="paste">粘贴</button>
         </div>
         <form id="mForm" class="mline" autocomplete="off">
@@ -147,6 +148,22 @@
         <button type="submit" class="primary">连接</button>
       </div>
     </form>
+  </div>
+
+  <!-- 复制终端内容 (手机) -->
+  <div id="copyPanel" class="overlay hidden">
+    <div class="card wide copyp">
+      <div class="hist-head"><h3>复制终端内容</h3><span class="note" id="copyInfo"></span></div>
+      <div class="hint">长按下面的文字可以选择一部分，再点「复制选中」</div>
+      <textarea id="copyText" readonly spellcheck="false"></textarea>
+      <div class="actions">
+        <button type="button" id="copyClose">关闭</button>
+        <span class="spacer"></span>
+        <button type="button" id="copySel">复制选中</button>
+        <button type="button" id="copyAll" class="primary">复制全部</button>
+      </div>
+      <div class="copy-toast" id="copyToast"></div>
+    </div>
   </div>
 
   <!-- 历史命令 -->

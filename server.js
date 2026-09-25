@@ -26,6 +26,7 @@ const { SerializeAddon } = require('@xterm/addon-serialize');
 
 // ---------------------------------------------------------------- 配置
 const PORT = parseInt(process.env.PORT || '8888', 10);
+const HOST = process.env.HOST || '0.0.0.0';
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const AUTH_USER = process.env.AUTH_USER || 'admin';
 const AUTH_PASSWORD = process.env.AUTH_PASSWORD || '';
@@ -1000,8 +1001,8 @@ const heartbeat = setInterval(() => {
 }, 30000);
 wss.on('close', () => clearInterval(heartbeat));
 
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`SSH-WEB v${VERSION} 已启动: http://0.0.0.0:${PORT}`);
+server.listen(PORT, HOST, () => {
+  console.log(`SSH-WEB v${VERSION} 已启动: http://${HOST}:${PORT}`);
   if (!authEnabled) {
     console.warn('⚠ 未设置 AUTH_PASSWORD，网页无需登录即可使用，请勿暴露到公网！');
   }

@@ -264,7 +264,7 @@
       // 触屏：xterm 的隐藏输入框在手机输入法下会丢字 / 重复，改用底部输入栏
       s.term.textarea.setAttribute('readonly', 'readonly');
       s.term.textarea.addEventListener('focus', () => mInput.focus());
-      s.box.addEventListener('click', () => mInput.focus());
+      s.box.addEventListener('click', () => { if (s.longPressed) { s.longPressed = false; return; } mInput.focus(); });
     }
     s.ro = new ResizeObserver(() => { if (active === s) s.fit.fit(); });
     s.ro.observe(s.box);
@@ -984,6 +984,7 @@
     if (b.dataset.t) return sendKeys(applyMods(b.dataset.t));
     const k = b.dataset.k;
     if (k === 'history') return openHistory();
+    if (k === 'copy') return openCopyPanel(active);
     if (k === 'paste') {
       let text = '';
       try { text = await navigator.clipboard.readText(); } catch {}
@@ -1274,6 +1275,32 @@
       frame = requestAnimationFrame(momentum);
     };
 
+    // 长按 (不移动) 打开复制面板
+    let pressTimer = 0;
+    let pressX = 0;
+    let pressY = 0;
+    const cancelPress = () => { clearTimeout(pressTimer); pressTimer = 0; };
+    s.box.addEventListener('touchstart', (e) => {
+      cancelPress();
+      s.longPressed = false;
+      if (e.touches.length === 1 && !e.target.closest('button, .scroll-hint')) {
+        pressX = e.touches[0].clientX;
+        pressY = e.touches[0].clientY;
+        pressTimer = setTimeout(() => {
+          pressTimer = 0;
+          lastY = null; // 本次触摸不再滚动
+          s.longPressed = true;
+          navigator.vibrate?.(15);
+          openCopyPanel(s);
+        }, 500);
+      }
+    }, { passive: true });
+    s.box.addEventListener('touchmove', (e) => {
+      if (pressTimer && Math.hypot(e.touches[0].clientX - pressX, e.touches[0].clientY - pressY) > 8) cancelPress();
+    }, { passive: true });
+    s.box.addEventListener('touchend', cancelPress, { passive: true });
+    s.box.addEventListener('touchcancel', cancelPress, { passive: true });
+
     s.box.addEventListener('touchstart', (e) => {
       cancelAnimationFrame(frame);
       frame = 0;
@@ -1312,6 +1339,89 @@
       frame = requestAnimationFrame(momentum);
     }, { passive: true });
   }
+
+  // ------------------------------------------------------------ 复制终端内容 (手机)
+  // 手机上触摸被用来滚动，无法直接选中终端文字；这里把终端内容放进可选择的文本框
+  const COPY_LINES = 1000;
+
+  function terminalText(s) {
+    const b = s.term.buffer.active;
+    const start = Math.max(0, b.length - COPY_LINES);
+    const lines = [];
+    for (let i = start; i < b.length; i++) {
+      const line = b.getLine(i);
+      if (!line) continue;
+      const text = line.translateToString(true);
+      // 自动换行的续行接回上一行
+      if (line.isWrapped && lines.length) lines[lines.length - 1] += text;
+      else lines.push(text);
+    }
+    while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+    return lines.join('\n');
+  }
+
+  function openCopyPanel(s) {
+    if (!s) return;
+    const ta = $('#copyText');
+    ta.value = terminalText(s);
+    const n = ta.value ? ta.value.split('\n').length : 0;
+    $('#copyInfo').textContent = s.term.buffer.active.type === 'alternate'
+      ? `${n} 行 (全屏程序只有当前画面)` : `${n} 行`;
+    mInput.blur();
+    $('#copyPanel').classList.remove('hidden');
+    ta.scrollTop = ta.scrollHeight; // 定位到最新内容
+  }
+
+  function closeCopyPanel() {
+    $('#copyPanel').classList.add('hidden');
+    try { window.getSelection()?.removeAllRanges(); } catch {}
+  }
+
+  async function copyText(text) {
+    if (!text) return false;
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch {}
+    // HTTP 下没有剪贴板接口，用临时文本框 + execCommand 复制
+    const tmp = document.createElement('textarea');
+    tmp.value = text;
+    tmp.setAttribute('readonly', '');
+    tmp.style.cssText = 'position:fixed;top:0;left:0;opacity:0;font-size:16px';
+    document.body.appendChild(tmp);
+    tmp.select();
+    tmp.setSelectionRange(0, text.length);
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch {}
+    tmp.remove();
+    return ok;
+  }
+
+  function copyToast(msg) {
+    const t = $('#copyToast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(t.timer);
+    t.timer = setTimeout(() => t.classList.remove('show'), 1600);
+  }
+
+  $('#copyAll').addEventListener('click', async () => {
+    const text = $('#copyText').value;
+    copyToast(await copyText(text) ? `已复制全部 (${text.length} 个字符)` : '复制失败，请长按文字手动复制');
+  });
+  $('#copySel').addEventListener('click', async () => {
+    const ta = $('#copyText');
+    const text = ta.value.slice(ta.selectionStart, ta.selectionEnd);
+    if (!text) return copyToast('请先长按文字选择要复制的部分');
+    copyToast(await copyText(text) ? `已复制 ${text.length} 个字符` : '复制失败，请长按文字手动复制');
+  });
+  $('#copyClose').addEventListener('click', closeCopyPanel);
+  $('#copyPanel').addEventListener('mousedown', (e) => { if (e.target.id === 'copyPanel') closeCopyPanel(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !$('#copyPanel').classList.contains('hidden')) closeCopyPanel();
+  });
 
   // 全屏程序 (多为 tmux) 没开鼠标时无法滑动：提示并可一键为 tmux 开启鼠标
   function showScrollHint(s) {

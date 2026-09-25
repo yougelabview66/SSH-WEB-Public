@@ -55,6 +55,7 @@ docker run -d --name ssh-web --restart unless-stopped \
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `PORT` | `8888` | 监听端口 |
+| `HOST` | `0.0.0.0` | 监听地址（Docker 部署保持默认即可） |
 | `AUTH_USER` | `admin` | 网页登录用户名 |
 | `AUTH_PASSWORD` | 空 | 网页登录密码，**为空则不需要登录**（仅限可信内网） |
 | `SECRET` | 自动生成 | 用于 Cookie 签名和凭据加密，自动生成的保存在 `/data/.secret`。**丢失后已保存的密码无法解密** |
@@ -82,6 +83,8 @@ docker run -d --name ssh-web --restart unless-stopped \
 - `Shift` / `Ctrl` / `Alt` 点一下高亮，作用于下一个按键或字符，可以组合：例如 `Ctrl` + `c`、`Shift` + `Tab`（Claude Code 切换模式）、`Shift` + `↑`
 - 粘贴：通过 HTTPS 访问时直接读取剪贴板，HTTP 下浏览器不允许读取，会弹出输入框让你粘贴
 
+- **复制终端内容**：长按终端约 0.5 秒，或点按键栏的「复制」，弹出可选择的文本（当前画面 + 最近 1000 行）；
+  可「复制全部」，或长按选择一部分后「复制选中」。局域网 HTTP 访问也能复制。在 tmux 里只能取到当前画面，先滑到要复制的位置再打开
 - **滑动查看历史**：普通界面直接滑动；Claude Code、vim 等支持鼠标的程序会收到滚轮事件自己滚动
 - **tmux**：tmux 默认没开鼠标，滑动时会弹出提示，点「开启 tmux 鼠标滚动」即可（在目标主机执行 `tmux set -g mouse on`，不会往终端里打字）。
   tmux 重启后需要重新开启；想永久生效，在目标主机的 `~/.tmux.conf` 加一行 `set -g mouse on`
