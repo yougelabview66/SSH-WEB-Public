@@ -86,10 +86,17 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   cursor: pointer; white-space: nowrap; color: var(--muted); max-width: 220px; }
 .tab { position: relative; opacity: .75; }
 .tab:hover { opacity: 1; background: rgba(255,255,255,.03); }
-/* 当前标签：顶部绿色高亮条 + 与终端连成一体的背景 + 加粗 */
-.tab.active { background: #000; color: #fff; opacity: 1; font-weight: 600;
-  box-shadow: inset 0 2px 0 var(--accent); }
-.tab.active::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px; background: #000; }
+/* 当前标签：绿色底 + 顶部亮绿条 + 白色粗体 */
+.tab.active { background: #166534; color: #fff; opacity: 1; font-weight: 600;
+  box-shadow: inset 0 3px 0 #4ade80; }
+.tab.active .dot { box-shadow: 0 0 0 2px #fff; }
+.tab.active .x { color: #d1fae5; }
+/* 拖动排序 */
+.tab { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.tab.dragging { opacity: 1; background: var(--panel2); box-shadow: 0 0 0 1px var(--accent), 0 6px 16px rgba(0,0,0,.5);
+  z-index: 2; cursor: grabbing; }
+.tab.active.dragging { background: #166534; }
+#tabs.drag-active .tab:not(.dragging) { transition: transform .12s; }
 .tab .dot { width: 8px; height: 8px; border-radius: 50%; background: #eab308; flex-shrink: 0; }
 .tab .dot.ok { background: var(--accent); }
 .tab .dot.bad { background: var(--danger); }

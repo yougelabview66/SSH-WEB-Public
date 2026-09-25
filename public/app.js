@@ -1010,6 +1010,74 @@
     } catch (err) { alert(err.message); }
   });
 
+  // ------------------------------------------------------------ 标签拖动排序
+  // 鼠标：按住拖动超过 5px 开始；触屏：长按 350ms 开始 (避免和左右滑动标签栏冲突)
+  const tabsEl = $('#tabs');
+  let drag = null;
+
+  function beginDrag() {
+    if (!drag) return;
+    drag.started = true;
+    drag.tab.classList.add('dragging');
+    tabsEl.classList.add('drag-active');
+    if (drag.touch) navigator.vibrate?.(15);
+  }
+
+  function moveDrag(x) {
+    const tabs = [...tabsEl.children];
+    const i = tabs.indexOf(drag.tab);
+    const prev = tabs[i - 1];
+    const next = tabs[i + 1];
+    const mid = (el) => { const r = el.getBoundingClientRect(); return r.left + r.width / 2; };
+    if (prev && x < mid(prev)) tabsEl.insertBefore(drag.tab, prev);
+    else if (next && x > mid(next)) tabsEl.insertBefore(drag.tab, next.nextSibling);
+    // 拖到边缘时自动滚动标签栏
+    const r = tabsEl.getBoundingClientRect();
+    if (x < r.left + 30) tabsEl.scrollLeft -= 12;
+    else if (x > r.right - 30) tabsEl.scrollLeft += 12;
+  }
+
+  function endDrag() {
+    if (!drag) return;
+    clearTimeout(drag.timer);
+    if (drag.started) {
+      drag.tab.classList.remove('dragging');
+      tabsEl.classList.remove('drag-active');
+      // sessions 顺序与界面保持一致
+      const order = [...tabsEl.children];
+      sessions.sort((a, b) => order.indexOf(a.tab) - order.indexOf(b.tab));
+      activate(drag.s);
+    }
+    drag = null;
+  }
+
+  tabsEl.addEventListener('pointerdown', (e) => {
+    const tab = e.target.closest('.tab');
+    if (!tab || e.target.closest('.x') || e.button > 0) return;
+    const s = sessions.find((x) => x.tab === tab);
+    if (!s) return;
+    drag = { s, tab, startX: e.clientX, startY: e.clientY, started: false, touch: e.pointerType !== 'mouse' };
+    if (drag.touch) drag.timer = setTimeout(beginDrag, 350);
+  });
+  window.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    if (!drag.started) {
+      const moved = Math.max(Math.abs(e.clientX - drag.startX), Math.abs(e.clientY - drag.startY));
+      if (drag.touch) {
+        if (moved > 8) endDrag(); // 长按前就移动了 = 在滑动标签栏
+        return;
+      }
+      if (moved < 5) return;
+      beginDrag();
+    }
+    moveDrag(e.clientX);
+  });
+  window.addEventListener('pointerup', endDrag);
+  window.addEventListener('pointercancel', endDrag);
+  // 触屏拖动时阻止页面 / 标签栏滚动
+  tabsEl.addEventListener('touchmove', (e) => { if (drag && drag.started) e.preventDefault(); }, { passive: false });
+  tabsEl.addEventListener('contextmenu', (e) => { if (e.target.closest('.tab')) e.preventDefault(); });
+
   // ------------------------------------------------------------ 侧边栏
   const mobile = () => window.innerWidth <= 760;
   $('#btnToggle').addEventListener('click', () => {
