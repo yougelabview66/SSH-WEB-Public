@@ -72,11 +72,6 @@ label.check { margin: 6px 0 10px; }
 .host .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .host .addr { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .host .ops { display: none; }
-/* 侧边栏：当前标签对应的主机高亮，已打开连接的主机显示绿点 */
-.host.current { background: rgba(34,197,94,.14); box-shadow: inset 3px 0 0 var(--accent); }
-.host.current .name { color: #fff; font-weight: 600; }
-.host .live { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex-shrink: 0;
-  box-shadow: 0 0 0 3px rgba(34,197,94,.2); }
 .host:hover .ops { display: flex; }
 .host .ops button { padding: 0 6px; font-size: 12px; background: none; border: none; color: var(--muted); }
 .host .ops button:hover { color: var(--text); }

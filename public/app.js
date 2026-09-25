@@ -84,13 +84,10 @@
         list.appendChild(t);
       }
       groups[g].sort((a, b) => a.name.localeCompare(b.name)).forEach((h) => {
-        const label = histHostLabel(h);
-        const live = sessions.filter((x) => x.histHost === label && x.sid).length;
         const el = document.createElement('div');
-        el.className = 'host' + (active && active.histHost === label ? ' current' : '');
+        el.className = 'host';
         el.innerHTML = `
           <div class="info"><div class="name"></div><div class="addr"></div></div>
-          ${live ? `<span class="live" title="${live} 个已连接的会话"></span>` : ''}
           ${h.connType === 'cloudflare' ? '<span class="badge" title="Cloudflare 隧道">CF</span>' : ''}
           <div class="ops"><button data-op="edit" title="编辑">✎</button><button data-op="del" title="删除">✕</button></div>`;
         $('.name', el).textContent = h.name;
@@ -105,8 +102,6 @@
             return loadHosts();
           }
           closeSidebarOnMobile();
-          const opened = sessions.find((x) => x.histHost === label);
-          if (opened && opened !== active && !e.shiftKey) return activate(opened);
           if (h.hasSecret) openSession({ hostId: h.id }, h.name, h.connType);
           else openModal(h, false); // 未保存密码，弹窗输入
         });
@@ -272,6 +267,12 @@
     s.tab = document.createElement('div');
     s.tab.className = 'tab';
     s.tab.innerHTML = '<span class="dot"></span><span class="title"></span><button class="x" title="关闭">×</button>';
+    // 同一主机打开多个标签时编号: 家里 NAS、家里 NAS (2)…
+    const used = new Set(sessions.filter((x) => x.baseTitle === title).map((x) => x.n));
+    s.baseTitle = title;
+    s.n = 1;
+    while (used.has(s.n)) s.n++;
+    if (s.n > 1) s.title = title = `${title} (${s.n})`;
     $('.title', s.tab).textContent = title;
     s.tab.title = title;
     s.tab.addEventListener('click', (e) => {
@@ -287,7 +288,6 @@
   }
 
   function setStatus(s, st) {
-    queueMicrotask(renderHosts);
     const dot = $('.dot', s.tab);
     dot.className = 'dot' + (st === 'ok' ? ' ok' : st === 'bad' ? ' bad' : '');
   }
@@ -373,7 +373,6 @@
     s.tab.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     updateSftpBtn();
     updateMobileBar();
-    renderHosts();
     document.title = active ? `${active.title} - SSH-WEB` : 'SSH-WEB';
   }
 
@@ -393,7 +392,6 @@
     }
     updateSftpBtn();
     updateMobileBar();
-    renderHosts();
     document.title = active ? `${active.title} - SSH-WEB` : 'SSH-WEB';
   }
 
