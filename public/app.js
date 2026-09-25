@@ -1127,10 +1127,13 @@
   });
 
   // ------------------------------------------------------------ 触屏滑动滚动
-  // xterm.js 6 不支持触摸滚动，手指滑动会被浏览器当成下拉刷新。这里自己处理：
-  // 普通界面滚动历史记录 (带惯性)；vim / less 等全屏程序里发送上下方向键，和电脑滚轮行为一致。
+  // xterm.js 6 不支持触摸滚动，手指滑动会被浏览器当成下拉刷新。这里自己处理，行为与电脑滚轮一致：
+  // - 程序开启了鼠标追踪 (Claude Code、tmux、htop、vim mouse=a 等)：发送鼠标滚轮事件，由程序自己滚动
+  // - 普通界面：滚动终端的历史记录 (带惯性)
+  // - 不支持鼠标的全屏程序：不发送任何按键，避免误触发 (比如方向键会调出历史输入)
   function enableTouchScroll(s) {
     let lastY = null;
+    let lastX = 0;
     let lastT = 0;
     let vel = 0; // px/ms
     let acc = 0; // 不足一行的累计像素
@@ -1141,19 +1144,29 @@
       return (row && row.offsetHeight) || 17;
     };
 
+    // 交给 xterm 按滚轮处理，它会按程序要求的鼠标协议 (SGR 等) 编码发送
+    const wheel = (lines) => {
+      const target = s.term.element.querySelector('.xterm-screen') || s.term.element;
+      const r = target.getBoundingClientRect();
+      const x = Math.min(Math.max(lastX, r.left + 1), r.right - 1);
+      const y = r.top + r.height / 2;
+      for (let i = 0; i < Math.min(Math.abs(lines), 10); i++) {
+        target.dispatchEvent(new WheelEvent('wheel', {
+          deltaY: lines > 0 ? -1 : 1, deltaMode: WheelEvent.DOM_DELTA_LINE,
+          clientX: x, clientY: y, bubbles: true, cancelable: true,
+        }));
+      }
+    };
+
     const scrollPx = (dy) => {
       acc += dy;
       const lh = lineHeight();
       const lines = Math.trunc(acc / lh);
       if (!lines) return;
       acc -= lines * lh;
-      if (s.term.buffer.active.type === 'alternate') {
-        // 手指下滑 = 往回看 = 上方向键
-        const key = (s.term.modes.applicationCursorKeysMode ? '\x1bO' : '\x1b[') + (lines > 0 ? 'A' : 'B');
-        send(s, { type: 'data', data: key.repeat(Math.min(Math.abs(lines), 20)) });
-      } else {
-        s.term.scrollLines(-lines);
-      }
+      // lines > 0: 手指下滑 = 往回看
+      if (s.term.modes.mouseTrackingMode !== 'none') wheel(lines);
+      else if (s.term.buffer.active.type === 'normal') s.term.scrollLines(-lines);
     };
 
     const momentum = () => {
@@ -1167,6 +1180,7 @@
       cancelAnimationFrame(raf);
       if (e.touches.length !== 1) { lastY = null; return; }
       lastY = e.touches[0].clientY;
+      lastX = e.touches[0].clientX;
       lastT = performance.now();
       vel = 0;
       acc = 0;
