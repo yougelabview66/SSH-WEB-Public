@@ -20,6 +20,7 @@ const express = require('express');
 const { WebSocket, WebSocketServer, createWebSocketStream } = require('ws');
 const { Client } = require('ssh2');
 const registerSftp = require('./lib/sftp');
+const registerMonitor = require('./lib/monitor');
 
 // ---------------------------------------------------------------- 配置
 const PORT = parseInt(process.env.PORT || '8888', 10);
@@ -398,6 +399,7 @@ app.delete('/api/history', (req, res) => {
 // 活动的 SSH 会话，sid -> { ssh, sftpPromise }，供 SFTP 接口复用连接
 const sessions = new Map();
 registerSftp(app, (sid) => sessions.get(sid));
+registerMonitor(app, (sid) => sessions.get(sid));
 
 app.get('/healthz', (req, res) => res.send('ok'));
 

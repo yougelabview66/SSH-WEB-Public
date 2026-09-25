@@ -211,3 +211,54 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
   #history .card { width: 100%; max-width: 100%; height: 75%; border-radius: 12px 12px 0 0;
     padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
 }
+
+/* 标签栏右侧按钮 */
+#btnMon { border: none; border-left: 1px solid var(--border); border-radius: 0; background: none;
+  white-space: nowrap; flex-shrink: 0; }
+.tbtn.on { background: var(--bg); color: var(--accent); }
+@media (max-width: 760px) { .tbtn .lbl { display: none; } .tbtn { padding: 6px 10px; } }
+
+/* 性能监控面板 (终端左侧) */
+.mon { --dl: #3987e5; --ul: #d95926; width: 290px; flex-shrink: 0; background: var(--panel);
+  border-right: 1px solid var(--border); overflow-y: auto; font-size: 12px; color: var(--text); padding: 10px 12px 16px; }
+.mon-head { display: flex; align-items: center; gap: 8px; }
+.mon-head .mh { flex: 1; min-width: 0; font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mon-head button { background: none; border: none; color: var(--muted); padding: 0 4px; font-size: 16px; }
+.mon .sub { color: var(--muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mon .sec { margin-top: 14px; }
+.mon .sec-t { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; gap: 8px; }
+.mon .sec-t b { font-size: 12px; color: var(--muted); font-weight: 600; }
+.mon .val { font-variant-numeric: tabular-nums; color: var(--text); white-space: nowrap; }
+.mon .note { color: var(--muted); margin-top: 3px; font-variant-numeric: tabular-nums; }
+.meter { height: 8px; background: var(--panel2); border-radius: 4px; overflow: hidden; }
+.meter i { display: block; height: 100%; width: 0; background: var(--dl); border-radius: 4px; transition: width .4s; }
+.meter i.warn { background: #eab308; }
+.meter i.crit { background: var(--danger); }
+.meter.thin { height: 5px; }
+.mon select { font: inherit; background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  border-radius: 4px; padding: 1px 4px; max-width: 120px; }
+.net-legend { display: flex; gap: 14px; font-variant-numeric: tabular-nums; margin-bottom: 4px; }
+.net-legend span::before { content: ''; display: inline-block; width: 10px; height: 3px; border-radius: 2px;
+  margin-right: 5px; vertical-align: middle; background: var(--c); }
+.chart-wrap { position: relative; }
+.chart-wrap canvas { display: block; width: 100%; height: 90px; }
+.chart-tip { position: absolute; top: 2px; pointer-events: none; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 6px; padding: 4px 7px; white-space: nowrap; font-variant-numeric: tabular-nums; z-index: 3; }
+.chart-tip div::before { content: ''; display: inline-block; width: 8px; height: 3px; margin-right: 5px;
+  vertical-align: middle; background: var(--c); border-radius: 2px; }
+.dsk { margin-top: 6px; }
+.dsk .sec-t { margin-bottom: 3px; }
+.dsk .mnt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.ptabs { display: flex; gap: 4px; }
+.ptabs button { font-size: 11px; padding: 1px 8px; }
+.ptabs button.on { background: var(--accent2); border-color: var(--accent2); color: #fff; }
+.ptable { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; table-layout: fixed; }
+.ptable th { color: var(--muted); font-weight: normal; text-align: right; padding: 2px 0; }
+.ptable td { padding: 2px 0; text-align: right; white-space: nowrap; }
+.ptable th:first-child, .ptable td:first-child { text-align: left; overflow: hidden; text-overflow: ellipsis; }
+.ptable col.n { width: auto; } .ptable col.c { width: 52px; } .ptable col.m { width: 62px; }
+.mon .err { color: var(--danger); margin-top: 10px; }
+
+@media (max-width: 760px) {
+  .mon { position: absolute; inset: 0; width: auto; z-index: 6; font-size: 13px; }
+}
