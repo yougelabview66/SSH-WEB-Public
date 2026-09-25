@@ -275,9 +275,12 @@
     s.tab = document.createElement('div');
     s.tab.className = 'tab';
     s.tab.innerHTML = '<span class="dot"></span><span class="title"></span><button class="x" title="关闭">×</button>';
-    // 同一主机打开多个标签时编号: 家里 NAS、家里 NAS (2)…
-    if (restore) {
-      const m = /^(.*) \((\d+)\)$/.exec(title);
+    // 标签显示「主机名-序号」: 家里 NAS-1、家里 NAS-2…，同一主机多开时序号递增，关闭后空出的序号可复用
+    if (restore && restore.n) {
+      s.baseTitle = title;
+      s.n = restore.n;
+    } else if (restore) {
+      const m = /^(.*) \((\d+)\)$/.exec(title); // 兼容旧版本的「名称 (2)」
       s.baseTitle = m ? m[1] : title;
       s.n = m ? +m[2] : 1;
     } else {
@@ -285,8 +288,8 @@
       s.baseTitle = title;
       s.n = 1;
       while (used.has(s.n)) s.n++;
-      if (s.n > 1) s.title = title = `${title} (${s.n})`;
     }
+    s.title = title = `${s.baseTitle}-${s.n}`;
     $('.title', s.tab).textContent = title;
     s.tab.title = title;
     s.tab.addEventListener('click', (e) => {
@@ -329,7 +332,7 @@
       if (s.remoteId) {
         ws.send(JSON.stringify({ type: 'attach', id: s.remoteId, ...size }));
       } else {
-        ws.send(JSON.stringify({ type: 'connect', ...s.params, title: s.title, histHost: s.histHost, ...size }));
+        ws.send(JSON.stringify({ type: 'connect', ...s.params, title: s.baseTitle, n: s.n, histHost: s.histHost, ...size }));
       }
       // 应用层心跳，避免 Cloudflare / 反向代理 100 秒空闲断开
       clearInterval(s.ping);

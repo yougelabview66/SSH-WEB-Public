@@ -470,6 +470,7 @@ class Session {
     this.id = crypto.randomUUID();
     this.cfg = cfg; // 含凭据，只保存在内存中，用于重新连接
     this.title = String(meta.title || `${cfg.username}@${cfg.host}`).slice(0, 100);
+    this.n = Math.min(Math.max(parseInt(meta.n, 10) || 1, 1), 999); // 标签序号
     this.histHost = String(meta.histHost || '').slice(0, 300);
     this.hostId = meta.hostId || null;
     this.clientIp = meta.clientIp;
@@ -494,7 +495,7 @@ class Session {
   info() {
     const c = this.cfg;
     return {
-      id: this.id, title: this.title, histHost: this.histHost, status: this.status,
+      id: this.id, title: this.title, n: this.n, histHost: this.histHost, status: this.status,
       connType: c.connType, created: this.created, order: this.order, clients: this.clients.size,
       // 服务器重启后用于重新创建会话 (不含凭据)
       params: this.hostId ? { hostId: this.hostId }
@@ -633,7 +634,7 @@ class Session {
     this.setStatus('connecting');
     const knownKey = cfg.connType === 'cloudflare' ? `cf:${cfg.host}` : `${cfg.host}:${cfg.port}`;
     const target = cfg.connType === 'cloudflare' ? `${cfg.host} (Cloudflare 隧道)` : `${cfg.host}:${cfg.port}`;
-    this.line(`\r\n\x1b[90m正在连接 ${this.title} (${cfg.username}@${target}) ...\x1b[0m`);
+    this.line(`\r\n\x1b[90m正在连接 ${this.title}-${this.n} (${cfg.username}@${target}) ...\x1b[0m`);
 
     const ssh = new Client();
     this.ssh = ssh;
@@ -890,7 +891,7 @@ wss.on('connection', (ws, req) => {
           return sendCtl({ type: 'error', message: e.message });
         }
         const s = new Session(cfg, {
-          title: msg.title, histHost: msg.histHost, hostId: msg.hostId, cols: msg.cols, rows: msg.rows, clientIp,
+          title: msg.title, n: msg.n, histHost: msg.histHost, hostId: msg.hostId, cols: msg.cols, rows: msg.rows, clientIp,
         });
         sessions.set(s.id, s);
         s.attach(ws);
