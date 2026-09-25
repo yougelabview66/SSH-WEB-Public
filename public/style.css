@@ -1,0 +1,160 @@
+:root {
+  --bg: #0f172a;
+  --panel: #111827;
+  --panel2: #1e293b;
+  --border: #334155;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --accent: #22c55e;
+  --accent2: #16a34a;
+  --danger: #ef4444;
+  --cf: #f38020;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+  font: 14px/1.5 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+.hidden { display: none !important; }
+button { font: inherit; cursor: pointer; border: 1px solid var(--border); background: var(--panel2);
+  color: var(--text); border-radius: 6px; padding: 6px 12px; }
+button:hover { border-color: var(--muted); }
+button.primary { background: var(--accent2); border-color: var(--accent2); color: #fff; }
+button.primary:hover { background: var(--accent); }
+button.link { background: none; border: none; color: var(--muted); padding: 4px; }
+button.block { width: 100%; }
+input, textarea { font: inherit; width: 100%; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px; padding: 7px 9px; margin-top: 4px; }
+input:focus, textarea:focus { outline: none; border-color: var(--accent); }
+textarea { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; resize: vertical; }
+label { display: block; color: var(--muted); font-size: 13px; margin-bottom: 10px; }
+code { background: var(--bg); padding: 1px 5px; border-radius: 4px; color: var(--text); }
+.muted { color: var(--muted); }
+.err { color: var(--danger); min-height: 1.2em; font-size: 13px; margin-bottom: 6px; }
+.hint { color: var(--muted); font-size: 12px; margin: -2px 0 10px; }
+
+/* overlay / card */
+.overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: center;
+  justify-content: center; z-index: 50; padding: 16px; }
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 22px;
+  width: 340px; max-width: 100%; max-height: 100%; overflow: auto; }
+.card.wide { width: 520px; }
+.card h2, .card h3 { margin: 0 0 16px; }
+.card h2 { color: var(--accent); font-family: ui-monospace, monospace; }
+.row { display: flex; gap: 10px; }
+.row .grow { flex: 1; }
+.row .port { width: 100px; }
+.seg { display: flex; gap: 16px; margin-bottom: 10px; }
+.seg label, label.check { display: flex; align-items: center; gap: 6px; color: var(--text); margin: 0; }
+label.check { margin: 6px 0 10px; }
+.seg input, label.check input { width: auto; margin: 0; }
+.actions { display: flex; justify-content: flex-end; gap: 8px; }
+#keyFile { border: none; padding: 0; margin: -4px 0 10px; font-size: 12px; }
+
+/* 连接方式切换 */
+#hostForm .cf-only { display: none; }
+#hostForm.cf .cf-only { display: block; }
+#hostForm.cf .row.cf-only { display: flex; }
+#hostForm.cf .direct-only { display: none; }
+#hostForm .auth-key { display: none; }
+#hostForm.key .auth-key { display: block; }
+#hostForm.key .auth-password { display: none; }
+
+/* layout */
+#app { display: flex; height: 100%; }
+#sidebar { width: 250px; background: var(--panel); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; padding: 12px; gap: 10px; flex-shrink: 0; }
+.brand { font-family: ui-monospace, monospace; color: var(--accent); font-weight: bold; font-size: 16px; }
+#search { margin: 0; }
+#hostList { flex: 1; overflow-y: auto; margin: 0 -4px; }
+.group-title { font-size: 11px; color: var(--muted); text-transform: uppercase; padding: 8px 6px 2px; }
+.host { display: flex; align-items: center; gap: 6px; padding: 7px 8px; border-radius: 6px; cursor: pointer; }
+.host:hover { background: var(--panel2); }
+.host .info { flex: 1; min-width: 0; }
+.host .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.host .addr { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.host .ops { display: none; }
+.host:hover .ops { display: flex; }
+.host .ops button { padding: 0 6px; font-size: 12px; background: none; border: none; color: var(--muted); }
+.host .ops button:hover { color: var(--text); }
+.badge { font-size: 10px; padding: 0 5px; border-radius: 4px; background: var(--cf); color: #fff; flex-shrink: 0; }
+
+main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+#tabbar { display: flex; align-items: stretch; background: var(--panel); border-bottom: 1px solid var(--border);
+  height: 38px; flex-shrink: 0; }
+#btnToggle { border: none; border-radius: 0; background: none; padding: 0 12px; }
+#tabs { display: flex; overflow-x: auto; flex: 1; }
+.tab { display: flex; align-items: center; gap: 6px; padding: 0 10px 0 12px; border-right: 1px solid var(--border);
+  cursor: pointer; white-space: nowrap; color: var(--muted); max-width: 220px; }
+.tab.active { background: var(--bg); color: var(--text); }
+.tab .dot { width: 8px; height: 8px; border-radius: 50%; background: #eab308; flex-shrink: 0; }
+.tab .dot.ok { background: var(--accent); }
+.tab .dot.bad { background: var(--danger); }
+.tab .title { overflow: hidden; text-overflow: ellipsis; }
+.tab .x { background: none; border: none; padding: 0 4px; color: var(--muted); }
+.tab .x:hover { color: var(--danger); }
+
+#terms { flex: 1; position: relative; background: #000; min-height: 0; }
+.term { position: absolute; inset: 0; display: none; }
+.term.active { display: flex; }
+.reconnect { position: absolute; right: 16px; bottom: 16px; z-index: 5; }
+#empty { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  color: var(--text); background: var(--bg); text-align: center; padding: 16px; }
+#empty p { margin: 4px; }
+
+@media (max-width: 760px) {
+  #sidebar { position: fixed; inset: 0 auto 0 0; z-index: 20; width: 80%; max-width: 300px;
+    transform: translateX(-100%); transition: transform .2s; }
+  #app.side-open #sidebar { transform: none; box-shadow: 0 0 30px rgba(0,0,0,.6); }
+  .host .ops { display: flex; }
+  .row { flex-wrap: wrap; }
+}
+@media (min-width: 761px) {
+  #app.side-closed #sidebar { display: none; }
+}
+
+/* 对话框 */
+.sidebar-foot { display: flex; flex-direction: column; align-items: flex-start; }
+#dialogBody { margin-bottom: 14px; }
+#dialogBody pre { white-space: pre-wrap; word-break: break-all; background: var(--bg); padding: 8px 10px;
+  border-radius: 6px; margin: 6px 0; font: 12px ui-monospace, Menlo, Consolas, monospace; }
+.warn-box { border: 1px solid var(--danger); background: rgba(239,68,68,.12); color: #fecaca;
+  border-radius: 6px; padding: 10px; margin-bottom: 10px; }
+button.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+.known-row { display: flex; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.known-row .info { flex: 1; min-width: 0; word-break: break-all; }
+.known-row .fp { font: 11px ui-monospace, monospace; color: var(--muted); }
+
+/* SFTP 按钮 */
+#btnSftp { border: none; border-left: 1px solid var(--border); border-radius: 0; background: none;
+  white-space: nowrap; flex-shrink: 0; }
+#btnSftp.on { background: var(--bg); color: var(--accent); }
+
+/* 会话布局：终端 + 右侧 SFTP 面板 */
+.term-box { flex: 1; min-width: 0; position: relative; padding: 4px 0 0 6px; }
+.sftp { width: 420px; flex-shrink: 0; background: var(--panel); border-left: 1px solid var(--border);
+  display: flex; flex-direction: column; min-height: 0; color: var(--text); }
+.sftp-bar { display: flex; gap: 6px; padding: 8px; border-bottom: 1px solid var(--border); align-items: center; }
+.sftp-bar input { margin: 0; padding: 5px 8px; flex: 1; min-width: 0; font: 12px ui-monospace, monospace; }
+.sftp-bar button { padding: 4px 9px; font-size: 13px; white-space: nowrap; }
+.sftp-bar .spacer { flex: 1; }
+.sftp-list { flex: 1; overflow: auto; position: relative; }
+.sftp-list.drag { outline: 2px dashed var(--accent); outline-offset: -6px; }
+.frow { display: flex; align-items: center; gap: 8px; padding: 5px 10px; cursor: default; font-size: 13px; }
+.frow:hover { background: var(--panel2); }
+.frow .ic { width: 18px; text-align: center; flex-shrink: 0; }
+.frow .fn { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.frow.dir .fn { color: #93c5fd; cursor: pointer; }
+.frow .meta { color: var(--muted); font-size: 11px; text-align: right; white-space: nowrap; }
+.frow .fops { display: none; gap: 2px; }
+.frow:hover .fops { display: flex; }
+.frow .fops button { background: none; border: none; padding: 0 4px; color: var(--muted); font-size: 13px; }
+.frow .fops button:hover { color: var(--text); }
+.sftp-status { border-top: 1px solid var(--border); padding: 6px 10px; font-size: 12px; color: var(--muted);
+  min-height: 30px; }
+.sftp-status .bar { height: 4px; background: var(--panel2); border-radius: 2px; margin-top: 4px; overflow: hidden; }
+.sftp-status .bar i { display: block; height: 100%; background: var(--accent); width: 0; }
+.sftp-msg { padding: 16px; color: var(--muted); text-align: center; }
+
+@media (max-width: 760px) {
+  .sftp { position: absolute; inset: 0; width: auto; z-index: 6; }
+  .frow .fops { display: flex; }
+}

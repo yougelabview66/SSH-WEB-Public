@@ -1,0 +1,36 @@
+services:
+  ssh-web:
+    build: .
+    image: ssh-web:latest
+    container_name: ssh-web
+    restart: unless-stopped
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./data:/data          # 保存的主机列表 (密码 AES-256-GCM 加密) 与密钥
+    environment:
+      - TZ=Asia/Shanghai
+      - AUTH_USER=admin
+      - AUTH_PASSWORD=请修改为强密码   # 网页登录密码，留空则不需要登录（不推荐）
+      # - SECRET=一串随机字符串      # 不填会自动生成并存到 /data/.secret
+      # - SESSION_HOURS=24
+      # - COOKIE_SECURE=true         # 通过 HTTPS (如 Cloudflare 隧道) 访问时建议开启
+      # - ALLOWED_HOSTS=192.168.1.*,*.example.com   # 限制可连接的目标主机
+      # - HOSTKEY_POLICY=ask         # 主机指纹校验: ask(默认) / accept-new / off
+
+  # ------------------------------------------------------------------
+  # 可选：把 SSH-WEB 本身通过 Cloudflare Tunnel 发布到公网
+  # 1. Cloudflare Zero Trust → Networks → Tunnels 创建隧道，复制 token
+  # 2. Public Hostname 添加: web.example.com → http://ssh-web:8888
+  # 3. 强烈建议再加一层 Cloudflare Access 登录保护
+  # 取消下面的注释并填写 TUNNEL_TOKEN 即可
+  # ------------------------------------------------------------------
+  # cloudflared:
+  #   image: cloudflare/cloudflared:latest
+  #   container_name: ssh-web-cloudflared
+  #   restart: unless-stopped
+  #   command: tunnel --no-autoupdate run
+  #   environment:
+  #     - TUNNEL_TOKEN=你的隧道token
+  #   depends_on:
+  #     - ssh-web

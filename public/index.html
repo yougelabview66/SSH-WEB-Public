@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>SSH-WEB</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%231e293b'/><text x='5' y='22' font-family='monospace' font-size='16' fill='%2322c55e'>&gt;_</text></svg>">
+  <link rel="stylesheet" href="/vendor/xterm/css/xterm.css">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <!-- 登录 -->
+  <div id="login" class="overlay hidden">
+    <form id="loginForm" class="card">
+      <h2>&gt;_ SSH-WEB</h2>
+      <label>用户名<input name="username" autocomplete="username" required></label>
+      <label>密码<input name="password" type="password" autocomplete="current-password" required></label>
+      <div class="err" id="loginErr"></div>
+      <button class="primary" type="submit">登录</button>
+    </form>
+  </div>
+
+  <div id="app" class="hidden">
+    <aside id="sidebar">
+      <div class="brand">&gt;_ SSH-WEB</div>
+      <button class="primary block" id="btnNew">+ 新建连接</button>
+      <input id="search" placeholder="搜索主机…">
+      <div id="hostList"></div>
+      <div class="sidebar-foot">
+        <button id="btnKnown" class="link">已信任的主机指纹</button>
+        <button id="btnLogout" class="link hidden">退出登录</button>
+      </div>
+    </aside>
+
+    <main>
+      <div id="tabbar">
+        <button id="btnToggle" title="主机列表">☰</button>
+        <div id="tabs"></div>
+        <button id="btnSftp" class="hidden" title="SFTP 文件管理">📁 文件</button>
+      </div>
+      <div id="terms">
+        <div id="empty">
+          <p>从左侧选择主机，或点击「新建连接」</p>
+          <p class="muted">支持直连 SSH 与 Cloudflare Tunnel 暴露的 SSH</p>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- 连接 / 编辑主机 -->
+  <div id="modal" class="overlay hidden">
+    <form id="hostForm" class="card wide">
+      <h3 id="modalTitle">新建连接</h3>
+      <input type="hidden" name="id">
+
+      <div class="seg" id="connTypeSeg">
+        <label><input type="radio" name="connType" value="direct" checked> 直连 SSH</label>
+        <label><input type="radio" name="connType" value="cloudflare"> Cloudflare 隧道</label>
+      </div>
+
+      <div class="row">
+        <label class="grow">名称<input name="name" placeholder="可选，如：家里 NAS"></label>
+        <label>分组<input name="group" placeholder="可选"></label>
+      </div>
+
+      <div class="row">
+        <label class="grow"><span id="hostLabel">主机 / IP</span><input name="host" required placeholder="192.168.1.10"></label>
+        <label class="port direct-only">端口<input name="port" type="number" value="22" min="1" max="65535"></label>
+      </div>
+
+      <div class="cf-only hint">
+        对应 NAS 上 cloudflared 的 ingress 规则 <code>hostname → ssh://localhost:22</code>。<br>
+        如果该主机名受 Cloudflare Access 保护，需要创建 <b>Service Token</b> 并在 Access 策略中添加 <b>Service Auth</b> 规则。
+      </div>
+      <div class="row cf-only">
+        <label class="grow">CF-Access-Client-Id<input name="cfClientId" placeholder="xxxx.access（可选）" autocomplete="off"></label>
+      </div>
+      <div class="row cf-only">
+        <label class="grow">CF-Access-Client-Secret<input name="cfClientSecret" type="password" placeholder="可选" autocomplete="new-password"></label>
+      </div>
+
+      <label>用户名<input name="username" required autocomplete="off"></label>
+
+      <div class="seg">
+        <label><input type="radio" name="authType" value="password" checked> 密码</label>
+        <label><input type="radio" name="authType" value="key"> 私钥</label>
+      </div>
+
+      <label class="auth-password">密码<input name="password" type="password" autocomplete="new-password"></label>
+      <div class="auth-key">
+        <label>私钥 (OpenSSH / PEM)
+          <textarea name="privateKey" rows="5" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"></textarea>
+        </label>
+        <input type="file" id="keyFile">
+        <label>私钥密码<input name="passphrase" type="password" placeholder="可选" autocomplete="new-password"></label>
+      </div>
+
+      <div class="hint" id="secretHint"></div>
+
+      <label class="check"><input type="checkbox" name="save" checked> 保存到主机列表（密码加密保存在服务器）</label>
+
+      <div class="err" id="formErr"></div>
+      <div class="actions">
+        <button type="button" id="btnCancel">取消</button>
+        <button type="button" id="btnSaveOnly">仅保存</button>
+        <button type="submit" class="primary">连接</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- 通用对话框：验证码 / 指纹确认 / 指纹管理 -->
+  <div id="dialog" class="overlay hidden">
+    <form id="dialogForm" class="card wide">
+      <h3 id="dialogTitle"></h3>
+      <div id="dialogBody"></div>
+      <div class="actions" id="dialogActions"></div>
+    </form>
+  </div>
+
+  <script src="/vendor/xterm/lib/xterm.js"></script>
+  <script src="/vendor/addon-fit/lib/addon-fit.js"></script>
+  <script src="/vendor/addon-web-links/lib/addon-web-links.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
