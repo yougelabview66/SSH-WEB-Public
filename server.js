@@ -28,6 +28,8 @@ const AUTH_USER = process.env.AUTH_USER || 'admin';
 const AUTH_PASSWORD = process.env.AUTH_PASSWORD || '';
 const SESSION_HOURS = parseFloat(process.env.SESSION_HOURS || '24');
 const COOKIE_SECURE = process.env.COOKIE_SECURE === 'true';
+// 只信任来自这些地址的 X-Forwarded-For (反向代理 / cloudflared 容器)，防止伪造 IP 绕过登录限流
+const TRUST_PROXY = process.env.TRUST_PROXY || 'loopback, linklocal, uniquelocal';
 // 可选: 限制只能连接这些主机，逗号分隔，如 "192.168.1.*,nas.local"
 const ALLOWED_HOSTS = (process.env.ALLOWED_HOSTS || '')
   .split(',').map((s) => s.trim()).filter(Boolean);
@@ -106,7 +108,13 @@ function parseCookies(header) {
   const out = {};
   (header || '').split(';').forEach((kv) => {
     const i = kv.indexOf('=');
-    if (i > 0) out[kv.slice(0, i).trim()] = decodeURIComponent(kv.slice(i + 1).trim());
+    if (i <= 0) return;
+    const v = kv.slice(i + 1).trim();
+    try {
+      out[kv.slice(0, i).trim()] = decodeURIComponent(v);
+    } catch {
+      out[kv.slice(0, i).trim()] = v;
+    }
   });
   return out;
 }
@@ -119,12 +127,22 @@ function isAuthed(req) {
   return !!verify(parseCookies(req.headers.cookie)[COOKIE_NAME]);
 }
 
+// * 只匹配一段 (不含 .)，如 192.168.1.* 不会匹配 192.168.1.5.evil.com
+const ALLOWED_RES = ALLOWED_HOSTS.map((pattern) => new RegExp(
+  '^' + pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^.]*') + '$', 'i'));
+
 function hostAllowed(host) {
-  if (!ALLOWED_HOSTS.length) return true;
-  return ALLOWED_HOSTS.some((pattern) => {
-    const re = new RegExp('^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$', 'i');
-    return re.test(host);
-  });
+  if (!ALLOWED_RES.length) return true;
+  return ALLOWED_RES.some((re) => re.test(host));
+}
+
+// 从隧道地址中取出主机名，用于 ALLOWED_HOSTS 校验
+function cfHostname(h) {
+  try {
+    return new URL(/^wss?:\/\//i.test(h) ? h : 'wss://' + h).hostname;
+  } catch {
+    return '';
+  }
 }
 
 // 接受 "ssh.example.com" / "https://ssh.example.com/" / "wss://..." 等写法
@@ -200,6 +218,8 @@ function keyType(key) {
   }
 }
 
+const str = (v) => (typeof v === 'string' ? v : '');
+
 function fingerprint(key) {
   return 'SHA256:' + crypto.createHash('sha256').update(key).digest('base64').replace(/=+$/, '');
 }
@@ -219,11 +239,15 @@ function loginFailed(ip) {
   }
   loginFails.set(ip, r);
 }
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, r] of loginFails) if (r.until < now) loginFails.delete(ip);
+}, 10 * 60 * 1000).unref();
 
 // ---------------------------------------------------------------- HTTP
 const app = express();
 app.disable('x-powered-by');
-app.set('trust proxy', true);
+app.set('trust proxy', TRUST_PROXY);
 app.use(express.json({ limit: '256kb' }));
 
 app.use((req, res, next) => {
@@ -332,16 +356,36 @@ app.get('/healthz', (req, res) => res.send('ok'));
 const server = http.createServer(app);
 const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
 
-server.on('upgrade', (req, socket, head) => {
-  const url = new URL(req.url, 'http://x');
-  if (url.pathname !== '/ws' || !isAuthed(req)) {
-    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-    return socket.destroy();
+// 拒绝其他网站发起的 WebSocket 连接 (跨站 WebSocket 劫持)
+function sameOrigin(req) {
+  const origin = req.headers.origin;
+  if (!origin) return true; // 非浏览器客户端
+  try {
+    const host = new URL(origin).host;
+    const fwd = String(req.headers['x-forwarded-host'] || '').split(',')[0].trim();
+    return host === req.headers.host || (fwd && host === fwd);
+  } catch {
+    return false;
   }
-  wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+}
+
+server.on('upgrade', (req, socket, head) => {
+  const reject = (code, text) => {
+    socket.end(`HTTP/1.1 ${code} ${text}\r\nConnection: close\r\n\r\n`);
+  };
+  socket.on('error', () => {});
+  try {
+    if (!req.url.startsWith('/ws') || new URL(req.url, 'http://x').pathname !== '/ws') return reject(404, 'Not Found');
+    if (!isAuthed(req)) return reject(401, 'Unauthorized');
+    if (!sameOrigin(req)) return reject(403, 'Forbidden');
+    wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+  } catch {
+    reject(400, 'Bad Request');
+  }
 });
 
 wss.on('connection', (ws, req) => {
+  // 仅用于日志
   const clientIp = req.headers['cf-connecting-ip'] ||
     req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket.remoteAddress;
   const sid = crypto.randomUUID();
@@ -395,6 +439,7 @@ wss.on('connection', (ws, req) => {
     }
     let msg;
     try { msg = JSON.parse(raw.toString()); } catch { return; }
+    if (!msg || typeof msg !== 'object') return;
 
     switch (msg.type) {
       case 'connect':
@@ -403,13 +448,14 @@ wss.on('connection', (ws, req) => {
         startSsh(msg);
         break;
       case 'data':
-        if (stream) stream.write(msg.data);
+        if (stream && typeof msg.data === 'string') stream.write(msg.data);
         break;
-      case 'resize':
-        if (stream && msg.cols > 0 && msg.rows > 0) {
-          stream.setWindow(msg.rows, msg.cols, msg.height || 0, msg.width || 0);
-        }
+      case 'resize': {
+        const cols = Math.min(Math.max(parseInt(msg.cols, 10) || 0, 0), 1000);
+        const rows = Math.min(Math.max(parseInt(msg.rows, 10) || 0, 0), 1000);
+        if (stream && cols && rows) stream.setWindow(rows, cols, 0, 0);
         break;
+      }
       case 'prompt-response':
       case 'hostkey-response':
         if (pending && pending.type + '-response' === msg.type) {
@@ -432,12 +478,12 @@ wss.on('connection', (ws, req) => {
       host: String(msg.host || '').trim(),
       port: parseInt(msg.port, 10) || 22,
       username: String(msg.username || '').trim(),
-      password: msg.password || '',
-      privateKey: msg.privateKey || '',
-      passphrase: msg.passphrase || '',
+      password: str(msg.password),
+      privateKey: str(msg.privateKey),
+      passphrase: str(msg.passphrase),
       connType: msg.connType === 'cloudflare' ? 'cloudflare' : 'direct',
-      cfClientId: msg.cfClientId || '',
-      cfClientSecret: msg.cfClientSecret || '',
+      cfClientId: str(msg.cfClientId),
+      cfClientSecret: str(msg.cfClientSecret),
     };
 
     // 使用已保存的主机：从服务端读取加密的凭据，浏览器端拿不到
@@ -448,9 +494,9 @@ wss.on('connection', (ws, req) => {
         host: h.host,
         port: h.port,
         username: h.username,
-        password: msg.password || decrypt(h.password),
-        privateKey: msg.privateKey || decrypt(h.privateKey),
-        passphrase: msg.passphrase || decrypt(h.passphrase),
+        password: str(msg.password) || decrypt(h.password),
+        privateKey: str(msg.privateKey) || decrypt(h.privateKey),
+        passphrase: str(msg.passphrase) || decrypt(h.passphrase),
         connType: h.connType || 'direct',
         cfClientId: h.cfClientId || '',
         cfClientSecret: decrypt(h.cfClientSecret),
@@ -458,12 +504,12 @@ wss.on('connection', (ws, req) => {
     }
 
     if (!cfg.host || !cfg.username) return fail('主机和用户名不能为空');
-    if (!hostAllowed(cfg.host)) return fail(`不允许连接主机 ${cfg.host}（ALLOWED_HOSTS 限制）`);
-
     if (cfg.connType === 'cloudflare') {
       cfg.host = normalizeCfHost(cfg.host);
       if (!cfg.host) return fail('Cloudflare 隧道主机名无效');
     }
+    const checkHost = cfg.connType === 'cloudflare' ? cfHostname(cfg.host) : cfg.host;
+    if (!checkHost || !hostAllowed(checkHost)) return fail(`不允许连接主机 ${checkHost || cfg.host}（ALLOWED_HOSTS 限制）`);
     const knownKey = cfg.connType === 'cloudflare' ? `cf:${cfg.host}` : `${cfg.host}:${cfg.port}`;
     const target = cfg.connType === 'cloudflare' ? `${cfg.host} (Cloudflare 隧道)` : `${cfg.host}:${cfg.port}`;
 
@@ -554,7 +600,11 @@ wss.on('connection', (ws, req) => {
       sessions.set(sid, { ssh, sftpPromise: null });
       sendCtl({ type: 'status', status: 'connected', sid });
       ssh.shell(
-        { term: 'xterm-256color', cols: msg.cols || 80, rows: msg.rows || 24 },
+        {
+          term: 'xterm-256color',
+          cols: Math.min(parseInt(msg.cols, 10) || 80, 1000),
+          rows: Math.min(parseInt(msg.rows, 10) || 24, 1000),
+        },
         (err, s) => {
           if (err) return fail('打开 Shell 失败: ' + err.message);
           stream = s;

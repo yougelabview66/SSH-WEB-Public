@@ -57,7 +57,8 @@ docker run -d --name ssh-web --restart unless-stopped \
 | `SECRET` | 自动生成 | 用于 Cookie 签名和凭据加密，自动生成的保存在 `/data/.secret`。**丢失后已保存的密码无法解密** |
 | `SESSION_HOURS` | `24` | 登录有效期（小时） |
 | `COOKIE_SECURE` | `false` | 通过 HTTPS 访问时设为 `true` |
-| `ALLOWED_HOSTS` | 空（不限） | 允许连接的主机，逗号分隔，支持 `*`，如 `192.168.1.*,*.example.com` |
+| `ALLOWED_HOSTS` | 空（不限） | 允许连接的主机，逗号分隔，`*` 只匹配一段（不跨 `.`），如 `192.168.1.*,*.example.com`；Cloudflare 隧道按隧道主机名校验 |
+| `TRUST_PROXY` | `loopback, linklocal, uniquelocal` | 信任哪些地址发来的 `X-Forwarded-For`（用于登录限流取真实 IP）。默认只信任内网地址（反向代理、cloudflared 容器），防止公网伪造 |
 | `SSH_READY_TIMEOUT` | `20000` | SSH 连接超时（毫秒） |
 | `SSH_KEEPALIVE` | `15000` | SSH keepalive 间隔（毫秒） |
 | `HOSTKEY_POLICY` | `ask` | 主机指纹校验：`ask` 新主机和指纹变化都要确认；`accept-new` 新主机自动信任、变化时确认；`off` 不校验 |
