@@ -11,6 +11,8 @@
   --cf: #f38020;
 }
 * { box-sizing: border-box; }
+/* 禁用手机浏览器的下拉刷新 / 边缘回弹 */
+html, body { overscroll-behavior: none; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
   font: 14px/1.5 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
 .hidden { display: none !important; }

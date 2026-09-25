@@ -242,6 +242,7 @@
     s.term.loadAddon(s.fit);
     s.term.loadAddon(new WebLinksAddon.WebLinksAddon());
     s.term.open(s.box);
+    enableTouchScroll(s);
     if (isTouch) {
       // 触屏：xterm 的隐藏输入框在手机输入法下会丢字 / 重复，改用底部输入栏
       s.term.textarea.setAttribute('readonly', 'readonly');
@@ -1013,6 +1014,73 @@
       renderHistory();
     } catch (err) { alert(err.message); }
   });
+
+  // ------------------------------------------------------------ 触屏滑动滚动
+  // xterm.js 6 不支持触摸滚动，手指滑动会被浏览器当成下拉刷新。这里自己处理：
+  // 普通界面滚动历史记录 (带惯性)；vim / less 等全屏程序里发送上下方向键，和电脑滚轮行为一致。
+  function enableTouchScroll(s) {
+    let lastY = null;
+    let lastT = 0;
+    let vel = 0; // px/ms
+    let acc = 0; // 不足一行的累计像素
+    let raf = 0;
+
+    const lineHeight = () => {
+      const row = s.box.querySelector('.xterm-rows > div');
+      return (row && row.offsetHeight) || 17;
+    };
+
+    const scrollPx = (dy) => {
+      acc += dy;
+      const lh = lineHeight();
+      const lines = Math.trunc(acc / lh);
+      if (!lines) return;
+      acc -= lines * lh;
+      if (s.term.buffer.active.type === 'alternate') {
+        // 手指下滑 = 往回看 = 上方向键
+        const key = (s.term.modes.applicationCursorKeysMode ? '\x1bO' : '\x1b[') + (lines > 0 ? 'A' : 'B');
+        send(s, { type: 'data', data: key.repeat(Math.min(Math.abs(lines), 20)) });
+      } else {
+        s.term.scrollLines(-lines);
+      }
+    };
+
+    const momentum = () => {
+      if (Math.abs(vel) < 0.05) return;
+      scrollPx(vel * 16);
+      vel *= 0.95;
+      raf = requestAnimationFrame(momentum);
+    };
+
+    s.box.addEventListener('touchstart', (e) => {
+      cancelAnimationFrame(raf);
+      if (e.touches.length !== 1) { lastY = null; return; }
+      lastY = e.touches[0].clientY;
+      lastT = performance.now();
+      vel = 0;
+      acc = 0;
+    }, { passive: true });
+
+    s.box.addEventListener('touchmove', (e) => {
+      if (lastY == null || e.touches.length !== 1) return;
+      e.preventDefault(); // 阻止下拉刷新 / 页面滚动
+      const y = e.touches[0].clientY;
+      const now = performance.now();
+      const dy = y - lastY;
+      vel = 0.8 * (dy / Math.max(now - lastT, 1)) + 0.2 * vel;
+      lastY = y;
+      lastT = now;
+      scrollPx(dy);
+    }, { passive: false });
+
+    s.box.addEventListener('touchend', () => {
+      if (lastY == null) return;
+      lastY = null;
+      // 停顿后再松手不需要惯性
+      if (performance.now() - lastT > 80) vel = 0;
+      raf = requestAnimationFrame(momentum);
+    }, { passive: true });
+  }
 
   // ------------------------------------------------------------ 性能监控
   const MON_INTERVAL = 2000;
