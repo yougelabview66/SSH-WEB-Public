@@ -273,6 +273,10 @@
       send(s, { type: 'data', data });
     });
     s.term.onResize(({ cols, rows }) => send(s, { type: 'resize', cols, rows }));
+    // 旧式鼠标编码 (X10 等) 的上报走 onBinary，需要按原始字节发送
+    s.term.onBinary((data) => {
+      if (s.ws && s.ws.readyState === WebSocket.OPEN) s.ws.send(Uint8Array.from(data, (c) => c.charCodeAt(0) & 255));
+    });
     // Ctrl+Shift+C / Ctrl+Shift+V 复制粘贴
     s.term.attachCustomKeyEventHandler((e) => {
       if (e.type === 'keydown' && e.ctrlKey && e.shiftKey && e.code === 'KeyC') {

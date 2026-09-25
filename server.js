@@ -563,13 +563,26 @@ class Session {
     ws.syncBuf = [];
     this.sendTo(ws, { type: 'attached', session: this.info() });
     this.term.write('', () => {
-      this.sendTo(ws, { type: 'snapshot', data: this.serializer.serialize() });
+      this.sendTo(ws, { type: 'snapshot', data: this.serializer.serialize() + this.extraModes() });
       const buf = ws.syncBuf;
       ws.syncBuf = null;
       for (const b of buf) if (ws.readyState === ws.OPEN) ws.send(b, { binary: true });
       this.sendTo(ws, { type: 'status', status: this.status, sid: this.status === 'connected' ? this.id : null });
       if (this.pending) this.sendTo(ws, { type: this.pending.type, ...this.pending.payload });
     });
+  }
+
+  // SerializeAddon 不保存鼠标编码 (SGR 等) 和光标隐藏状态，这里补上：
+  // 否则恢复后 tmux / Claude Code 的滚轮事件会用旧编码发送，程序收不到
+  extraModes() {
+    let out = '';
+    try {
+      const core = this.term._core;
+      const enc = { SGR: '\x1b[?1006h', SGR_PIXELS: '\x1b[?1016h', URXVT: '\x1b[?1015h', UTF8: '\x1b[?1005h' };
+      out += enc[core.coreMouseService.activeEncoding] || '';
+      if (core.coreService.isCursorHidden) out += '\x1b[?25l';
+    } catch {}
+    return out;
   }
 
   detach(ws) {
