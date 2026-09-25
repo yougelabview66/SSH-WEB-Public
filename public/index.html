@@ -42,8 +42,12 @@
       </div>
       <div id="terms">
         <div id="empty">
-          <p>从左侧选择主机，或点击「新建连接」</p>
-          <p class="muted">支持直连 SSH 与 Cloudflare Tunnel 暴露的 SSH</p>
+          <!-- 打开网页时先检查后台会话，有则显示恢复中，没有才显示新建连接提示 -->
+          <div id="emptyLoading"><div class="spinner"></div><p>正在恢复会话…</p></div>
+          <div id="emptyIdle" class="hidden">
+            <p>从左侧选择主机，或点击「新建连接」</p>
+            <p class="muted">支持直连 SSH 与 Cloudflare Tunnel 暴露的 SSH</p>
+          </div>
         </div>
       </div>
       <!-- 手机输入栏：触屏设备上代替 xterm 的隐藏输入框 -->

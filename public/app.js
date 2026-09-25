@@ -59,8 +59,18 @@
 
   async function boot() {
     app.classList.remove('hidden');
-    await loadHosts();
-    await restoreSessions();
+    showEmpty('loading');
+    // 主机列表与后台会话同时加载，尽快恢复标签
+    const [list] = await Promise.all([fetchSessions(), loadHosts().catch(() => {})]);
+    if (list.length) restoreSessions(list);
+    else showEmpty('idle');
+  }
+
+  // 没有标签时的占位: loading = 正在恢复会话，idle = 新建连接提示
+  function showEmpty(mode) {
+    $('#empty').classList.remove('hidden');
+    $('#emptyLoading').classList.toggle('hidden', mode !== 'loading');
+    $('#emptyIdle').classList.toggle('hidden', mode !== 'idle');
   }
 
   // ------------------------------------------------------------ 主机列表
@@ -299,6 +309,12 @@
     s.tab.addEventListener('auxclick', (e) => { if (e.button === 1) closeSession(s); });
     $('#tabs').appendChild(s.tab);
 
+    if (restore) {
+      s.restoring = document.createElement('div');
+      s.restoring.className = 'restoring';
+      s.restoring.innerHTML = '<div class="spinner"></div>正在恢复会话…';
+      s.box.appendChild(s.restoring);
+    }
     sessions.push(s);
     if (!restore) activate(s);
     connect(s);
@@ -356,6 +372,7 @@
         // 还原服务端保存的画面和滚动记录
         s.term.reset();
         s.term.write(m.data);
+        doneRestoring(s);
         if (active === s) syncSize(s);
       } else if (m.type === 'status') {
         s.sid = m.status === 'connected' ? m.sid : null;
@@ -389,6 +406,7 @@
         // 在其他设备上关闭了这个标签
         closeSession(s, true);
       } else if (m.type === 'gone') {
+        doneRestoring(s);
         // 服务端没有这个会话了 (服务重启过)
         s.remoteId = null;
         s.sid = null;
@@ -411,6 +429,11 @@
       if (s.retries > 3) showReconnect(s, '正在重新连接… 点击立即重试');
       s.retryTimer = setTimeout(() => connect(s), delay);
     };
+  }
+
+  function doneRestoring(s) {
+    s.restoring?.remove();
+    s.restoring = null;
   }
 
   // 让服务端终端尺寸与当前显示一致 (其他设备可能改过尺寸)
@@ -449,10 +472,11 @@
     try { if (active && active.remoteId) localStorage.setItem('sshweb.active', active.remoteId); } catch {}
   }
 
-  async function restoreSessions() {
-    let list = [];
-    try { list = await api('GET', '/api/sessions'); } catch { return; }
-    if (!list.length) return;
+  async function fetchSessions() {
+    try { return await api('GET', '/api/sessions'); } catch { return []; }
+  }
+
+  function restoreSessions(list) {
     let want = null;
     try { want = localStorage.getItem('sshweb.active'); } catch {}
     const opened = list.map((info) => openSession(info.params || {}, info.title, info.connType, info));
@@ -493,7 +517,7 @@
     if (active === s) {
       active = null;
       if (sessions.length) activate(sessions[sessions.length - 1]);
-      else $('#empty').classList.remove('hidden');
+      else showEmpty('idle');
     }
     updateSftpBtn();
     updateMobileBar();
