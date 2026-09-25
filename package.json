@@ -1,6 +1,6 @@
 {
   "name": "ssh-web",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "轻量级 Web SSH 终端，适合 NAS Docker 部署",
   "main": "server.js",
   "private": true,
