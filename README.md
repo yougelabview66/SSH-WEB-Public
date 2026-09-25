@@ -82,6 +82,10 @@ docker run -d --name ssh-web --restart unless-stopped \
 - `Shift` / `Ctrl` / `Alt` 点一下高亮，作用于下一个按键或字符，可以组合：例如 `Ctrl` + `c`、`Shift` + `Tab`（Claude Code 切换模式）、`Shift` + `↑`
 - 粘贴：通过 HTTPS 访问时直接读取剪贴板，HTTP 下浏览器不允许读取，会弹出输入框让你粘贴
 
+- **滑动查看历史**：普通界面直接滑动；Claude Code、vim 等支持鼠标的程序会收到滚轮事件自己滚动
+- **tmux**：tmux 默认没开鼠标，滑动时会弹出提示，点「开启 tmux 鼠标滚动」即可（在目标主机执行 `tmux set -g mouse on`，不会往终端里打字）。
+  tmux 重启后需要重新开启；想永久生效，在目标主机的 `~/.tmux.conf` 加一行 `set -g mouse on`
+
 > 手机浏览器直接在 xterm.js 里打字会丢字、重复或不弹键盘，所以触屏设备改用这个输入栏。电脑端不受影响。
 
 ## 后台会话
