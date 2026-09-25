@@ -281,3 +281,5 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
   box-shadow: 0 6px 20px rgba(0,0,0,.5); }
 .scroll-hint .acts { display: flex; gap: 8px; margin-top: 8px; }
 .scroll-hint .note { color: var(--muted); font-size: 12px; }
+
+.sidebar-foot .ver { color: var(--muted); font-size: 11px; opacity: .7; padding: 4px; }

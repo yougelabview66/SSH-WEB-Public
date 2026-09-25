@@ -286,10 +286,18 @@ app.use((req, res, next) => {
 app.use('/vendor/xterm', express.static(path.join(__dirname, 'node_modules/@xterm/xterm')));
 app.use('/vendor/addon-fit', express.static(path.join(__dirname, 'node_modules/@xterm/addon-fit')));
 app.use('/vendor/addon-web-links', express.static(path.join(__dirname, 'node_modules/@xterm/addon-web-links')));
-app.use(express.static(path.join(__dirname, 'public')));
+// 首页不缓存，并给前端资源加版本号，升级后浏览器一定会加载新的 app.js / style.css
+const VERSION = require('./package.json').version;
+const INDEX_HTML = fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8').replace(/\{\{VERSION\}\}/g, VERSION);
+const sendIndex = (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  res.type('html').send(INDEX_HTML);
+};
+app.get(['/', '/index.html'], sendIndex);
+app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
 app.get('/api/me', (req, res) => {
-  res.json({ authEnabled, authed: isAuthed(req), user: authEnabled ? AUTH_USER : null });
+  res.json({ authEnabled, authed: isAuthed(req), user: authEnabled ? AUTH_USER : null, version: VERSION });
 });
 
 app.post('/api/login', (req, res) => {
@@ -980,7 +988,7 @@ const heartbeat = setInterval(() => {
 wss.on('close', () => clearInterval(heartbeat));
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`SSH-WEB 已启动: http://0.0.0.0:${PORT}`);
+  console.log(`SSH-WEB v${VERSION} 已启动: http://0.0.0.0:${PORT}`);
   if (!authEnabled) {
     console.warn('⚠ 未设置 AUTH_PASSWORD，网页无需登录即可使用，请勿暴露到公网！');
   }

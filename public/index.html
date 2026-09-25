@@ -6,7 +6,7 @@
   <title>SSH-WEB</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%231e293b'/><text x='5' y='22' font-family='monospace' font-size='16' fill='%2322c55e'>&gt;_</text></svg>">
   <link rel="stylesheet" href="/vendor/xterm/css/xterm.css">
-  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/style.css?v={{VERSION}}">
 </head>
 <body>
   <!-- 登录 -->
@@ -27,6 +27,7 @@
       <input id="search" placeholder="搜索主机…">
       <div id="hostList"></div>
       <div class="sidebar-foot">
+        <span class="ver">SSH-WEB v{{VERSION}}</span>
         <button id="btnKnown" class="link">已信任的主机指纹</button>
         <button id="btnLogout" class="link hidden">退出登录</button>
       </div>
@@ -177,6 +178,6 @@
   <script src="/vendor/xterm/lib/xterm.js"></script>
   <script src="/vendor/addon-fit/lib/addon-fit.js"></script>
   <script src="/vendor/addon-web-links/lib/addon-web-links.js"></script>
-  <script src="/app.js"></script>
+  <script src="/app.js?v={{VERSION}}"></script>
 </body>
 </html>
