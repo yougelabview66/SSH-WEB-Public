@@ -838,7 +838,7 @@
 
   // ------------------------------------------------------------ 手机输入栏
   const mInput = $('#mInput');
-  const mods = { ctrl: false, alt: false };
+  const mods = { shift: false, ctrl: false, alt: false };
 
   function focusTerm(s) {
     if (!isTouch) s.term.focus();
@@ -848,19 +848,23 @@
     if (active) send(active, { type: 'data', data });
   }
 
-  // 应用 Ctrl / Alt 修饰键 (一次性，用完自动取消)
+  function clearMods() {
+    for (const k of Object.keys(mods)) setMod(k, false);
+  }
+
+  // 对输入的文字应用 Shift / Ctrl / Alt (一次性，用完自动取消)
   function applyMods(text) {
-    if (!mods.ctrl && !mods.alt) return text;
+    if (!mods.shift && !mods.ctrl && !mods.alt) return text;
     let out = text;
-    if (mods.ctrl && text.length === 1) {
-      const c = text.toUpperCase().charCodeAt(0);
+    if (mods.shift && text.length === 1) out = out.toUpperCase();
+    if (mods.ctrl && out.length === 1) {
+      const c = out.toUpperCase().charCodeAt(0);
       if (c >= 64 && c <= 95) out = String.fromCharCode(c - 64); // Ctrl+A..Z [ \ ] ^ _
-      else if (text === ' ') out = '\x00';
-      else if (text === '?') out = '\x7f';
+      else if (out === ' ') out = '\x00';
+      else if (out === '?') out = '\x7f';
     }
     if (mods.alt) out = '\x1b' + out;
-    setMod('ctrl', false);
-    setMod('alt', false);
+    clearMods();
     return out;
   }
 
@@ -869,13 +873,35 @@
     $(`#mobileBar [data-mod=${name}]`).classList.toggle('on', on);
   }
 
-  const cursorKey = (c) => (active && active.term.modes.applicationCursorKeysMode ? '\x1bO' : '\x1b[') + c;
-  const KEYS = {
-    esc: () => '\x1b', tab: () => '\t', bs: () => '\x7f',
-    up: () => cursorKey('A'), down: () => cursorKey('B'), right: () => cursorKey('C'), left: () => cursorKey('D'),
-    home: () => '\x1b[H', end: () => '\x1b[F', pgup: () => '\x1b[5~', pgdn: () => '\x1b[6~',
-    '^c': () => '\x03', '^d': () => '\x04', '^z': () => '\x1a', '^l': () => '\x0c',
-  };
+  // xterm 修饰键参数: 1 + Shift(1) + Alt(2) + Ctrl(4)
+  const modParam = () => 1 + (mods.shift ? 1 : 0) + (mods.alt ? 2 : 0) + (mods.ctrl ? 4 : 0);
+  const CURSOR = { up: 'A', down: 'B', right: 'C', left: 'D', home: 'H', end: 'F' };
+  const TILDE = { pgup: 5, pgdn: 6 };
+
+  // 特殊键按下时生成要发送的字节 (含修饰键)
+  function keySeq(k) {
+    const m = modParam();
+    let out;
+    if (CURSOR[k]) {
+      const c = CURSOR[k];
+      if (m > 1) out = `\x1b[1;${m}${c}`;
+      else if ('ABCD'.includes(c) && active && active.term.modes.applicationCursorKeysMode) out = '\x1bO' + c;
+      else out = '\x1b[' + c;
+    } else if (TILDE[k]) {
+      out = m > 1 ? `\x1b[${TILDE[k]};${m}~` : `\x1b[${TILDE[k]}~`;
+    } else if (k === 'tab') {
+      out = mods.shift ? '\x1b[Z' : '\t'; // Shift+Tab (反向 Tab，Claude Code 切换模式)
+      if (mods.alt) out = '\x1b' + out;
+    } else if (k === 'esc') {
+      out = '\x1b';
+    } else if (k === 'bs') {
+      out = mods.alt ? '\x1b\x7f' : mods.ctrl ? '\x08' : '\x7f';
+    } else {
+      out = { '^c': '\x03', '^d': '\x04', '^z': '\x1a', '^l': '\x0c' }[k];
+    }
+    clearMods();
+    return out;
+  }
 
   // 输入框里常驻一个零宽字符作为「哨兵」：
   // 这样空输入框里按退格也会产生 input 事件，可以可靠地发送 ⌫
@@ -937,7 +963,8 @@
       if (text) sendKeys(text);
       return;
     }
-    if (KEYS[k]) sendKeys(applyMods(KEYS[k]()));
+    const seq = keySeq(k);
+    if (seq) sendKeys(seq);
   });
 
   function updateMobileBar() {
