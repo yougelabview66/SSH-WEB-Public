@@ -60,6 +60,7 @@
   async function boot() {
     app.classList.remove('hidden');
     await loadHosts();
+    await restoreSessions();
   }
 
   // ------------------------------------------------------------ 主机列表
@@ -217,11 +218,17 @@
     selectionBackground: 'rgba(148,163,184,.35)',
   };
 
-  function openSession(params, title, connType) {
+  // restore: 服务端已有的后台会话信息 (刷新 / 重新打开浏览器时恢复)
+  function openSession(params, title, connType, restore) {
     $('#empty').classList.add('hidden');
     const s = { id: Math.random().toString(36).slice(2), params, title, connType };
-    const h = params.hostId ? hosts.find((x) => x.id === params.hostId) : params;
-    s.histHost = h ? histHostLabel(h) : title;
+    if (restore) {
+      s.remoteId = restore.id;
+      s.histHost = restore.histHost;
+    } else {
+      const h = params.hostId ? hosts.find((x) => x.id === params.hostId) : params;
+      s.histHost = h ? histHostLabel(h) : title;
+    }
 
     s.el = document.createElement('div');
     s.el.className = 'term';
@@ -269,11 +276,17 @@
     s.tab.className = 'tab';
     s.tab.innerHTML = '<span class="dot"></span><span class="title"></span><button class="x" title="关闭">×</button>';
     // 同一主机打开多个标签时编号: 家里 NAS、家里 NAS (2)…
-    const used = new Set(sessions.filter((x) => x.baseTitle === title).map((x) => x.n));
-    s.baseTitle = title;
-    s.n = 1;
-    while (used.has(s.n)) s.n++;
-    if (s.n > 1) s.title = title = `${title} (${s.n})`;
+    if (restore) {
+      const m = /^(.*) \((\d+)\)$/.exec(title);
+      s.baseTitle = m ? m[1] : title;
+      s.n = m ? +m[2] : 1;
+    } else {
+      const used = new Set(sessions.filter((x) => x.baseTitle === title).map((x) => x.n));
+      s.baseTitle = title;
+      s.n = 1;
+      while (used.has(s.n)) s.n++;
+      if (s.n > 1) s.title = title = `${title} (${s.n})`;
+    }
     $('.title', s.tab).textContent = title;
     s.tab.title = title;
     s.tab.addEventListener('click', (e) => {
@@ -284,8 +297,9 @@
     $('#tabs').appendChild(s.tab);
 
     sessions.push(s);
-    activate(s);
+    if (!restore) activate(s);
     connect(s);
+    return s;
   }
 
   function setStatus(s, st) {
@@ -297,71 +311,149 @@
     if (s.ws && s.ws.readyState === WebSocket.OPEN) s.ws.send(JSON.stringify(obj));
   }
 
+  // 打开 WebSocket 并挂载到后台会话：已有会话用 attach，新连接用 connect
   function connect(s) {
-    s.reconnectBtn?.remove();
+    clearTimeout(s.retryTimer);
+    hideReconnect(s);
     setStatus(s, 'wait');
-    s.fit.fit();
-    const via = s.connType === 'cloudflare' ? ' (Cloudflare 隧道)' : '';
-    s.term.write(`\r\n\x1b[90m正在连接 ${s.title}${via} ...\x1b[0m\r\n`);
+    if (s.box.clientWidth) s.fit.fit();
 
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     const ws = new WebSocket(`${proto}://${location.host}/ws`);
     ws.binaryType = 'arraybuffer';
     s.ws = ws;
+    const size = s.box.clientWidth ? { cols: s.term.cols, rows: s.term.rows } : {};
 
     ws.onopen = () => {
-      ws.send(JSON.stringify({ type: 'connect', ...s.params, cols: s.term.cols, rows: s.term.rows }));
+      s.retries = 0;
+      if (s.remoteId) {
+        ws.send(JSON.stringify({ type: 'attach', id: s.remoteId, ...size }));
+      } else {
+        ws.send(JSON.stringify({ type: 'connect', ...s.params, title: s.title, histHost: s.histHost, ...size }));
+      }
       // 应用层心跳，避免 Cloudflare / 反向代理 100 秒空闲断开
+      clearInterval(s.ping);
       s.ping = setInterval(() => send(s, { type: 'ping' }), 25000);
     };
     ws.onmessage = (ev) => {
+      if (s.ws !== ws) return;
       if (ev.data instanceof ArrayBuffer) {
         s.term.write(new Uint8Array(ev.data), () => checkCapture(s));
         return;
       }
       let m;
       try { m = JSON.parse(ev.data); } catch { return; }
-      if (m.type === 'status' && m.status === 'connected') {
-        setStatus(s, 'ok');
-        s.sid = m.sid;
+      if (m.type === 'attached') {
+        const isNew = !s.remoteId;
+        s.remoteId = m.session.id;
+        s.params = m.session.params || s.params;
+        if (isNew) saveTabOrder();
+        if (active === s) saveActive();
+      } else if (m.type === 'snapshot') {
+        // 还原服务端保存的画面和滚动记录
+        s.term.reset();
+        s.term.write(m.data);
+        if (active === s) syncSize(s);
+      } else if (m.type === 'status') {
+        s.sid = m.status === 'connected' ? m.sid : null;
+        setStatus(s, m.status === 'connected' ? 'ok' : m.status === 'connecting' ? 'wait' : 'bad');
+        if (m.status === 'closed') showReconnect(s, '重新连接');
+        else hideReconnect(s);
         updateSftpBtn();
-        if (s.sftp && s.sftp.open) s.sftp.load(s.sftp.path);
-        focusTerm(s);
+        if (m.status === 'connected') {
+          if (s.sftp && s.sftp.open) s.sftp.load(s.sftp.path);
+          if (active === s) focusTerm(s);
+        }
       } else if (m.type === 'hostkey') {
         activate(s);
-        hostkeyDialog(m).then((accept) => send(s, { type: 'hostkey-response', accept }));
+        hostkeyDialog(m, s.id).then((accept) => { if (accept != null) send(s, { type: 'hostkey-response', accept }); });
       } else if (m.type === 'prompt') {
         activate(s);
-        promptDialog(m).then((answers) =>
-          send(s, answers ? { type: 'prompt-response', answers } : { type: 'prompt-response', cancel: true }));
-      } else if (m.type === 'fingerprint') {
-        s.term.write(`\x1b[90m主机指纹: ${m.value}\x1b[0m\r\n`);
-      } else if (m.type === 'info') {
-        s.term.write(`\x1b[90m${m.message}\x1b[0m\r\n`);
+        promptDialog(m, s.id).then((answers) => {
+          if (answers === undefined) return; // 已在其他设备上回答
+          send(s, answers ? { type: 'prompt-response', answers } : { type: 'prompt-response', cancel: true });
+        });
+      } else if (m.type === 'prompt-done') {
+        dismissDialog(s.id);
       } else if (m.type === 'error') {
-        s.term.write(`\r\n\x1b[31m✖ ${m.message}\x1b[0m\r\n`);
         setStatus(s, 'bad');
+        // 会话创建前的错误 (参数无效 / 数量上限) 服务端不会写入终端
+        if (!s.remoteId) {
+          s.term.write(`\r\n\x1b[31m✖ ${m.message}\x1b[0m\r\n`);
+          showReconnect(s, '重试');
+        }
+      } else if (m.type === 'terminated') {
+        // 在其他设备上关闭了这个标签
+        closeSession(s, true);
+      } else if (m.type === 'gone') {
+        // 服务端没有这个会话了 (服务重启过)
+        s.remoteId = null;
+        s.sid = null;
+        setStatus(s, 'bad');
+        updateSftpBtn();
+        s.term.write('\r\n\x1b[33m后台会话已不存在 (服务可能重启过)\x1b[0m\r\n');
+        showReconnect(s, '重新连接');
       }
     };
     ws.onclose = () => {
       clearInterval(s.ping);
-      if (s.closed) return;
+      if (s.closed || s.ws !== ws) return;
       s.sid = null;
       updateSftpBtn();
-      setStatus(s, 'bad');
-      s.term.write('\r\n\x1b[33m连接已断开\x1b[0m\r\n');
-      showReconnect(s);
+      setStatus(s, 'wait');
+      if (!s.remoteId) { showReconnect(s, '重试'); return; }
+      // 网络断开：后台会话仍在，自动重新挂载
+      const delay = Math.min(1000 * 2 ** (s.retries || 0), 10000);
+      s.retries = (s.retries || 0) + 1;
+      if (s.retries > 3) showReconnect(s, '正在重新连接… 点击立即重试');
+      s.retryTimer = setTimeout(() => connect(s), delay);
     };
   }
 
-  function showReconnect(s) {
-    if (s.reconnectBtn) return;
-    const b = document.createElement('button');
-    b.className = 'primary reconnect';
-    b.textContent = '重新连接';
-    b.onclick = () => connect(s);
-    s.box.appendChild(b);
-    s.reconnectBtn = b;
+  // 让服务端终端尺寸与当前显示一致 (其他设备可能改过尺寸)
+  function syncSize(s) {
+    if (!s.box.clientWidth) return;
+    s.fit.fit();
+    send(s, { type: 'resize', cols: s.term.cols, rows: s.term.rows });
+  }
+
+  function showReconnect(s, text) {
+    if (!s.reconnectBtn) {
+      const b = document.createElement('button');
+      b.className = 'primary reconnect';
+      b.onclick = () => {
+        if (s.remoteId && s.ws && s.ws.readyState === WebSocket.OPEN) send(s, { type: 'reconnect' });
+        else connect(s);
+      };
+      s.box.appendChild(b);
+      s.reconnectBtn = b;
+    }
+    s.reconnectBtn.textContent = text;
+  }
+
+  function hideReconnect(s) {
+    s.reconnectBtn?.remove();
+    s.reconnectBtn = null;
+  }
+
+  // 标签顺序与当前标签保存起来，重新打开时恢复
+  function saveTabOrder() {
+    const ids = sessions.map((x) => x.remoteId).filter(Boolean);
+    if (ids.length) api('PUT', '/api/sessions/order', { ids }).catch(() => {});
+  }
+
+  function saveActive() {
+    try { if (active && active.remoteId) localStorage.setItem('sshweb.active', active.remoteId); } catch {}
+  }
+
+  async function restoreSessions() {
+    let list = [];
+    try { list = await api('GET', '/api/sessions'); } catch { return; }
+    if (!list.length) return;
+    let want = null;
+    try { want = localStorage.getItem('sshweb.active'); } catch {}
+    const opened = list.map((info) => openSession(info.params || {}, info.title, info.connType, info));
+    activate(opened.find((x) => x.remoteId === want) || opened[opened.length - 1]);
   }
 
   function activate(s) {
@@ -370,17 +462,25 @@
       x.el.classList.toggle('active', x === s);
       x.tab.classList.toggle('active', x === s);
     });
-    requestAnimationFrame(() => { s.fit.fit(); focusTerm(s); });
+    requestAnimationFrame(() => { syncSize(s); focusTerm(s); });
     s.tab.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     updateSftpBtn();
     updateMobileBar();
+    saveActive();
     document.title = active ? `${active.title} - SSH-WEB` : 'SSH-WEB';
   }
 
-  function closeSession(s) {
+  // remote: 会话已在服务端结束 (其他设备关闭)，只移除本地标签
+  function closeSession(s, remote) {
     s.closed = true;
     clearInterval(s.ping);
+    clearTimeout(s.retryTimer);
     if (s.mon) clearTimeout(s.mon.timer);
+    // 结束后台会话 (断开 SSH)
+    if (!remote && s.remoteId) {
+      if (s.ws && s.ws.readyState === WebSocket.OPEN) send(s, { type: 'close' });
+      else api('DELETE', '/api/sessions/' + s.remoteId).catch(() => {});
+    }
     try { s.ws && s.ws.close(); } catch {}
     s.ro.disconnect();
     s.term.dispose();
@@ -397,17 +497,21 @@
     document.title = active ? `${active.title} - SSH-WEB` : 'SSH-WEB';
   }
 
-  window.addEventListener('beforeunload', (e) => {
-    if (sessions.some((s) => s.ws && s.ws.readyState === WebSocket.OPEN)) e.preventDefault();
-  });
+  // 会话在后台保持，关闭 / 刷新页面不需要确认
 
   // ------------------------------------------------------------ 通用对话框
   const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   let dialogQueue = Promise.resolve();
+  let curDialog = null;
 
-  // buttons: [{ label, value, cls, submit }]，返回 { value, form }
-  function dialog(title, html, buttons) {
+  // 同一会话的验证在其他设备上完成时，关闭本地弹窗
+  function dismissDialog(tag) {
+    if (curDialog && curDialog.tag === tag) curDialog.dismiss();
+  }
+
+  // buttons: [{ label, value, cls, submit }]，返回 { value, form }；被 dismiss 时返回 { dismissed: true }
+  function dialog(title, html, buttons, tag) {
     const run = () => new Promise((resolve) => {
       const dlg = $('#dialog');
       const f = $('#dialogForm');
@@ -415,12 +519,14 @@
       $('#dialogBody').innerHTML = html;
       const acts = $('#dialogActions');
       acts.innerHTML = '';
-      const finish = (value) => {
+      const finish = (value, dismissed) => {
+        curDialog = null;
         dlg.classList.add('hidden');
         f.onsubmit = null;
         document.removeEventListener('keydown', onKey, true);
-        resolve({ value, form: f });
+        resolve({ value, form: f, dismissed });
       };
+      curDialog = { tag, dismiss: () => finish(null, true) };
       const onKey = (e) => {
         if (e.key === 'Escape' && !dlg.classList.contains('hidden')) {
           e.stopPropagation();
@@ -449,7 +555,7 @@
   }
 
   // keyboard-interactive / TOTP 验证码
-  async function promptDialog(m) {
+  async function promptDialog(m, tag) {
     let html = '';
     if (m.instructions) html += `<p class="muted">${esc(m.instructions)}</p>`;
     m.prompts.forEach((pr, i) => {
@@ -459,13 +565,14 @@
     const r = await dialog(m.title || '服务器要求验证', html, [
       { label: '取消', value: false, cancel: true },
       { label: '确定', value: true, cls: 'primary', submit: true },
-    ]);
+    ], tag);
+    if (r.dismissed) return undefined;
     if (!r.value) return null;
     return m.prompts.map((_, i) => r.form.elements['a' + i].value);
   }
 
   // 主机指纹确认
-  async function hostkeyDialog(m) {
+  async function hostkeyDialog(m, tag) {
     let html;
     let buttons;
     if (m.status === 'changed') {
@@ -487,7 +594,8 @@
         { label: '信任并连接', value: true, cls: 'primary', submit: true },
       ];
     }
-    const r = await dialog(m.status === 'changed' ? '主机指纹不匹配' : '确认主机指纹', html, buttons);
+    const r = await dialog(m.status === 'changed' ? '主机指纹不匹配' : '确认主机指纹', html, buttons, tag);
+    if (r.dismissed) return null;
     return !!r.value;
   }
 
@@ -1369,6 +1477,7 @@
       const order = [...tabsEl.children];
       sessions.sort((a, b) => order.indexOf(a.tab) - order.indexOf(b.tab));
       activate(drag.s);
+      saveTabOrder();
     }
     drag = null;
   }

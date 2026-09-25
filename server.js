@@ -21,6 +21,8 @@ const { WebSocket, WebSocketServer, createWebSocketStream } = require('ws');
 const { Client } = require('ssh2');
 const registerSftp = require('./lib/sftp');
 const registerMonitor = require('./lib/monitor');
+const { Terminal: HeadlessTerminal } = require('@xterm/headless');
+const { SerializeAddon } = require('@xterm/addon-serialize');
 
 // ---------------------------------------------------------------- 配置
 const PORT = parseInt(process.env.PORT || '8888', 10);
@@ -41,6 +43,10 @@ const SSH_KEEPALIVE = parseInt(process.env.SSH_KEEPALIVE || '15000', 10);
 //                  off = 不校验 (不推荐)
 const HOSTKEY_POLICY = ['ask', 'accept-new', 'off'].includes(process.env.HOSTKEY_POLICY)
   ? process.env.HOSTKEY_POLICY : 'ask';
+// 后台会话: 无人挂载超过多少小时自动关闭 (0 = 永不)；最多同时保留的会话数；每个会话保留的滚动行数
+const BG_TIMEOUT_HOURS = parseFloat(process.env.BG_TIMEOUT_HOURS || '0') || 0;
+const MAX_SESSIONS = parseInt(process.env.MAX_SESSIONS || '30', 10);
+const SCROLLBACK = parseInt(process.env.SCROLLBACK || '5000', 10);
 // 等待用户输入验证码 / 确认指纹的最长时间
 const USER_INPUT_TIMEOUT = 5 * 60 * 1000;
 
@@ -396,10 +402,31 @@ app.delete('/api/history', (req, res) => {
   res.json({ ok: true });
 });
 
-// 活动的 SSH 会话，sid -> { ssh, sftpPromise }，供 SFTP 接口复用连接
+// 后台会话 id -> Session；SFTP / 监控复用已连接会话的 SSH 连接
 const sessions = new Map();
-registerSftp(app, (sid) => sessions.get(sid));
-registerMonitor(app, (sid) => sessions.get(sid));
+const liveSession = (sid) => {
+  const s = sessions.get(sid);
+  return s && s.status === 'connected' && s.ssh ? s : null;
+};
+registerSftp(app, liveSession);
+registerMonitor(app, liveSession);
+
+app.get('/api/sessions', (req, res) => {
+  res.json([...sessions.values()].sort((a, b) => a.order - b.order).map((s) => s.info()));
+});
+
+// 保存标签顺序
+app.put('/api/sessions/order', (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+  ids.forEach((id, i) => { const s = sessions.get(String(id)); if (s) s.order = i; });
+  res.json({ ok: true });
+});
+
+app.delete('/api/sessions/:id', (req, res) => {
+  const s = sessions.get(req.params.id);
+  if (s) s.terminate();
+  res.json({ ok: true });
+});
 
 app.get('/healthz', (req, res) => res.send('ok'));
 
@@ -435,136 +462,181 @@ server.on('upgrade', (req, socket, head) => {
   }
 });
 
-wss.on('connection', (ws, req) => {
-  // 仅用于日志
-  const clientIp = req.headers['cf-connecting-ip'] ||
-    req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket.remoteAddress;
-  const sid = crypto.randomUUID();
-  let ssh = null;
-  let stream = null;
-  let tunnel = null;
-  let started = false;
-  let failed = false;
-  let timer = null;
-  let pending = null; // 正在等待浏览器回应的请求 { type, resolve }
+// ---------------------------------------------------------------- 后台会话
+// SSH 连接由服务端持有，浏览器只是「挂载」上来查看和操作：
+// 关闭浏览器 / 断网后会话继续在后台运行；重新打开时用无界面终端 (@xterm/headless) 的序列化结果还原画面。
+class Session {
+  constructor(cfg, meta) {
+    this.id = crypto.randomUUID();
+    this.cfg = cfg; // 含凭据，只保存在内存中，用于重新连接
+    this.title = String(meta.title || `${cfg.username}@${cfg.host}`).slice(0, 100);
+    this.histHost = String(meta.histHost || '').slice(0, 300);
+    this.hostId = meta.hostId || null;
+    this.clientIp = meta.clientIp;
+    this.cols = clampSize(meta.cols, 80);
+    this.rows = clampSize(meta.rows, 24);
+    this.created = Date.now();
+    this.detachedAt = Date.now();
+    this.order = Date.now();
+    this.status = 'closed';
+    this.clients = new Set();
+    this.term = new HeadlessTerminal({ cols: this.cols, rows: this.rows, scrollback: SCROLLBACK, allowProposedApi: true });
+    this.serializer = new SerializeAddon();
+    this.term.loadAddon(this.serializer);
+    this.ssh = this.stream = this.tunnel = null;
+    this.pending = null;
+    this.timer = null;
+    this.sftpPromise = null;
+    this.monPrev = null;
+    this.attempt = 0;
+  }
 
-  const sendCtl = (obj) => {
+  info() {
+    const c = this.cfg;
+    return {
+      id: this.id, title: this.title, histHost: this.histHost, status: this.status,
+      connType: c.connType, created: this.created, order: this.order, clients: this.clients.size,
+      // 服务器重启后用于重新创建会话 (不含凭据)
+      params: this.hostId ? { hostId: this.hostId }
+        : { host: c.rawHost, port: c.port, username: c.username, connType: c.connType, cfClientId: c.cfClientId },
+    };
+  }
+
+  sendTo(ws, obj) {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj));
-  };
-  const sendData = (buf) => {
-    if (ws.readyState === ws.OPEN) ws.send(buf, { binary: true });
-  };
-  const cleanup = () => {
-    clearTimeout(timer);
-    pending = null;
-    sessions.delete(sid);
-    try { stream && stream.close(); } catch {}
-    try { ssh && ssh.end(); } catch {}
-    try { tunnel && tunnel.terminate(); } catch {}
-    stream = null;
-    ssh = null;
-    tunnel = null;
-  };
+  }
+
+  broadcast(obj) {
+    for (const ws of this.clients) this.sendTo(ws, obj);
+  }
+
+  // 终端输出：写入无界面终端 (用于还原) 并转发给所有挂载的浏览器
+  output(buf) {
+    this.term.write(buf);
+    for (const ws of this.clients) {
+      if (ws.syncBuf) ws.syncBuf.push(buf);
+      else if (ws.readyState === ws.OPEN) ws.send(buf, { binary: true });
+    }
+  }
+
+  line(text) {
+    this.output(Buffer.from(text + '\r\n'));
+  }
+
+  attach(ws) {
+    this.clients.add(ws);
+    ws.session = this;
+    // 先缓存挂载期间的新输出，等快照发出后再补发，保证不丢不重
+    ws.syncBuf = [];
+    this.sendTo(ws, { type: 'attached', session: this.info() });
+    this.term.write('', () => {
+      this.sendTo(ws, { type: 'snapshot', data: this.serializer.serialize() });
+      const buf = ws.syncBuf;
+      ws.syncBuf = null;
+      for (const b of buf) if (ws.readyState === ws.OPEN) ws.send(b, { binary: true });
+      this.sendTo(ws, { type: 'status', status: this.status, sid: this.status === 'connected' ? this.id : null });
+      if (this.pending) this.sendTo(ws, { type: this.pending.type, ...this.pending.payload });
+    });
+  }
+
+  detach(ws) {
+    if (!this.clients.delete(ws)) return;
+    if (!this.clients.size) this.detachedAt = Date.now();
+  }
+
+  setStatus(status) {
+    this.status = status;
+    this.broadcast({ type: 'status', status, sid: status === 'connected' ? this.id : null });
+  }
+
+  write(data) {
+    if (this.stream) this.stream.write(data);
+  }
+
+  resize(cols, rows) {
+    cols = clampSize(cols, 0);
+    rows = clampSize(rows, 0);
+    if (!cols || !rows || (cols === this.cols && rows === this.rows)) return;
+    this.cols = cols;
+    this.rows = rows;
+    this.term.resize(cols, rows);
+    if (this.stream) this.stream.setWindow(rows, cols, 0, 0);
+  }
 
   // 握手超时计时；等待用户输入时换成更长的计时
-  const armTimeout = (ms, message) => {
-    clearTimeout(timer);
-    timer = setTimeout(() => fail(message), ms);
-  };
+  armTimeout(ms, message) {
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => this.fail(message), ms);
+  }
 
-  // 向浏览器提问 (验证码 / 指纹确认)，返回 Promise
-  const ask = (type, payload) => new Promise((resolve) => {
-    armTimeout(USER_INPUT_TIMEOUT, '等待输入超时');
-    pending = { type, resolve };
-    sendCtl({ type, ...payload });
-  }).finally(() => armTimeout(SSH_READY_TIMEOUT, '连接超时'));
+  // 向浏览器提问 (验证码 / 指纹确认)；没有浏览器挂载时等待，挂载后补发
+  ask(type, payload) {
+    return new Promise((resolve) => {
+      this.armTimeout(USER_INPUT_TIMEOUT, '等待输入超时');
+      this.pending = { type, payload, resolve };
+      this.broadcast({ type, ...payload });
+    }).finally(() => { if (this.status === 'connecting') this.armTimeout(SSH_READY_TIMEOUT, '连接超时'); });
+  }
 
-  // WebSocket 心跳，防止 NAS 反代 / 路由器掐断空闲连接
-  ws.isAlive = true;
-  ws.on('pong', () => { ws.isAlive = true; });
-
-  ws.on('message', (raw, isBinary) => {
-    if (isBinary) {
-      if (stream) stream.write(raw);
-      return;
+  answer(msg) {
+    if (this.pending && this.pending.type + '-response' === msg.type) {
+      const { resolve } = this.pending;
+      this.pending = null;
+      this.broadcast({ type: 'prompt-done' }); // 其他浏览器关闭弹窗
+      resolve(msg);
     }
-    let msg;
-    try { msg = JSON.parse(raw.toString()); } catch { return; }
-    if (!msg || typeof msg !== 'object') return;
+  }
 
-    switch (msg.type) {
-      case 'connect':
-        if (started) return;
-        started = true;
-        startSsh(msg);
-        break;
-      case 'data':
-        if (stream && typeof msg.data === 'string') stream.write(msg.data);
-        break;
-      case 'resize': {
-        const cols = Math.min(Math.max(parseInt(msg.cols, 10) || 0, 0), 1000);
-        const rows = Math.min(Math.max(parseInt(msg.rows, 10) || 0, 0), 1000);
-        if (stream && cols && rows) stream.setWindow(rows, cols, 0, 0);
-        break;
-      }
-      case 'prompt-response':
-      case 'hostkey-response':
-        if (pending && pending.type + '-response' === msg.type) {
-          const { resolve } = pending;
-          pending = null;
-          resolve(msg);
-        }
-        break;
-      case 'ping':
-        sendCtl({ type: 'pong' });
-        break;
-    }
-  });
+  closeConn() {
+    clearTimeout(this.timer);
+    this.pending = null;
+    try { this.stream && this.stream.close(); } catch {}
+    try { this.ssh && this.ssh.end(); } catch {}
+    try { this.tunnel && this.tunnel.terminate(); } catch {}
+    this.stream = this.ssh = this.tunnel = null;
+    this.sftpPromise = null;
+    this.monPrev = null;
+  }
 
-  ws.on('close', cleanup);
-  ws.on('error', cleanup);
+  fail(message) {
+    if (this.status === 'closed') return;
+    this.closeConn();
+    this.line(`\r\n\x1b[31m✖ ${message}\x1b[0m`);
+    this.broadcast({ type: 'error', message });
+    this.setStatus('closed');
+  }
 
-  function startSsh(msg) {
-    let cfg = {
-      host: String(msg.host || '').trim(),
-      port: parseInt(msg.port, 10) || 22,
-      username: String(msg.username || '').trim(),
-      password: str(msg.password),
-      privateKey: str(msg.privateKey),
-      passphrase: str(msg.passphrase),
-      connType: msg.connType === 'cloudflare' ? 'cloudflare' : 'direct',
-      cfClientId: str(msg.cfClientId),
-      cfClientSecret: str(msg.cfClientSecret),
-    };
+  ended() {
+    if (this.status === 'closed') return;
+    this.closeConn();
+    this.line('\r\n\x1b[33m连接已断开\x1b[0m');
+    this.setStatus('closed');
+  }
 
-    // 使用已保存的主机：从服务端读取加密的凭据，浏览器端拿不到
-    if (msg.hostId) {
-      const h = readHosts().find((x) => x.id === msg.hostId);
-      if (!h) return fail('保存的主机不存在');
-      cfg = {
-        host: h.host,
-        port: h.port,
-        username: h.username,
-        password: str(msg.password) || decrypt(h.password),
-        privateKey: str(msg.privateKey) || decrypt(h.privateKey),
-        passphrase: str(msg.passphrase) || decrypt(h.passphrase),
-        connType: h.connType || 'direct',
-        cfClientId: h.cfClientId || '',
-        cfClientSecret: decrypt(h.cfClientSecret),
-      };
-    }
+  // 用户关闭标签：彻底结束
+  terminate() {
+    this.status = 'closed';
+    this.closeConn();
+    sessions.delete(this.id);
+    this.broadcast({ type: 'terminated' });
+    for (const ws of this.clients) ws.session = null;
+    this.clients.clear();
+    this.term.dispose();
+  }
 
-    if (!cfg.host || !cfg.username) return fail('主机和用户名不能为空');
-    if (cfg.connType === 'cloudflare') {
-      cfg.host = normalizeCfHost(cfg.host);
-      if (!cfg.host) return fail('Cloudflare 隧道主机名无效');
-    }
-    const checkHost = cfg.connType === 'cloudflare' ? cfHostname(cfg.host) : cfg.host;
-    if (!checkHost || !hostAllowed(checkHost)) return fail(`不允许连接主机 ${checkHost || cfg.host}（ALLOWED_HOSTS 限制）`);
+  connect() {
+    if (this.status !== 'closed') return;
+    const cfg = this.cfg;
+    const attempt = ++this.attempt;
+    const alive = () => attempt === this.attempt && this.status === 'connecting';
+    this.status = 'connecting';
+    this.setStatus('connecting');
     const knownKey = cfg.connType === 'cloudflare' ? `cf:${cfg.host}` : `${cfg.host}:${cfg.port}`;
     const target = cfg.connType === 'cloudflare' ? `${cfg.host} (Cloudflare 隧道)` : `${cfg.host}:${cfg.port}`;
+    this.line(`\r\n\x1b[90m正在连接 ${this.title} (${cfg.username}@${target}) ...\x1b[0m`);
 
-    ssh = new Client();
+    const ssh = new Client();
+    this.ssh = ssh;
     const connectOpts = {
       host: cfg.host,
       port: cfg.port,
@@ -584,10 +656,10 @@ wss.on('connection', (ws, req) => {
     if (cfg.password) connectOpts.password = cfg.password;
 
     // 主机指纹校验 (类似 OpenSSH 的 known_hosts)
-    async function verifyHostKey(key) {
+    const verifyHostKey = async (key) => {
       const fp = fingerprint(key);
       const type = keyType(key);
-      sendCtl({ type: 'fingerprint', value: `${type} ${fp}` });
+      this.line(`\x1b[90m主机指纹: ${type} ${fp}\x1b[0m`);
       if (HOSTKEY_POLICY === 'off') return true;
 
       const known = readKnown();
@@ -603,7 +675,7 @@ wss.on('connection', (ws, req) => {
         save();
         return true;
       }
-      const r = await ask('hostkey', {
+      const r = await this.ask('hostkey', {
         status: old ? 'changed' : 'new',
         host: target,
         keyType: type,
@@ -611,13 +683,14 @@ wss.on('connection', (ws, req) => {
         oldKeyType: old?.keyType,
         oldFingerprint: old?.fingerprint,
       });
+      if (!alive()) return false;
       if (!r.accept) {
-        fail(old ? '主机指纹不匹配，已拒绝连接' : '已取消：未信任主机指纹');
+        this.fail(old ? '主机指纹不匹配，已拒绝连接' : '已取消：未信任主机指纹');
         return false;
       }
       save();
       return true;
-    }
+    };
 
     // keyboard-interactive: 密码提示自动用已保存密码应答一次，其余 (TOTP 验证码等) 交给用户输入
     let passwordAutoUsed = false;
@@ -634,72 +707,68 @@ wss.on('connection', (ws, req) => {
       const need = answers.map((a, i) => (a === null ? i : -1)).filter((i) => i >= 0);
       if (!need.length) return finish(answers);
 
-      ask('prompt', {
+      this.ask('prompt', {
         title: name || '',
         instructions: instructions || '',
         prompts: need.map((i) => ({ prompt: prompts[i].prompt, echo: !!prompts[i].echo })),
       }).then((r) => {
-        if (r.cancel || !Array.isArray(r.answers)) return fail('已取消认证');
+        if (!alive()) return;
+        if (r.cancel || !Array.isArray(r.answers)) return this.fail('已取消认证');
         need.forEach((idx, k) => { answers[idx] = String(r.answers[k] ?? ''); });
         finish(answers);
       });
     });
 
     ssh.on('ready', () => {
-      clearTimeout(timer);
-      console.log(`[${new Date().toISOString()}] ${clientIp} -> ${cfg.username}@${target} 已连接`);
-      sessions.set(sid, { ssh, sftpPromise: null });
-      sendCtl({ type: 'status', status: 'connected', sid });
-      ssh.shell(
-        {
-          term: 'xterm-256color',
-          cols: Math.min(parseInt(msg.cols, 10) || 80, 1000),
-          rows: Math.min(parseInt(msg.rows, 10) || 24, 1000),
-        },
-        (err, s) => {
-          if (err) return fail('打开 Shell 失败: ' + err.message);
-          stream = s;
-          s.on('data', sendData);
-          s.stderr.on('data', sendData);
-          s.on('close', () => {
-            sendCtl({ type: 'status', status: 'closed' });
-            cleanup();
-            ws.close();
-          });
-        }
-      );
+      if (!alive()) return;
+      clearTimeout(this.timer);
+      console.log(`[${new Date().toISOString()}] ${this.clientIp} -> ${cfg.username}@${target} 已连接`);
+      ssh.shell({ term: 'xterm-256color', cols: this.cols, rows: this.rows }, (err, stream) => {
+        if (!alive()) return;
+        if (err) return this.fail('打开 Shell 失败: ' + err.message);
+        this.stream = stream;
+        stream.on('data', (d) => this.output(d));
+        stream.stderr.on('data', (d) => this.output(d));
+        stream.on('close', () => { if (this.ssh === ssh) this.ended(); });
+        this.setStatus('connected');
+      });
     });
 
     ssh.on('error', (err) => {
-      if (!ssh) return; // 已经因拒绝指纹等原因清理过
+      if (this.ssh !== ssh) return;
       const hint = err.level === 'client-authentication' ? '认证失败，请检查用户名/密码/密钥/验证码' : err.message;
-      fail(hint);
+      if (this.status === 'connected') {
+        this.line(`\r\n\x1b[31m✖ ${hint}\x1b[0m`);
+        this.ended();
+      } else {
+        this.fail(hint);
+      }
     });
-    ssh.on('end', () => sendCtl({ type: 'status', status: 'closed' }));
+    ssh.on('close', () => { if (this.ssh === ssh) this.ended(); });
 
-    armTimeout(SSH_READY_TIMEOUT, '连接超时');
+    this.armTimeout(SSH_READY_TIMEOUT, '连接超时');
 
     if (cfg.connType === 'cloudflare') {
-      sendCtl({ type: 'info', message: `通过 Cloudflare 隧道连接 ${/^wss?:\/\//.test(cfg.host) ? cfg.host : 'wss://' + cfg.host} ...` });
-      openCloudflareTunnel(cfg)
+      this.line(`\x1b[90m通过 Cloudflare 隧道连接 ${/^wss?:\/\//.test(cfg.host) ? cfg.host : 'wss://' + cfg.host} ...\x1b[0m`);
+      this.openCloudflareTunnel(cfg)
         .then((sock) => {
-          if (!ssh) return sock.destroy();
+          if (!alive()) return sock.destroy();
           connectOpts.sock = sock;
           ssh.connect(connectOpts);
         })
-        .catch((e) => fail(e.message));
+        .catch((e) => { if (alive()) this.fail(e.message); });
       return;
     }
 
     try {
       ssh.connect(connectOpts);
     } catch (e) {
-      fail(e.message);
+      this.fail(e.message);
     }
   }
 
   // 与 cloudflared access ssh 相同: 以 WebSocket 连接隧道主机名，SSH 原始字节走二进制帧
-  function openCloudflareTunnel(cfg) {
+  openCloudflareTunnel(cfg) {
     return new Promise((resolve, reject) => {
       const headers = { 'User-Agent': 'cloudflared/ssh-web' };
       if (cfg.cfClientId && cfg.cfClientSecret) {
@@ -713,7 +782,7 @@ wss.on('connection', (ws, req) => {
         followRedirects: false,
         perMessageDeflate: false,
       });
-      tunnel = t;
+      this.tunnel = t;
       let settled = false;
       t.on('unexpected-response', (req, res) => {
         settled = true;
@@ -739,20 +808,142 @@ wss.on('connection', (ws, req) => {
           reject(new Error('Cloudflare 隧道连接失败: ' + e.message));
         }
       });
-      t.on('close', () => {
-        if (ssh) sendCtl({ type: 'status', status: 'closed' });
-      });
     });
   }
+}
 
-  function fail(message) {
-    if (failed) return;
-    failed = true;
-    sendCtl({ type: 'error', message });
-    cleanup();
-    setTimeout(() => ws.close(), 200);
+function clampSize(v, def) {
+  const n = parseInt(v, 10);
+  return n > 0 ? Math.min(n, 1000) : def;
+}
+
+// 根据浏览器传来的参数生成连接配置；已保存的主机从服务端读取加密凭据
+function buildConfig(msg) {
+  let cfg = {
+    host: String(msg.host || '').trim(),
+    port: parseInt(msg.port, 10) || 22,
+    username: String(msg.username || '').trim(),
+    password: str(msg.password),
+    privateKey: str(msg.privateKey),
+    passphrase: str(msg.passphrase),
+    connType: msg.connType === 'cloudflare' ? 'cloudflare' : 'direct',
+    cfClientId: str(msg.cfClientId),
+    cfClientSecret: str(msg.cfClientSecret),
+  };
+  if (msg.hostId) {
+    const h = readHosts().find((x) => x.id === msg.hostId);
+    if (!h) throw new Error('保存的主机不存在');
+    cfg = {
+      host: h.host,
+      port: h.port,
+      username: h.username,
+      password: str(msg.password) || decrypt(h.password),
+      privateKey: str(msg.privateKey) || decrypt(h.privateKey),
+      passphrase: str(msg.passphrase) || decrypt(h.passphrase),
+      connType: h.connType || 'direct',
+      cfClientId: h.cfClientId || '',
+      cfClientSecret: decrypt(h.cfClientSecret),
+    };
   }
+  if (!cfg.host || !cfg.username) throw new Error('主机和用户名不能为空');
+  cfg.rawHost = cfg.host;
+  if (cfg.connType === 'cloudflare') {
+    cfg.host = normalizeCfHost(cfg.host);
+    if (!cfg.host) throw new Error('Cloudflare 隧道主机名无效');
+  }
+  const checkHost = cfg.connType === 'cloudflare' ? cfHostname(cfg.host) : cfg.host;
+  if (!checkHost || !hostAllowed(checkHost)) throw new Error(`不允许连接主机 ${checkHost || cfg.host}（ALLOWED_HOSTS 限制）`);
+  return cfg;
+}
+
+wss.on('connection', (ws, req) => {
+  const clientIp = req.headers['cf-connecting-ip'] ||
+    req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket.remoteAddress;
+  const sendCtl = (obj) => {
+    if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj));
+  };
+
+  // WebSocket 心跳，防止 NAS 反代 / 路由器掐断空闲连接
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
+
+  ws.on('message', (raw, isBinary) => {
+    const sess = ws.session;
+    if (isBinary) {
+      if (sess) sess.write(raw);
+      return;
+    }
+    let msg;
+    try { msg = JSON.parse(raw.toString()); } catch { return; }
+    if (!msg || typeof msg !== 'object') return;
+
+    switch (msg.type) {
+      case 'connect': {
+        if (sess) return;
+        if (sessions.size >= MAX_SESSIONS) {
+          return sendCtl({ type: 'error', message: `会话数量已达上限 (${MAX_SESSIONS})，请先关闭不用的标签` });
+        }
+        let cfg;
+        try {
+          cfg = buildConfig(msg);
+        } catch (e) {
+          return sendCtl({ type: 'error', message: e.message });
+        }
+        const s = new Session(cfg, {
+          title: msg.title, histHost: msg.histHost, hostId: msg.hostId, cols: msg.cols, rows: msg.rows, clientIp,
+        });
+        sessions.set(s.id, s);
+        s.attach(ws);
+        s.connect();
+        break;
+      }
+      case 'attach': {
+        if (sess) return;
+        const s = sessions.get(String(msg.id));
+        if (!s) return sendCtl({ type: 'gone' });
+        s.resize(msg.cols, msg.rows);
+        s.attach(ws);
+        break;
+      }
+      case 'data':
+        if (sess && typeof msg.data === 'string') sess.write(msg.data);
+        break;
+      case 'resize':
+        if (sess) sess.resize(msg.cols, msg.rows);
+        break;
+      case 'reconnect':
+        if (sess) sess.connect();
+        break;
+      case 'close':
+        if (sess) sess.terminate();
+        break;
+      case 'prompt-response':
+      case 'hostkey-response':
+        if (sess) sess.answer(msg);
+        break;
+      case 'ping':
+        sendCtl({ type: 'pong' });
+        break;
+    }
+  });
+
+  const detach = () => { if (ws.session) ws.session.detach(ws); };
+  ws.on('close', detach);
+  ws.on('error', detach);
 });
+
+// 清理长时间无人挂载的会话
+setInterval(() => {
+  const now = Date.now();
+  for (const s of sessions.values()) {
+    if (s.clients.size) continue;
+    const idleH = (now - s.detachedAt) / 3600000;
+    if ((BG_TIMEOUT_HOURS > 0 && idleH > BG_TIMEOUT_HOURS) || (s.status === 'closed' && idleH > 24)) {
+      console.log(`[${new Date().toISOString()}] 清理后台会话 ${s.title}`);
+      s.terminate();
+    }
+  }
+}, 60 * 1000).unref();
 
 const heartbeat = setInterval(() => {
   wss.clients.forEach((ws) => {
@@ -770,7 +961,9 @@ server.listen(PORT, '0.0.0.0', () => {
   }
 });
 
+// 服务停止 (如更新容器) 时只断开连接，不通知浏览器关闭标签；重新启动后浏览器会提示会话已不存在并可重新连接
 const shutdown = () => {
+  for (const s of sessions.values()) s.closeConn();
   wss.clients.forEach((ws) => ws.close());
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 3000).unref();
