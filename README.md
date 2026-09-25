@@ -16,6 +16,7 @@
 - 密码 / 私钥（含私钥密码）/ keyboard-interactive 认证
 - **二次验证 (TOTP)**：服务器要求验证码时网页弹窗输入，密码仍自动填写
 - **主机指纹校验**：类似 OpenSSH known_hosts，首次连接确认指纹，指纹变化时红色警告
+- **历史命令**：自动记录执行过的命令，一键执行 / 填入 / 删除，手机和电脑共享
 - **SFTP 文件管理**：浏览、上传（拖拽 / 多文件 / 进度条）、下载、文件夹打包下载、新建、重命名、删除、终端 cd 到当前目录
 - **支持连接通过 Cloudflare Tunnel 暴露 SSH 的 NAS**（相当于内置了 `cloudflared access ssh`，支持 Access Service Token）
 - 主机列表（分组、搜索），凭据用 AES-256-GCM 加密保存在服务器，浏览器拿不到
@@ -61,9 +62,10 @@ docker run -d --name ssh-web --restart unless-stopped \
 | `TRUST_PROXY` | `loopback, linklocal, uniquelocal` | 信任哪些地址发来的 `X-Forwarded-For`（用于登录限流取真实 IP）。默认只信任内网地址（反向代理、cloudflared 容器），防止公网伪造 |
 | `SSH_READY_TIMEOUT` | `20000` | SSH 连接超时（毫秒） |
 | `SSH_KEEPALIVE` | `15000` | SSH keepalive 间隔（毫秒） |
+| `HISTORY_MAX` | `1000` | 历史命令最多保存条数 |
 | `HOSTKEY_POLICY` | `ask` | 主机指纹校验：`ask` 新主机和指纹变化都要确认；`accept-new` 新主机自动信任、变化时确认；`off` 不校验 |
 
-数据都在 `./data`：`hosts.json`（主机列表，密码加密）、`known_hosts.json`（已信任的主机指纹）和 `.secret`，备份这个目录即可。
+数据都在 `./data`：`hosts.json`（主机列表，密码加密）、`known_hosts.json`（已信任的主机指纹）、`history.json`（历史命令）和 `.secret`，备份这个目录即可。
 
 ## 手机使用
 
@@ -76,6 +78,23 @@ docker run -d --name ssh-web --restart unless-stopped \
 - 粘贴：通过 HTTPS 访问时直接读取剪贴板，HTTP 下浏览器不允许读取，会弹出输入框让你粘贴
 
 > 手机浏览器直接在 xterm.js 里打字会丢字、重复或不弹键盘，所以触屏设备改用这个输入栏。电脑端不受影响。
+
+## 历史命令
+
+点标签栏的「🕘 历史」（手机上也可以点输入栏上方的「历史」键）打开：
+
+- **执行**（或点命令本身）：直接运行；**填入**：只填到终端里，可以修改后再回车；**✕**：删除这一条
+- 默认只显示当前主机的记录，勾选「全部主机」查看所有；支持搜索；「清空」清除当前主机或全部记录
+- 记录保存在服务器 `data/history.json`，手机和电脑共享，同一主机的相同命令只保留一条并显示执行次数
+
+记录方式：按回车时读取终端上显示的这一行命令（去掉提示符），所以 Tab 补全、↑ 调出的命令都能正确记录。以下情况**不会**记录：
+
+- 以空格开头的命令（与 bash 的 `HISTCONTROL=ignorespace` 相同，适合含密码的命令）
+- 密码输入（sudo、`read -s` 等）以及 vim / top 等全屏程序里的输入
+- 提示符不是以 `$` `#` `%` `>` `❯` 加空格结尾的 shell
+- 网络延迟很大时，在上一条命令的回显出现之前就盲打并回车的下一条命令
+
+> 历史命令以明文保存，命令里如果带了密码，请在前面加一个空格，或执行后在历史里删除。
 
 ## 二次验证 (TOTP)
 

@@ -220,6 +220,8 @@
   function openSession(params, title, connType) {
     $('#empty').classList.add('hidden');
     const s = { id: Math.random().toString(36).slice(2), params, title, connType };
+    const h = params.hostId ? hosts.find((x) => x.id === params.hostId) : params;
+    s.histHost = h ? histHostLabel(h) : title;
 
     s.el = document.createElement('div');
     s.el.className = 'term';
@@ -248,7 +250,10 @@
     }
     s.ro = new ResizeObserver(() => { if (active === s) s.fit.fit(); });
     s.ro.observe(s.box);
-    s.term.onData((data) => send(s, { type: 'data', data }));
+    s.term.onData((data) => {
+      if (data === '\r') beginCapture(s);
+      send(s, { type: 'data', data });
+    });
     s.term.onResize(({ cols, rows }) => send(s, { type: 'resize', cols, rows }));
     // Ctrl+Shift+C / Ctrl+Shift+V 复制粘贴
     s.term.attachCustomKeyEventHandler((e) => {
@@ -304,7 +309,7 @@
     };
     ws.onmessage = (ev) => {
       if (ev.data instanceof ArrayBuffer) {
-        s.term.write(new Uint8Array(ev.data));
+        s.term.write(new Uint8Array(ev.data), () => checkCapture(s));
         return;
       }
       let m;
@@ -516,6 +521,7 @@
   const shellQuote = (x) => `'${x.replace(/'/g, `'\\''`)}'`;
 
   function updateSftpBtn() {
+    $('#btnHistory').classList.toggle('hidden', !active);
     const b = $('#btnSftp');
     b.classList.toggle('hidden', !active);
     b.disabled = !(active && active.sid);
@@ -787,6 +793,7 @@
     e.preventDefault();
     composing = false;
     flushInput();
+    if (active) beginCapture(active);
     sendKeys('\r');
   });
 
@@ -798,6 +805,7 @@
     if (b.dataset.mod) return setMod(b.dataset.mod, !mods[b.dataset.mod]);
     if (b.dataset.t) return sendKeys(applyMods(b.dataset.t));
     const k = b.dataset.k;
+    if (k === 'history') return openHistory();
     if (k === 'paste') {
       let text = '';
       try { text = await navigator.clipboard.readText(); } catch {}
@@ -822,6 +830,177 @@
     };
     vv.addEventListener('resize', onVV);
   }
+
+  // ------------------------------------------------------------ 历史命令
+  // 按回车时记下光标所在行，等回显到达 (光标换行) 后读取这一行，去掉提示符得到命令。
+  // 这样 Tab 补全、↑ 调出的历史命令都能正确记录；vim 等全屏程序 (备用缓冲区) 内不记录。
+  function histHostLabel(h) {
+    return h.connType === 'cloudflare' ? `${h.username}@${h.host}` : `${h.username}@${h.host}:${h.port || 22}`;
+  }
+
+  function readLogicalLine(buf, row) {
+    let start = row;
+    while (start > 0 && buf.getLine(start)?.isWrapped) start--;
+    let end = row;
+    while (buf.getLine(end + 1)?.isWrapped) end++;
+    let text = '';
+    for (let i = start; i <= end; i++) text += buf.getLine(i)?.translateToString(i === end) || '';
+    return text;
+  }
+
+  // 提示符以 $ # % > ❯ 加空格结尾，取第一个提示符之后的内容
+  function extractCommand(line) {
+    const m = /^.*?[$#%>❯]\s(.*)$/.exec(line || '');
+    if (!m) return '';
+    if (m[1].startsWith(' ')) return ''; // 以空格开头不记录 (同 bash HISTCONTROL=ignorespace)
+    return m[1].trim();
+  }
+
+  function beginCapture(s) {
+    const b = s.term.buffer.active;
+    if (b.type === 'alternate' || !s.sid) return;
+    const row = b.baseY + b.cursorY;
+    if (s.capture) {
+      // 上一次回车没有产生新行 (如 read -s 密码输入)，丢弃；否则先结算
+      if (s.capture.row === row) cancelCapture(s);
+      else finishCapture(s);
+    }
+    s.capture = { row, snap: readLogicalLine(b, row) };
+    s.capture.timer = setTimeout(() => {
+      const bb = s.term.buffer.active;
+      if (bb.type !== 'alternate' && bb.baseY + bb.cursorY === row) cancelCapture(s);
+      else finishCapture(s);
+    }, 3000);
+  }
+
+  function cancelCapture(s) {
+    if (s.capture) clearTimeout(s.capture.timer);
+    s.capture = null;
+  }
+
+  // 每次输出写入后调用：光标还在这条命令行 (含自动换行的续行) 上就更新快照，真正换到新行后记录
+  function checkCapture(s) {
+    const c = s.capture;
+    if (!c) return;
+    const b = s.term.buffer.active;
+    if (b.type === 'alternate') return finishCapture(s);
+    const cur = b.baseY + b.cursorY;
+    if (cur === c.row || (cur > c.row && b.getLine(cur)?.isWrapped)) {
+      c.snap = readLogicalLine(b, c.row);
+      return;
+    }
+    finishCapture(s);
+  }
+
+  function finishCapture(s) {
+    const c = s.capture;
+    if (!c) return;
+    s.capture = null;
+    clearTimeout(c.timer);
+    // 执行 clear 等命令可能清掉这一行，此时用按回车时的快照
+    const cmd = extractCommand(readLogicalLine(s.term.buffer.normal, c.row)) || extractCommand(c.snap);
+    if (cmd) api('POST', '/api/history', { cmd, host: s.histHost }).catch(() => {});
+  }
+
+  const histPanel = $('#history');
+  let histItems = [];
+
+  const fmtAgo = (t) => {
+    const d = (Date.now() - t) / 1000;
+    if (d < 60) return '刚刚';
+    if (d < 3600) return Math.floor(d / 60) + ' 分钟前';
+    if (d < 86400) return Math.floor(d / 3600) + ' 小时前';
+    if (d < 86400 * 30) return Math.floor(d / 86400) + ' 天前';
+    return new Date(t).toLocaleDateString();
+  };
+
+  async function openHistory() {
+    histPanel.classList.remove('hidden');
+    $('#histSearch').value = '';
+    $('#histAll').checked = !active;
+    $('#histList').innerHTML = '<div class="sftp-msg">加载中…</div>';
+    try {
+      histItems = await api('GET', '/api/history');
+      renderHistory();
+    } catch (e) {
+      $('#histList').innerHTML = `<div class="sftp-msg" style="color:var(--danger)">${esc(e.message)}</div>`;
+    }
+    if (!isTouch) $('#histSearch').focus();
+  }
+
+  function closeHistory() {
+    histPanel.classList.add('hidden');
+    if (active) focusTerm(active);
+  }
+
+  function visibleHistory() {
+    const q = $('#histSearch').value.trim().toLowerCase();
+    const all = $('#histAll').checked || !active;
+    return histItems.filter((h) => (all || h.host === active.histHost) && (!q || h.cmd.toLowerCase().includes(q)));
+  }
+
+  function renderHistory() {
+    const list = $('#histList');
+    const items = visibleHistory();
+    const all = $('#histAll').checked || !active;
+    $('#histClear').textContent = all ? '清空全部' : '清空本主机';
+    $('#histClear').disabled = !items.length;
+    list.innerHTML = '';
+    if (!items.length) {
+      list.innerHTML = '<div class="sftp-msg">暂无历史命令<br><span class="hint">在终端里执行过的命令会记录在这里</span></div>';
+      return;
+    }
+    items.forEach((h) => {
+      const row = document.createElement('div');
+      row.className = 'hrow';
+      row.innerHTML = `<div class="hmain" title="点击执行"><div class="cmd"></div><div class="hmeta"></div></div>
+        <button data-op="fill" title="填入终端，不执行">填入</button>
+        <button data-op="run" class="primary" title="执行">执行</button>
+        <button data-op="del" class="del" title="删除">✕</button>`;
+      $('.cmd', row).textContent = h.cmd;
+      $('.hmeta', row).textContent = [all ? h.host : '', fmtAgo(h.time), h.count > 1 ? `${h.count} 次` : '']
+        .filter(Boolean).join(' · ');
+      row.addEventListener('click', async (e) => {
+        const op = e.target.dataset.op || (e.target.closest('.hmain') ? 'run' : '');
+        if (op === 'del') {
+          try {
+            await api('DELETE', '/api/history/' + h.id);
+            histItems = histItems.filter((x) => x.id !== h.id);
+            renderHistory();
+          } catch (err) { alert(err.message); }
+          return;
+        }
+        if (!op || !active || !active.sid) return;
+        closeHistory();
+        if (op === 'run') {
+          sendKeys(h.cmd);
+          // 等命令回显后再回车，这样也会被记录 (次数 +1、移到最前)
+          setTimeout(() => { beginCapture(active); sendKeys('\r'); }, 50);
+        } else {
+          sendKeys(h.cmd);
+        }
+      });
+      list.appendChild(row);
+    });
+  }
+
+  $('#btnHistory').addEventListener('click', openHistory);
+  $('#histClose').addEventListener('click', closeHistory);
+  $('#histSearch').addEventListener('input', renderHistory);
+  $('#histAll').addEventListener('change', renderHistory);
+  histPanel.addEventListener('mousedown', (e) => { if (e.target === histPanel) closeHistory(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !histPanel.classList.contains('hidden')) closeHistory();
+  });
+  $('#histClear').addEventListener('click', async () => {
+    const all = $('#histAll').checked || !active;
+    if (!confirm(all ? '清空所有主机的历史命令？' : `清空 ${active.histHost} 的历史命令？`)) return;
+    try {
+      await api('DELETE', '/api/history' + (all ? '' : '?host=' + encodeURIComponent(active.histHost)));
+      histItems = all ? [] : histItems.filter((h) => h.host !== active.histHost);
+      renderHistory();
+    } catch (err) { alert(err.message); }
+  });
 
   // ------------------------------------------------------------ 侧边栏
   const mobile = () => window.innerWidth <= 760;

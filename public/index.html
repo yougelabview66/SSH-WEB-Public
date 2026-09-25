@@ -36,6 +36,7 @@
       <div id="tabbar">
         <button id="btnToggle" title="主机列表">☰</button>
         <div id="tabs"></div>
+        <button id="btnHistory" class="hidden" title="历史命令">🕘 历史</button>
         <button id="btnSftp" class="hidden" title="SFTP 文件管理">📁 文件</button>
       </div>
       <div id="terms">
@@ -47,6 +48,7 @@
       <!-- 手机输入栏：触屏设备上代替 xterm 的隐藏输入框 -->
       <div id="mobileBar" class="hidden">
         <div class="mkeys">
+          <button data-k="history">历史</button>
           <button data-k="esc">Esc</button>
           <button data-k="tab">Tab</button>
           <button data-mod="ctrl">Ctrl</button>
@@ -138,6 +140,23 @@
         <button type="submit" class="primary">连接</button>
       </div>
     </form>
+  </div>
+
+  <!-- 历史命令 -->
+  <div id="history" class="overlay hidden">
+    <div class="card wide hist">
+      <div class="hist-head">
+        <h3>历史命令</h3>
+        <label class="check"><input type="checkbox" id="histAll"> 全部主机</label>
+      </div>
+      <input id="histSearch" placeholder="搜索命令…" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <div id="histList"></div>
+      <div class="actions">
+        <button type="button" id="histClear" class="danger">清空</button>
+        <span class="spacer"></span>
+        <button type="button" id="histClose" class="primary">关闭</button>
+      </div>
+    </div>
   </div>
 
   <!-- 通用对话框：验证码 / 指纹确认 / 指纹管理 -->

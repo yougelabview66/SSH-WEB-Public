@@ -171,3 +171,31 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 /* 16px 以上避免 iOS 聚焦时自动放大页面 */
 .mline input { margin: 0; font-size: 16px; padding: 8px 10px; }
 .mline button { flex-shrink: 0; width: 48px; font-size: 16px; touch-action: manipulation; }
+
+/* 历史命令 */
+#btnHistory { border: none; border-left: 1px solid var(--border); border-radius: 0; background: none;
+  white-space: nowrap; flex-shrink: 0; }
+.hist { display: flex; flex-direction: column; height: min(640px, 100%); }
+.hist-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.hist-head h3 { margin: 0; }
+.hist-head label.check { margin: 0; font-size: 13px; }
+#histSearch { margin: 0 0 8px; }
+#histList { flex: 1; overflow-y: auto; min-height: 120px; margin: 0 -8px 12px; }
+.hrow { display: flex; align-items: center; gap: 6px; padding: 7px 8px; border-radius: 6px; }
+.hrow:hover { background: var(--panel2); }
+.hrow .hmain { flex: 1; min-width: 0; cursor: pointer; }
+.hrow .cmd { font: 13px ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-all;
+  color: var(--text); }
+.hrow .hmeta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.hrow button { flex-shrink: 0; padding: 3px 8px; font-size: 12px; }
+.hrow button.del { background: none; border: none; color: var(--muted); font-size: 14px; }
+.hrow button.del:hover { color: var(--danger); }
+.hist .actions .spacer { flex: 1; }
+.hist .actions { justify-content: stretch; }
+
+@media (max-width: 760px) {
+  /* 手机上从底部弹出 */
+  #history { align-items: flex-end; padding: 0; }
+  #history .card { width: 100%; max-width: 100%; height: 75%; border-radius: 12px 12px 0 0;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+}

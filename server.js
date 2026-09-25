@@ -224,6 +224,24 @@ function fingerprint(key) {
   return 'SHA256:' + crypto.createHash('sha256').update(key).digest('base64').replace(/=+$/, '');
 }
 
+// ---------------------------------------------------------------- 历史命令
+const HISTORY_FILE = path.join(DATA_DIR, 'history.json');
+const HISTORY_MAX = parseInt(process.env.HISTORY_MAX || '1000', 10);
+
+function readHistory() {
+  try {
+    return JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf8'));
+  } catch {
+    return [];
+  }
+}
+
+function writeHistory(list) {
+  const tmp = HISTORY_FILE + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(list), { mode: 0o600 });
+  fs.renameSync(tmp, HISTORY_FILE);
+}
+
 // ---------------------------------------------------------------- 登录限流
 const loginFails = new Map(); // ip -> { count, until }
 function loginBlocked(ip) {
@@ -343,6 +361,37 @@ app.delete('/api/known-hosts', (req, res) => {
   const known = readKnown();
   delete known[String(req.query.key)];
   writeKnown(known);
+  res.json({ ok: true });
+});
+
+// 历史命令: 最新的在前；同一主机的相同命令只保留一条并累加次数
+app.get('/api/history', (req, res) => {
+  res.json(readHistory());
+});
+
+app.post('/api/history', (req, res) => {
+  const cmd = str(req.body?.cmd).replace(/[\x00-\x1f\x7f]/g, '').trim().slice(0, 2000);
+  const host = str(req.body?.host).slice(0, 300);
+  if (!cmd) return res.status(400).json({ error: '命令为空' });
+  const list = readHistory();
+  const i = list.findIndex((h) => h.host === host && h.cmd === cmd);
+  const item = i >= 0 ? list.splice(i, 1)[0] : { id: crypto.randomUUID(), cmd, host, count: 0 };
+  item.count += 1;
+  item.time = Date.now();
+  list.unshift(item);
+  writeHistory(list.slice(0, HISTORY_MAX));
+  res.json(item);
+});
+
+app.delete('/api/history/:id', (req, res) => {
+  writeHistory(readHistory().filter((h) => h.id !== req.params.id));
+  res.json({ ok: true });
+});
+
+// 清空: 带 host 参数只清空该主机的记录
+app.delete('/api/history', (req, res) => {
+  const host = req.query.host;
+  writeHistory(typeof host === 'string' ? readHistory().filter((h) => h.host !== host) : []);
   res.json({ ok: true });
 });
 
