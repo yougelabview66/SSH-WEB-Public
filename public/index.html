@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, interactive-widget=resizes-content">
   <title>SSH-WEB</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%231e293b'/><text x='5' y='22' font-family='monospace' font-size='16' fill='%2322c55e'>&gt;_</text></svg>">
   <link rel="stylesheet" href="/vendor/xterm/css/xterm.css">
@@ -43,6 +43,38 @@
           <p>从左侧选择主机，或点击「新建连接」</p>
           <p class="muted">支持直连 SSH 与 Cloudflare Tunnel 暴露的 SSH</p>
         </div>
+      </div>
+      <!-- 手机输入栏：触屏设备上代替 xterm 的隐藏输入框 -->
+      <div id="mobileBar" class="hidden">
+        <div class="mkeys">
+          <button data-k="esc">Esc</button>
+          <button data-k="tab">Tab</button>
+          <button data-mod="ctrl">Ctrl</button>
+          <button data-mod="alt">Alt</button>
+          <button data-k="up">↑</button>
+          <button data-k="down">↓</button>
+          <button data-k="left">←</button>
+          <button data-k="right">→</button>
+          <button data-k="bs">⌫</button>
+          <button data-k="home">Home</button>
+          <button data-k="end">End</button>
+          <button data-k="pgup">PgUp</button>
+          <button data-k="pgdn">PgDn</button>
+          <button data-t="|">|</button>
+          <button data-t="/">/</button>
+          <button data-t="-">-</button>
+          <button data-t="~">~</button>
+          <button data-k="^c">^C</button>
+          <button data-k="^d">^D</button>
+          <button data-k="^z">^Z</button>
+          <button data-k="^l">^L</button>
+          <button data-k="paste">粘贴</button>
+        </div>
+        <form id="mForm" class="mline" autocomplete="off">
+          <input id="mInput" type="text" placeholder="点这里输入，回车发送" autocomplete="off" autocorrect="off"
+                 autocapitalize="off" spellcheck="false" enterkeyhint="send">
+          <button type="submit" class="primary">↵</button>
+        </form>
       </div>
     </main>
   </div>

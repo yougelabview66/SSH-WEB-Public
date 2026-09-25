@@ -65,6 +65,18 @@ docker run -d --name ssh-web --restart unless-stopped \
 
 数据都在 `./data`：`hosts.json`（主机列表，密码加密）、`known_hosts.json`（已信任的主机指纹）和 `.secret`，备份这个目录即可。
 
+## 手机使用
+
+手机 / 平板（触屏设备）连接后，底部会出现输入栏和特殊键：
+
+- 点终端或输入栏弹出键盘，输入的内容实时发送；中文 / 联想输入在上屏后发送
+- 回车键（输入法的「发送」）发送回车；输入栏为空时按退格会删除终端里的字符
+- 特殊键：`Esc` `Tab` `Ctrl` `Alt` 方向键 `Home` `End` `PgUp` `PgDn` `| / - ~` `^C` `^D` `^Z` `^L` 和粘贴
+- `Ctrl` / `Alt` 点一下高亮，作用于下一个输入的字符，例如 `Ctrl` + `c`
+- 粘贴：通过 HTTPS 访问时直接读取剪贴板，HTTP 下浏览器不允许读取，会弹出输入框让你粘贴
+
+> 手机浏览器直接在 xterm.js 里打字会丢字、重复或不弹键盘，所以触屏设备改用这个输入栏。电脑端不受影响。
+
 ## 二次验证 (TOTP)
 
 适用于服务器开启了 Google Authenticator 等二次验证（如群晖 SSH 两步验证、`libpam-google-authenticator`）。

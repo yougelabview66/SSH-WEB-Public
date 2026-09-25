@@ -8,6 +8,8 @@
   let hosts = [];
   const sessions = [];
   let active = null;
+  // 触屏设备 (手机 / 平板)
+  const isTouch = window.matchMedia('(pointer: coarse)').matches;
 
   // ------------------------------------------------------------ API
   async function api(method, url, body) {
@@ -238,6 +240,12 @@
     s.term.loadAddon(s.fit);
     s.term.loadAddon(new WebLinksAddon.WebLinksAddon());
     s.term.open(s.box);
+    if (isTouch) {
+      // 触屏：xterm 的隐藏输入框在手机输入法下会丢字 / 重复，改用底部输入栏
+      s.term.textarea.setAttribute('readonly', 'readonly');
+      s.term.textarea.addEventListener('focus', () => mInput.focus());
+      s.box.addEventListener('click', () => mInput.focus());
+    }
     s.ro = new ResizeObserver(() => { if (active === s) s.fit.fit(); });
     s.ro.observe(s.box);
     s.term.onData((data) => send(s, { type: 'data', data }));
@@ -306,7 +314,7 @@
         s.sid = m.sid;
         updateSftpBtn();
         if (s.sftp && s.sftp.open) s.sftp.load(s.sftp.path);
-        s.term.focus();
+        focusTerm(s);
       } else if (m.type === 'hostkey') {
         activate(s);
         hostkeyDialog(m).then((accept) => send(s, { type: 'hostkey-response', accept }));
@@ -350,9 +358,10 @@
       x.el.classList.toggle('active', x === s);
       x.tab.classList.toggle('active', x === s);
     });
-    requestAnimationFrame(() => { s.fit.fit(); s.term.focus(); });
+    requestAnimationFrame(() => { s.fit.fit(); focusTerm(s); });
     s.tab.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     updateSftpBtn();
+    updateMobileBar();
   }
 
   function closeSession(s) {
@@ -370,6 +379,7 @@
       else $('#empty').classList.remove('hidden');
     }
     updateSftpBtn();
+    updateMobileBar();
   }
 
   window.addEventListener('beforeunload', (e) => {
@@ -556,7 +566,7 @@
           if (!self.loaded) self.load('');
         } else {
           el.remove();
-          s.term.focus();
+          focusTerm(s);
         }
       },
       async load(p) {
@@ -676,7 +686,7 @@
       else if (a === 'refresh') self.load(self.path);
       else if (a === 'close') { self.toggle(); updateSftpBtn(); }
       else if (a === 'upload') fileInput.click();
-      else if (a === 'cd') { send(s, { type: 'data', data: `cd ${shellQuote(self.path)}\r` }); s.term.focus(); }
+      else if (a === 'cd') { send(s, { type: 'data', data: `cd ${shellQuote(self.path)}\r` }); focusTerm(s); }
       else if (a === 'mkdir') {
         const name = prompt('新文件夹名称：');
         if (!name) return;
@@ -694,6 +704,123 @@
       if (files.length) upload(files);
     });
     return self;
+  }
+
+  // ------------------------------------------------------------ 手机输入栏
+  const mInput = $('#mInput');
+  const mods = { ctrl: false, alt: false };
+
+  function focusTerm(s) {
+    if (!isTouch) s.term.focus();
+  }
+
+  function sendKeys(data) {
+    if (active) send(active, { type: 'data', data });
+  }
+
+  // 应用 Ctrl / Alt 修饰键 (一次性，用完自动取消)
+  function applyMods(text) {
+    if (!mods.ctrl && !mods.alt) return text;
+    let out = text;
+    if (mods.ctrl && text.length === 1) {
+      const c = text.toUpperCase().charCodeAt(0);
+      if (c >= 64 && c <= 95) out = String.fromCharCode(c - 64); // Ctrl+A..Z [ \ ] ^ _
+      else if (text === ' ') out = '\x00';
+      else if (text === '?') out = '\x7f';
+    }
+    if (mods.alt) out = '\x1b' + out;
+    setMod('ctrl', false);
+    setMod('alt', false);
+    return out;
+  }
+
+  function setMod(name, on) {
+    mods[name] = on;
+    $(`#mobileBar [data-mod=${name}]`).classList.toggle('on', on);
+  }
+
+  const cursorKey = (c) => (active && active.term.modes.applicationCursorKeysMode ? '\x1bO' : '\x1b[') + c;
+  const KEYS = {
+    esc: () => '\x1b', tab: () => '\t', bs: () => '\x7f',
+    up: () => cursorKey('A'), down: () => cursorKey('B'), right: () => cursorKey('C'), left: () => cursorKey('D'),
+    home: () => '\x1b[H', end: () => '\x1b[F', pgup: () => '\x1b[5~', pgdn: () => '\x1b[6~',
+    '^c': () => '\x03', '^d': () => '\x04', '^z': () => '\x1a', '^l': () => '\x0c',
+  };
+
+  // 输入框里常驻一个零宽字符作为「哨兵」：
+  // 这样空输入框里按退格也会产生 input 事件，可以可靠地发送 ⌫
+  const SENTINEL = '​';
+  let composing = false;
+
+  function resetInput() {
+    mInput.value = SENTINEL;
+    try { mInput.setSelectionRange(1, 1); } catch {}
+  }
+
+  // 把输入框里的文字发给终端并清空
+  function flushInput() {
+    const text = mInput.value.split(SENTINEL).join('');
+    if (text) sendKeys(applyMods(text));
+    resetInput();
+  }
+
+  mInput.addEventListener('focus', () => { if (!mInput.value) resetInput(); });
+  mInput.addEventListener('compositionstart', () => { composing = true; });
+  // 中文 / 联想输入：上屏后再发送
+  mInput.addEventListener('compositionend', () => {
+    composing = false;
+    flushInput();
+  });
+  mInput.addEventListener('input', (e) => {
+    if (composing || e.isComposing) return;
+    if (!mInput.value.includes(SENTINEL) || e.inputType === 'deleteContentBackward') {
+      // 哨兵被删掉 = 在空输入框里按了退格
+      const rest = mInput.value.split(SENTINEL).join('');
+      if (rest) sendKeys(applyMods(rest));
+      sendKeys('\x7f');
+      resetInput();
+      return;
+    }
+    flushInput();
+  });
+  $('#mForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    composing = false;
+    flushInput();
+    sendKeys('\r');
+  });
+
+  // 按钮按下时不抢走输入框焦点，避免键盘收起
+  $('#mobileBar').addEventListener('mousedown', (e) => { if (e.target.closest('button')) e.preventDefault(); });
+  $('#mobileBar .mkeys').addEventListener('click', async (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.mod) return setMod(b.dataset.mod, !mods[b.dataset.mod]);
+    if (b.dataset.t) return sendKeys(applyMods(b.dataset.t));
+    const k = b.dataset.k;
+    if (k === 'paste') {
+      let text = '';
+      try { text = await navigator.clipboard.readText(); } catch {}
+      if (!text) text = prompt('粘贴内容（浏览器不允许直接读取剪贴板时在这里粘贴）：') || '';
+      if (text) sendKeys(text);
+      return;
+    }
+    if (KEYS[k]) sendKeys(applyMods(KEYS[k]()));
+  });
+
+  function updateMobileBar() {
+    $('#mobileBar').classList.toggle('hidden', !(isTouch && active));
+  }
+
+  // iOS 键盘弹出时不会缩小页面，用 visualViewport 调整高度，让输入栏始终在键盘上方
+  if (window.visualViewport) {
+    const vv = window.visualViewport;
+    const onVV = () => {
+      app.style.height = vv.height + 'px';
+      window.scrollTo(0, 0);
+      if (active) active.fit.fit();
+    };
+    vv.addEventListener('resize', onVV);
   }
 
   // ------------------------------------------------------------ 侧边栏

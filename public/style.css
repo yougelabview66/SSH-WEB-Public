@@ -158,3 +158,16 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
   .sftp { position: absolute; inset: 0; width: auto; z-index: 6; }
   .frow .fops { display: flex; }
 }
+
+/* 手机输入栏 */
+#mobileBar { flex-shrink: 0; background: var(--panel); border-top: 1px solid var(--border);
+  padding-bottom: env(safe-area-inset-bottom); }
+.mkeys { display: flex; gap: 4px; padding: 5px 6px; overflow-x: auto; scrollbar-width: none; }
+.mkeys::-webkit-scrollbar { display: none; }
+.mkeys button { flex-shrink: 0; min-width: 40px; padding: 6px 8px; font: 13px ui-monospace, monospace;
+  touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+.mkeys button.on { background: var(--accent2); border-color: var(--accent2); color: #fff; }
+.mline { display: flex; gap: 6px; padding: 0 6px 6px; }
+/* 16px 以上避免 iOS 聚焦时自动放大页面 */
+.mline input { margin: 0; font-size: 16px; padding: 8px 10px; }
+.mline button { flex-shrink: 0; width: 48px; font-size: 16px; touch-action: manipulation; }
