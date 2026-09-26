@@ -359,3 +359,38 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 
 /* 关闭 xterm 滚动阴影 (浅色主题下会显示成灰线) */
 .xterm { --vscode-scrollbar-shadow: transparent; }
+
+/* 按键栏设置按钮 */
+.mkeys button.kset { color: var(--muted); }
+/* 自定义按键栏 */
+.keysp { display: flex; flex-direction: column; max-height: 100%; }
+.ksec-t { font-size: 12px; color: var(--muted); margin: 10px 0 6px; }
+.keys-cur { display: flex; flex-direction: column; gap: 4px; max-height: 34vh; overflow-y: auto; }
+.krow { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 6px; background: var(--panel2); }
+.krow .kl { flex: 1; font: 13px ui-monospace, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.krow .kd { color: var(--muted); font-size: 11px; }
+.krow button { padding: 2px 8px; font-size: 12px; background: none; }
+.keys-avail { display: flex; flex-wrap: wrap; gap: 6px; max-height: 22vh; overflow-y: auto; }
+.keys-avail button { font: 12px ui-monospace, monospace; padding: 4px 9px; }
+.keys-custom { display: flex; gap: 6px; }
+.keys-custom input { margin: 0; }
+.keys-custom #kcLabel { width: 34%; }
+.keysp .actions { margin-top: 12px; }
+.keysp .actions .spacer { flex: 1; }
+@media (max-width: 760px) {
+  #keysPanel { align-items: flex-end; padding: 0; }
+  #keysPanel .card { width: 100%; max-width: 100%; max-height: 92%; border-radius: 12px 12px 0 0;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+}
+/* 字体大小 */
+.font-row { display: flex; align-items: center; gap: 2px; color: var(--muted); font-size: 13px; padding-left: 4px; }
+.font-row #fontLabel { margin-right: 4px; }
+.font-toast { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); z-index: 6; pointer-events: none;
+  background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 10px;
+  padding: 8px 16px; font-size: 16px; box-shadow: 0 6px 20px var(--shadow); }
+/* xterm 内部滚动层背景跟随主题 (否则浅色下边缘露出一圈黑 / 灰线) */
+.xterm .xterm-viewport { background-color: var(--term-bg) !important; }
+/* 全局输入框样式不要作用到 xterm 的隐藏输入框 */
+.xterm textarea.xterm-helper-textarea { border: 0; padding: 0; margin: 0; background: transparent; border-radius: 0; }
+/* 自定义按键「添加」按钮不换行 */
+.keys-custom button { flex-shrink: 0; white-space: nowrap; }

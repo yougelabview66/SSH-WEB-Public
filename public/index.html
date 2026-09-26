@@ -38,6 +38,11 @@
       <div class="sidebar-foot">
         <span class="ver">SSH-WEB v{{VERSION}}</span>
         <button id="btnNotify" class="link" title="终端有提示音时推送通知"></button>
+        <div class="font-row">
+          <span id="fontLabel">字体</span>
+          <button id="fontDec" class="link" title="缩小终端字体">A-</button>
+          <button id="fontInc" class="link" title="放大终端字体">A+</button>
+        </div>
         <button id="btnTheme" class="link theme-btn" title="切换主题"></button>
         <button id="btnKnown" class="link">已信任的主机指纹</button>
         <button id="btnLogout" class="link hidden">退出登录</button>
@@ -64,33 +69,8 @@
       </div>
       <!-- 手机输入栏：触屏设备上代替 xterm 的隐藏输入框 -->
       <div id="mobileBar" class="hidden">
-        <div class="mkeys">
-          <button data-k="history">历史</button>
-          <button data-k="esc">Esc</button>
-          <button data-k="tab">Tab</button>
-          <button data-mod="shift">Shift</button>
-          <button data-mod="ctrl">Ctrl</button>
-          <button data-mod="alt">Alt</button>
-          <button data-k="up">↑</button>
-          <button data-k="down">↓</button>
-          <button data-k="left">←</button>
-          <button data-k="right">→</button>
-          <button data-k="bs">⌫</button>
-          <button data-k="home">Home</button>
-          <button data-k="end">End</button>
-          <button data-k="pgup">PgUp</button>
-          <button data-k="pgdn">PgDn</button>
-          <button data-t="|">|</button>
-          <button data-t="/">/</button>
-          <button data-t="-">-</button>
-          <button data-t="~">~</button>
-          <button data-k="^c">^C</button>
-          <button data-k="^d">^D</button>
-          <button data-k="^z">^Z</button>
-          <button data-k="^l">^L</button>
-          <button data-k="copy">复制</button>
-          <button data-k="paste">粘贴</button>
-        </div>
+        <!-- 按键由 app.js 按设置生成 (默认顺序见 DEFAULT_KEYS) -->
+        <div class="mkeys"></div>
         <form id="mForm" class="mline" autocomplete="off">
           <input id="mInput" type="text" placeholder="点这里输入，回车发送" autocomplete="off" autocorrect="off"
                  autocapitalize="off" spellcheck="false" enterkeyhint="send">
@@ -174,6 +154,30 @@
         <button type="button" id="copyAll" class="primary">复制全部</button>
       </div>
       <div class="copy-toast" id="copyToast"></div>
+    </div>
+  </div>
+
+  <!-- 自定义手机按键栏 -->
+  <div id="keysPanel" class="overlay hidden">
+    <div class="card wide keysp">
+      <div class="hist-head"><h3>自定义按键栏</h3></div>
+      <div class="ksec-t">当前按键（按顺序显示，↑↓ 调整位置）</div>
+      <div id="keysCur" class="keys-cur"></div>
+      <div class="ksec-t">点击添加</div>
+      <div id="keysAvail" class="keys-avail"></div>
+      <div class="ksec-t">自定义按键</div>
+      <form id="keysCustom" class="keys-custom" autocomplete="off">
+        <input id="kcLabel" placeholder="名称，如 压缩" maxlength="12">
+        <input id="kcSeq" placeholder="发送内容，如 /compact\r" autocapitalize="off" spellcheck="false">
+        <button type="submit">添加</button>
+      </form>
+      <div class="hint"><code>\r</code> 回车　<code>\e</code> Esc　<code>\t</code> Tab　<code>\x02</code> 任意字节（如 Ctrl+B）</div>
+      <div class="actions">
+        <button type="button" id="keysReset">恢复默认</button>
+        <span class="spacer"></span>
+        <button type="button" id="keysCancel">取消</button>
+        <button type="button" id="keysSave" class="primary">保存</button>
+      </div>
     </div>
   </div>
 

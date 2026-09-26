@@ -61,7 +61,7 @@
     app.classList.remove('hidden');
     showEmpty('loading');
     // 主机列表与后台会话同时加载，尽快恢复标签
-    const [list] = await Promise.all([fetchSessions(), loadHosts().catch(() => {})]);
+    const [list] = await Promise.all([fetchSessions(), loadHosts().catch(() => {}), loadKeybar()]);
     if (list.length) restoreSessions(list);
     else showEmpty('idle');
   }
@@ -288,7 +288,7 @@
 
     s.term = new Terminal({
       cursorBlink: true,
-      fontSize: window.innerWidth < 760 ? 12 : 14,
+      fontSize,
       fontFamily: 'ui-monospace, "Cascadia Code", Menlo, Consolas, "DejaVu Sans Mono", monospace',
       theme: termTheme(),
       scrollback: 10000,
@@ -948,13 +948,17 @@
 
   function setMod(name, on) {
     mods[name] = on;
-    $(`#mobileBar [data-mod=${name}]`).classList.toggle('on', on);
+    $(`#mobileBar [data-mod=${name}]`)?.classList.toggle('on', on);
   }
 
   // xterm 修饰键参数: 1 + Shift(1) + Alt(2) + Ctrl(4)
   const modParam = () => 1 + (mods.shift ? 1 : 0) + (mods.alt ? 2 : 0) + (mods.ctrl ? 4 : 0);
   const CURSOR = { up: 'A', down: 'B', right: 'C', left: 'D', home: 'H', end: 'F' };
   const TILDE = { pgup: 5, pgdn: 6 };
+  const FKEYS = {
+    f1: '\x1bOP', f2: '\x1bOQ', f3: '\x1bOR', f4: '\x1bOS', f5: '\x1b[15~', f6: '\x1b[17~',
+    f7: '\x1b[18~', f8: '\x1b[19~', f9: '\x1b[20~', f10: '\x1b[21~', f11: '\x1b[23~', f12: '\x1b[24~',
+  };
 
   // 特殊键按下时生成要发送的字节 (含修饰键)
   function keySeq(k) {
@@ -974,8 +978,14 @@
       out = '\x1b';
     } else if (k === 'bs') {
       out = mods.alt ? '\x1b\x7f' : mods.ctrl ? '\x08' : '\x7f';
-    } else {
-      out = { '^c': '\x03', '^d': '\x04', '^z': '\x1a', '^l': '\x0c' }[k];
+    } else if (k === 'enter') {
+      out = (mods.alt ? '\x1b' : '') + '\r';
+    } else if (k === 'escesc') {
+      out = '\x1b\x1b'; // Claude Code: 连按两次 Esc 撤回 / 编辑上一条
+    } else if (FKEYS[k]) {
+      out = FKEYS[k];
+    } else if (/^\^[a-z]$/.test(k)) {
+      out = String.fromCharCode(k.charCodeAt(1) - 96); // ^A..^Z
     }
     clearMods();
     return out;
@@ -1030,8 +1040,10 @@
   $('#mobileBar .mkeys').addEventListener('click', async (e) => {
     const b = e.target.closest('button');
     if (!b) return;
+    if (b.dataset.a === 'kset') return openKeysEditor();
     if (b.dataset.mod) return setMod(b.dataset.mod, !mods[b.dataset.mod]);
     if (b.dataset.t) return sendKeys(applyMods(b.dataset.t));
+    if (b.dataset.seq != null) { clearMods(); return sendKeys(b.dataset.seq); }
     const k = b.dataset.k;
     if (k === 'history') return openHistory();
     if (k === 'copy') return openCopyPanel(active);
@@ -1045,6 +1057,182 @@
     const seq = keySeq(k);
     if (seq) sendKeys(seq);
   });
+
+  // ------------------------------------------------------------ 自定义按键栏
+  const KEY_DEFS = {
+    history: { label: '历史', k: 'history' }, esc: { label: 'Esc', k: 'esc' }, tab: { label: 'Tab', k: 'tab' },
+    shift: { label: 'Shift', mod: 'shift' }, ctrl: { label: 'Ctrl', mod: 'ctrl' }, alt: { label: 'Alt', mod: 'alt' },
+    up: { label: '↑', k: 'up' }, down: { label: '↓', k: 'down' }, left: { label: '←', k: 'left' }, right: { label: '→', k: 'right' },
+    bs: { label: '⌫', k: 'bs' }, home: { label: 'Home', k: 'home' }, end: { label: 'End', k: 'end' },
+    pgup: { label: 'PgUp', k: 'pgup' }, pgdn: { label: 'PgDn', k: 'pgdn' },
+    '^c': { label: '^C', k: '^c', desc: '中断' }, '^d': { label: '^D', k: '^d', desc: '退出' },
+    '^z': { label: '^Z', k: '^z', desc: '挂起' }, '^l': { label: '^L', k: '^l', desc: '清屏' },
+    copy: { label: '复制', k: 'copy' }, paste: { label: '粘贴', k: 'paste' },
+    // 以下默认不显示，可以在设置里添加
+    enter: { label: 'Enter', k: 'enter', desc: '回车' },
+    escesc: { label: 'Esc Esc', k: 'escesc', desc: 'Claude Code 撤回' },
+    '^b': { label: '^B', k: '^b', desc: 'tmux 前缀' }, '^r': { label: '^R', k: '^r', desc: '搜索历史' },
+    '^a': { label: '^A', k: '^a', desc: '行首' }, '^e': { label: '^E', k: '^e', desc: '行尾' },
+    '^u': { label: '^U', k: '^u', desc: '删到行首' }, '^w': { label: '^W', k: '^w', desc: '删一个词' },
+    '^k': { label: '^K', k: '^k', desc: '删到行尾' },
+  };
+  for (let i = 1; i <= 12; i++) KEY_DEFS['f' + i] = { label: 'F' + i, k: 'f' + i };
+  for (const ch of ['|', '/', '-', '~', '\\', '*', '&', '>', '<', '$', "'", '"', ':', ';', '_', '=', '`', '!', '#', '@', '%', '(', ')', '[', ']', '{', '}']) {
+    KEY_DEFS['t:' + ch] = { label: ch, t: ch };
+  }
+  // 默认 = 原来的按键和顺序
+  const DEFAULT_KEYS = ['history', 'esc', 'tab', 'shift', 'ctrl', 'alt', 'up', 'down', 'left', 'right', 'bs',
+    'home', 'end', 'pgup', 'pgdn', 't:|', 't:/', 't:-', 't:~', '^c', '^d', '^z', '^l', 'copy', 'paste'];
+  let keybar = { keys: DEFAULT_KEYS.slice(), custom: {} };
+
+  // 自定义按键内容的转义: \r \n \t \e \\ \xHH \uHHHH
+  function decodeSeq(str) {
+    return str.replace(/\\(x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|[rnte\\])/g, (m, c) => {
+      if (c[0] === 'x' || c[0] === 'u') return String.fromCharCode(parseInt(c.slice(1), 16));
+      return { r: '\r', n: '\n', t: '\t', e: '\x1b', '\\': '\\' }[c];
+    });
+  }
+
+  const keyDef = (id, cfg = keybar) => KEY_DEFS[id] || (cfg.custom[id] && { label: cfg.custom[id].label, seq: cfg.custom[id].seq, desc: cfg.custom[id].seq });
+
+  function renderKeyBar() {
+    const box = $('#mobileBar .mkeys');
+    box.innerHTML = '';
+    for (const id of keybar.keys) {
+      const d = keyDef(id);
+      if (!d) continue;
+      const b = document.createElement('button');
+      b.textContent = d.label;
+      if (d.k) b.dataset.k = d.k;
+      else if (d.t) b.dataset.t = d.t;
+      else if (d.mod) { b.dataset.mod = d.mod; b.classList.toggle('on', !!mods[d.mod]); }
+      else if (d.seq != null) { b.dataset.seq = decodeSeq(d.seq); b.title = d.seq; }
+      box.appendChild(b);
+    }
+    const set = document.createElement('button');
+    set.className = 'kset';
+    set.dataset.a = 'kset';
+    set.title = '自定义按键栏';
+    set.textContent = '⚙';
+    box.appendChild(set);
+  }
+
+  async function loadKeybar() {
+    try {
+      const st = await api('GET', '/api/settings');
+      if (st.keybar && Array.isArray(st.keybar.keys)) keybar = { keys: st.keybar.keys, custom: st.keybar.custom || {} };
+    } catch {}
+    renderKeyBar();
+  }
+
+  let keyEdit = null;
+  function openKeysEditor() {
+    keyEdit = { keys: keybar.keys.slice(), custom: { ...keybar.custom } };
+    $('#kcLabel').value = '';
+    $('#kcSeq').value = '';
+    renderKeysEditor();
+    mInput.blur();
+    $('#keysPanel').classList.remove('hidden');
+  }
+
+  function renderKeysEditor() {
+    const cur = $('#keysCur');
+    cur.innerHTML = '';
+    keyEdit.keys.forEach((id, i) => {
+      const d = keyDef(id, keyEdit);
+      if (!d) return;
+      const row = document.createElement('div');
+      row.className = 'krow';
+      row.innerHTML = `<span class="kl"></span><span class="kd"></span>
+        <button data-op="up" ${i === 0 ? 'disabled' : ''}>↑</button>
+        <button data-op="down" ${i === keyEdit.keys.length - 1 ? 'disabled' : ''}>↓</button>
+        <button data-op="del">✕</button>`;
+      $('.kl', row).textContent = d.label;
+      $('.kd', row).textContent = d.desc || '';
+      row.addEventListener('click', (e) => {
+        const op = e.target.dataset.op;
+        const k = keyEdit.keys;
+        if (op === 'up' && i > 0) [k[i - 1], k[i]] = [k[i], k[i - 1]];
+        else if (op === 'down' && i < k.length - 1) [k[i + 1], k[i]] = [k[i], k[i + 1]];
+        else if (op === 'del') k.splice(i, 1);
+        else return;
+        renderKeysEditor();
+      });
+      cur.appendChild(row);
+    });
+    const avail = $('#keysAvail');
+    avail.innerHTML = '';
+    const ids = [...DEFAULT_KEYS, ...Object.keys(KEY_DEFS), ...Object.keys(keyEdit.custom)];
+    for (const id of [...new Set(ids)]) {
+      if (keyEdit.keys.includes(id)) continue;
+      const d = keyDef(id, keyEdit);
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = d.label;
+      b.title = d.desc || '';
+      b.onclick = () => { keyEdit.keys.push(id); renderKeysEditor(); };
+      avail.appendChild(b);
+    }
+  }
+
+  $('#keysCustom').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const label = $('#kcLabel').value.trim();
+    const seq = $('#kcSeq').value;
+    if (!label || !seq) return alert('请填写名称和发送内容');
+    const id = 'c:' + Math.random().toString(36).slice(2, 10);
+    keyEdit.custom[id] = { label, seq };
+    keyEdit.keys.push(id);
+    $('#kcLabel').value = '';
+    $('#kcSeq').value = '';
+    renderKeysEditor();
+  });
+  $('#keysReset').addEventListener('click', () => {
+    if (!confirm('恢复默认按键和顺序？自定义按键也会被删除。')) return;
+    keyEdit = { keys: DEFAULT_KEYS.slice(), custom: {} };
+    renderKeysEditor();
+  });
+  $('#keysCancel').addEventListener('click', () => $('#keysPanel').classList.add('hidden'));
+  $('#keysSave').addEventListener('click', async () => {
+    // 不在按键栏里的自定义按键一起删除
+    const custom = {};
+    for (const id of keyEdit.keys) if (keyEdit.custom[id]) custom[id] = keyEdit.custom[id];
+    try {
+      await api('PUT', '/api/settings/keybar', { keys: keyEdit.keys, custom });
+      keybar = { keys: keyEdit.keys, custom };
+      clearMods();
+      renderKeyBar();
+      $('#keysPanel').classList.add('hidden');
+    } catch (err) { alert('保存失败：' + err.message); }
+  });
+  $('#keysPanel').addEventListener('mousedown', (e) => { if (e.target.id === 'keysPanel') $('#keysPanel').classList.add('hidden'); });
+
+  // ------------------------------------------------------------ 终端字体大小 (手机双指捏合 / 侧边栏 A- A+)
+  const FONT_MIN = 8;
+  const FONT_MAX = 28;
+  const defaultFont = () => (window.innerWidth < 760 ? 12 : 14);
+  let fontSize = (() => { try { return parseInt(localStorage.getItem('sshweb.fontSize'), 10) || defaultFont(); } catch { return defaultFont(); } })();
+
+  function setFontSize(n, save = true) {
+    n = Math.min(FONT_MAX, Math.max(FONT_MIN, Math.round(n)));
+    if (n !== fontSize) {
+      fontSize = n;
+      for (const x of sessions) x.term.options.fontSize = n;
+      if (active) syncSize(active);
+    }
+    if (save) { try { localStorage.setItem('sshweb.fontSize', String(n)); } catch {} }
+    $('#fontLabel').textContent = `字体 ${fontSize}`;
+  }
+  $('#fontDec').addEventListener('click', () => setFontSize(fontSize - 1));
+  $('#fontInc').addEventListener('click', () => setFontSize(fontSize + 1));
+
+  function fontToast(s, text) {
+    let t = s.box.querySelector('.font-toast');
+    if (!t) { t = document.createElement('div'); t.className = 'font-toast'; s.box.appendChild(t); }
+    t.textContent = text;
+    clearTimeout(t.timer);
+    t.timer = setTimeout(() => t.remove(), 800);
+  }
 
   function updateMobileBar() {
     $('#mobileBar').classList.toggle('hidden', !(isTouch && active));
@@ -1417,6 +1605,34 @@
     }, { passive: true });
     s.box.addEventListener('touchend', cancelPress, { passive: true });
     s.box.addEventListener('touchcancel', cancelPress, { passive: true });
+
+    // 双指捏合调整字体大小
+    let pinch = null;
+    const dist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    s.box.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 2) pinch = { d0: dist(e.touches) || 1, base: fontSize, raf: 0, size: fontSize };
+    }, { passive: true });
+    s.box.addEventListener('touchmove', (e) => {
+      if (!pinch || e.touches.length !== 2) return;
+      e.preventDefault();
+      pinch.size = pinch.base * dist(e.touches) / pinch.d0;
+      if (!pinch.raf) {
+        pinch.raf = requestAnimationFrame(() => {
+          if (!pinch) return;
+          pinch.raf = 0;
+          setFontSize(pinch.size, false);
+          fontToast(s, `字体 ${fontSize}`);
+        });
+      }
+    }, { passive: false });
+    const endPinch = (e) => {
+      if (!pinch || e.touches.length >= 2) return;
+      cancelAnimationFrame(pinch.raf);
+      setFontSize(pinch.size, true);
+      pinch = null;
+    };
+    s.box.addEventListener('touchend', endPinch, { passive: true });
+    s.box.addEventListener('touchcancel', endPinch, { passive: true });
 
     s.box.addEventListener('touchstart', (e) => {
       cancelAnimationFrame(frame);
@@ -1989,6 +2205,8 @@
   $('#terms').addEventListener('click', closeSidebarOnMobile);
 
   applyTheme();
+  renderKeyBar();
+  setFontSize(fontSize, false);
   initPush();
   init().catch((e) => alert('初始化失败: ' + e.message));
 })();

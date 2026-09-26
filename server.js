@@ -434,6 +434,36 @@ app.delete('/api/history', (req, res) => {
   res.json({ ok: true });
 });
 
+// 界面设置 (手机按键栏等)，保存在服务端，多台设备共享
+const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
+const readSettings = () => { try { return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8')); } catch { return {}; } };
+
+app.get('/api/settings', (req, res) => {
+  res.json(readSettings());
+});
+
+// 手机按键栏: keys 为按键 id 顺序，custom 为自定义按键 { id: { label, seq } }；传 null 恢复默认
+app.put('/api/settings/keybar', (req, res) => {
+  const st = readSettings();
+  const b = req.body || {};
+  if (b.reset) {
+    delete st.keybar;
+  } else {
+    const keys = Array.isArray(b.keys) ? b.keys.filter((k) => typeof k === 'string').map((k) => k.slice(0, 40)).slice(0, 80) : null;
+    if (!keys) return res.status(400).json({ error: '按键列表无效' });
+    const custom = {};
+    for (const [id, c] of Object.entries(b.custom || {})) {
+      if (!/^c:[\w-]{1,40}$/.test(id) || !c || typeof c.label !== 'string' || typeof c.seq !== 'string') continue;
+      custom[id] = { label: c.label.slice(0, 12), seq: c.seq.slice(0, 500) };
+    }
+    st.keybar = { keys, custom };
+  }
+  const tmp = SETTINGS_FILE + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(st, null, 2), { mode: 0o600 });
+  fs.renameSync(tmp, SETTINGS_FILE);
+  res.json(st);
+});
+
 // 完成通知 (Web Push)
 const push = createPush(app, { dataDir: DATA_DIR, subject: process.env.PUSH_SUBJECT || 'mailto:ssh-web@example.com' });
 
