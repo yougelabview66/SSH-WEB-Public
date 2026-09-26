@@ -52,6 +52,7 @@
 
   async function init() {
     const me = await api('GET', '/api/me');
+    if (me.weakPassword) $('#weakPw').classList.remove('hidden');
     if (me.authEnabled && !me.authed) return showLogin();
     $('#btnLogout').classList.toggle('hidden', !me.authEnabled);
     boot();
@@ -239,7 +240,6 @@
       brightBlue: '#218bff', brightMagenta: '#a475f9', brightCyan: '#3192aa', brightWhite: '#8c959f',
     },
   };
-  const THEME_NAMES = { auto: '跟随系统', light: '浅色', dark: '深色' };
   const systemLight = window.matchMedia('(prefers-color-scheme: light)');
   const themeMode = () => { try { return localStorage.getItem('sshweb.theme') || 'auto'; } catch { return 'auto'; } };
   const effectiveTheme = () => {
@@ -254,15 +254,15 @@
     else document.documentElement.dataset.theme = m;
     const eff = effectiveTheme();
     document.querySelector('meta[name=theme-color]').content = eff === 'light' ? '#ffffff' : '#111827';
-    $('#btnTheme').textContent = (eff === 'light' ? '☀ ' : '🌙 ') + '主题：' + THEME_NAMES[m];
+    $('#themeSeg').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.mode === m));
     for (const s of sessions) s.term.options.theme = termTheme();
     for (const s of sessions) if (s.mon && s.mon.redraw) s.mon.redraw();
   }
 
-  $('#btnTheme').addEventListener('click', () => {
-    const order = ['auto', 'light', 'dark'];
-    const next = order[(order.indexOf(themeMode()) + 1) % order.length];
-    try { localStorage.setItem('sshweb.theme', next); } catch {}
+  $('#themeSeg').addEventListener('click', (e) => {
+    const mode = e.target.dataset.mode;
+    if (!mode) return;
+    try { localStorage.setItem('sshweb.theme', mode); } catch {}
     applyTheme();
   });
   systemLight.addEventListener('change', () => { if (themeMode() === 'auto') applyTheme(); });
@@ -370,7 +370,13 @@
   }
 
   function send(s, obj) {
-    if (s.ws && s.ws.readyState === WebSocket.OPEN) s.ws.send(JSON.stringify(obj));
+    if (!s.ws || s.ws.readyState !== WebSocket.OPEN) return;
+    // 大段粘贴分块发送，避免单条消息超过服务端 1MB 上限导致连接被断开
+    if (obj.type === 'data' && typeof obj.data === 'string' && obj.data.length > 32768) {
+      for (let i = 0; i < obj.data.length; i += 32768) s.ws.send(JSON.stringify({ type: 'data', data: obj.data.slice(i, i + 32768) }));
+      return;
+    }
+    s.ws.send(JSON.stringify(obj));
   }
 
   // 打开 WebSocket 并挂载到后台会话：已有会话用 attach，新连接用 connect
@@ -1221,7 +1227,7 @@
       if (active) syncSize(active);
     }
     if (save) { try { localStorage.setItem('sshweb.fontSize', String(n)); } catch {} }
-    $('#fontLabel').textContent = `字体 ${fontSize}`;
+    $('#fontLabel').textContent = String(fontSize);
   }
   $('#fontDec').addEventListener('click', () => setFontSize(fontSize - 1));
   $('#fontInc').addEventListener('click', () => setFontSize(fontSize + 1));
@@ -1822,8 +1828,11 @@
 
   async function updateNotifyBtn() {
     const b = $('#btnNotify');
-    if (!pushSupported()) { b.textContent = '🔕 完成通知：不可用'; return; }
-    b.textContent = (await currentSub()) && Notification.permission === 'granted' ? '🔔 完成通知：已开启' : '🔕 完成通知：未开启';
+    const on = pushSupported() && (await currentSub()) && Notification.permission === 'granted';
+    b.textContent = !pushSupported() ? '不可用' : on ? '已开启' : '未开启';
+    b.classList.toggle('on', !!on);
+    b.classList.toggle('na', !pushSupported());
+    b.title = pushSupported() ? '终端有提示音时推送通知' : '需要通过 HTTPS 访问 (iPhone 需先添加到主屏幕)';
   }
 
   const b64ToBytes = (b64) => {

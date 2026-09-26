@@ -130,6 +130,8 @@ function parseCookies(header) {
 
 const COOKIE_NAME = 'sshweb_session';
 const authEnabled = !!AUTH_PASSWORD;
+// docker-compose.yml 里的占位密码或过短的密码，页面上给出警告
+const WEAK_PASSWORD = authEnabled && (AUTH_PASSWORD === '请修改为强密码' || AUTH_PASSWORD.length < 8);
 
 function isAuthed(req) {
   if (!authEnabled) return true;
@@ -321,7 +323,7 @@ app.get('/sw.js', (req, res) => {
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
 app.get('/api/me', (req, res) => {
-  res.json({ authEnabled, authed: isAuthed(req), user: authEnabled ? AUTH_USER : null, version: VERSION });
+  res.json({ authEnabled, authed: isAuthed(req), user: authEnabled ? AUTH_USER : null, version: VERSION, weakPassword: WEAK_PASSWORD });
 });
 
 app.post('/api/login', (req, res) => {
@@ -334,7 +336,7 @@ app.post('/api/login', (req, res) => {
     const token = sign({ u: AUTH_USER, exp: Date.now() + SESSION_HOURS * 3600 * 1000 });
     res.setHeader('Set-Cookie',
       `${COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${Math.floor(SESSION_HOURS * 3600)}` +
-      (COOKIE_SECURE ? '; Secure' : ''));
+      (COOKIE_SECURE || req.secure ? '; Secure' : '')); // 通过 HTTPS (如 Cloudflare 隧道) 访问时自动加 Secure
     return res.json({ ok: true });
   }
   loginFailed(ip);
@@ -555,6 +557,8 @@ app.get('/healthz', (req, res) => res.send('ok'));
 
 // ---------------------------------------------------------------- WebSocket <-> SSH
 const server = http.createServer(app);
+// Node 默认 5 分钟收不完请求就返回 408，大文件 / 慢网络上传会中途失败；这里不限制 (连接空闲仍由 keep-alive 管理)
+server.requestTimeout = 0;
 const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
 
 // 拒绝其他网站发起的 WebSocket 连接 (跨站 WebSocket 劫持)
@@ -1126,10 +1130,16 @@ server.listen(PORT, HOST, () => {
   console.log(`SSH-WEB v${VERSION} 已启动: http://${HOST}:${PORT}`);
   if (!authEnabled) {
     console.warn('⚠ 未设置 AUTH_PASSWORD，网页无需登录即可使用，请勿暴露到公网！');
+  } else if (WEAK_PASSWORD) {
+    console.warn('⚠ AUTH_PASSWORD 仍是默认占位密码或少于 8 位，请在 docker-compose.yml 里改成强密码！');
   }
 });
 
 // 服务停止 (如更新容器) 时只断开连接，不通知浏览器关闭标签；重新启动后浏览器会提示会话已不存在并可重新连接
+// 意外错误只记录日志，不让进程退出 (否则所有后台会话都会断开)
+process.on('unhandledRejection', (e) => console.error('[未处理的异步错误]', e));
+process.on('uncaughtException', (e) => console.error('[未捕获的异常]', e));
+
 const shutdown = () => {
   for (const s of sessions.values()) s.closeConn();
   wss.clients.forEach((ws) => ws.close());

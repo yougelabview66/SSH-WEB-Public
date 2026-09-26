@@ -32,20 +32,37 @@
   <div id="app" class="hidden">
     <aside id="sidebar">
       <div class="brand">&gt;_ SSH-WEB</div>
+      <div id="weakPw" class="weak-pw hidden">⚠ 登录密码仍是默认占位密码或太短，请在 docker-compose.yml 修改 AUTH_PASSWORD 后重建容器</div>
       <button class="primary block" id="btnNew">+ 新建连接</button>
       <input id="search" placeholder="搜索主机…">
       <div id="hostList"></div>
+      <!-- 设置区：左边名称，右边控件 -->
       <div class="sidebar-foot">
-        <span class="ver">SSH-WEB v{{VERSION}}</span>
-        <button id="btnNotify" class="link" title="终端有提示音时推送通知"></button>
-        <div class="font-row">
-          <span id="fontLabel">字体</span>
-          <button id="fontDec" class="link" title="缩小终端字体">A-</button>
-          <button id="fontInc" class="link" title="放大终端字体">A+</button>
+        <div class="set-row">
+          <span class="set-l">字体大小</span>
+          <div class="stepper">
+            <button id="fontDec" title="缩小终端字体 (手机上也可以双指捏合)">A-</button>
+            <span id="fontLabel">14</span>
+            <button id="fontInc" title="放大终端字体 (手机上也可以双指张开)">A+</button>
+          </div>
         </div>
-        <button id="btnTheme" class="link theme-btn" title="切换主题"></button>
-        <button id="btnKnown" class="link">已信任的主机指纹</button>
-        <button id="btnLogout" class="link hidden">退出登录</button>
+        <div class="set-row">
+          <span class="set-l">完成通知</span>
+          <button id="btnNotify" class="pill" title="终端有提示音时推送通知"></button>
+        </div>
+        <div class="set-row">
+          <span class="set-l">主题</span>
+          <div class="seg3" id="themeSeg">
+            <button data-mode="auto" title="跟随系统">自动</button>
+            <button data-mode="light">浅色</button>
+            <button data-mode="dark">深色</button>
+          </div>
+        </div>
+        <div class="foot-links">
+          <button id="btnKnown" class="link">已信任的主机指纹</button>
+          <button id="btnLogout" class="link hidden">退出登录</button>
+        </div>
+        <span class="ver">SSH-WEB v{{VERSION}}</span>
       </div>
     </aside>
 

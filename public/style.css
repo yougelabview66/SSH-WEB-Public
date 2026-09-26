@@ -166,7 +166,6 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 }
 
 /* 对话框 */
-.sidebar-foot { display: flex; flex-direction: column; align-items: flex-start; }
 #dialogBody { margin-bottom: 14px; }
 #dialogBody pre { white-space: pre-wrap; word-break: break-all; background: var(--bg); padding: 8px 10px;
   border-radius: 6px; margin: 6px 0; font: 12px ui-monospace, Menlo, Consolas, monospace; }
@@ -320,8 +319,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 .scroll-hint .acts { display: flex; gap: 8px; margin-top: 8px; }
 .scroll-hint .note { color: var(--muted); font-size: 12px; }
 
-.sidebar-foot .ver { color: var(--muted); font-size: 11px; opacity: .7; padding: 4px; }
-
 /* 复制终端内容 */
 .copyp { display: flex; flex-direction: column; height: min(640px, 100%); position: relative; }
 .copyp .note { color: var(--muted); font-size: 12px; }
@@ -338,9 +335,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
   #copyPanel .card { width: 100%; max-width: 100%; height: 80%; border-radius: 12px 12px 0 0;
     padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
 }
-
-/* 主题切换按钮 */
-.sidebar-foot .theme-btn { font-size: 13px; }
 
 /* 收藏 / 历史 标签页 */
 .htabs { display: flex; gap: 4px; }
@@ -383,8 +377,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
     padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
 }
 /* 字体大小 */
-.font-row { display: flex; align-items: center; gap: 2px; color: var(--muted); font-size: 13px; padding-left: 4px; }
-.font-row #fontLabel { margin-right: 4px; }
 .font-toast { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); z-index: 6; pointer-events: none;
   background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 10px;
   padding: 8px 16px; font-size: 16px; box-shadow: 0 6px 20px var(--shadow); }
@@ -394,3 +386,26 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 .xterm textarea.xterm-helper-textarea { border: 0; padding: 0; margin: 0; background: transparent; border-radius: 0; }
 /* 自定义按键「添加」按钮不换行 */
 .keys-custom button { flex-shrink: 0; white-space: nowrap; }
+
+.weak-pw { background: var(--warn-box-bg); color: var(--warn-box-fg); border: 1px solid var(--danger); border-radius: 6px;
+  padding: 6px 8px; font-size: 12px; }
+
+/* 侧边栏底部设置区 */
+.sidebar-foot { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border);
+  padding-top: 10px; margin: 0 -2px; }
+.set-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; padding: 0 2px; }
+.set-l { font-size: 13px; color: var(--muted); white-space: nowrap; }
+.stepper { display: flex; align-items: center; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.stepper button { border: none; border-radius: 0; background: var(--panel2); padding: 3px 10px; font-size: 12px; }
+.stepper #fontLabel { min-width: 30px; text-align: center; font-size: 13px; font-variant-numeric: tabular-nums; }
+.pill { font-size: 12px; padding: 3px 10px; border-radius: 12px; }
+.pill.on { background: var(--accent2); border-color: var(--accent2); color: #fff; }
+.pill.na { color: var(--muted); }
+.seg3 { display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.seg3 button { border: none; border-radius: 0; background: none; padding: 3px 9px; font-size: 12px; color: var(--muted); }
+.seg3 button + button { border-left: 1px solid var(--border); }
+.seg3 button.on { background: var(--panel2); color: var(--text); font-weight: 600; }
+.foot-links { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px; border-top: 1px solid var(--border);
+  padding-top: 6px; }
+.foot-links .link { font-size: 12px; padding: 2px; }
+.sidebar-foot .ver { color: var(--muted); font-size: 11px; opacity: .7; padding: 0 2px; }
