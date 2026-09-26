@@ -21,6 +21,7 @@ const { WebSocket, WebSocketServer, createWebSocketStream } = require('ws');
 const { Client } = require('ssh2');
 const registerSftp = require('./lib/sftp');
 const registerMonitor = require('./lib/monitor');
+const createPush = require('./lib/push');
 const { Terminal: HeadlessTerminal } = require('@xterm/headless');
 const { SerializeAddon } = require('@xterm/addon-serialize');
 
@@ -250,6 +251,23 @@ function writeHistory(list) {
   fs.renameSync(tmp, HISTORY_FILE);
 }
 
+// ---------------------------------------------------------------- 收藏命令
+const FAV_FILE = path.join(DATA_DIR, 'favorites.json');
+
+function readFavs() {
+  try {
+    return JSON.parse(fs.readFileSync(FAV_FILE, 'utf8'));
+  } catch {
+    return [];
+  }
+}
+
+function writeFavs(list) {
+  const tmp = FAV_FILE + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(list, null, 2), { mode: 0o600 });
+  fs.renameSync(tmp, FAV_FILE);
+}
+
 // ---------------------------------------------------------------- 登录限流
 const loginFails = new Map(); // ip -> { count, until }
 function loginBlocked(ip) {
@@ -295,6 +313,11 @@ const sendIndex = (req, res) => {
   res.type('html').send(INDEX_HTML);
 };
 app.get(['/', '/index.html'], sendIndex);
+// Service Worker 必须每次检查更新
+app.get('/sw.js', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  res.sendFile(path.join(__dirname, 'public', 'sw.js'));
+});
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
 app.get('/api/me', (req, res) => {
@@ -411,6 +434,43 @@ app.delete('/api/history', (req, res) => {
   res.json({ ok: true });
 });
 
+// 完成通知 (Web Push)
+const push = createPush(app, { dataDir: DATA_DIR, subject: process.env.PUSH_SUBJECT || 'mailto:ssh-web@example.com' });
+
+// 收藏命令: host 为空表示所有主机通用；按添加顺序排列
+app.get('/api/favorites', (req, res) => {
+  res.json(readFavs());
+});
+
+app.post('/api/favorites', (req, res) => {
+  const cmd = str(req.body?.cmd).replace(/[\x00-\x1f\x7f]/g, '').trim().slice(0, 2000);
+  const host = str(req.body?.host).slice(0, 300);
+  if (!cmd) return res.status(400).json({ error: '命令为空' });
+  const list = readFavs();
+  let item = list.find((f) => f.cmd === cmd && f.host === host);
+  if (!item) {
+    item = { id: crypto.randomUUID(), cmd, host, created: Date.now() };
+    list.push(item);
+    writeFavs(list.slice(-500));
+  }
+  res.json(item);
+});
+
+// 修改适用范围 (所有主机 / 仅某台主机)
+app.put('/api/favorites/:id', (req, res) => {
+  const list = readFavs();
+  const item = list.find((f) => f.id === req.params.id);
+  if (!item) return res.status(404).json({ error: '收藏不存在' });
+  if (typeof req.body?.host === 'string') item.host = req.body.host.slice(0, 300);
+  writeFavs(list);
+  res.json(item);
+});
+
+app.delete('/api/favorites/:id', (req, res) => {
+  writeFavs(readFavs().filter((f) => f.id !== req.params.id));
+  res.json({ ok: true });
+});
+
 // 后台会话 id -> Session；SFTP / 监控复用已连接会话的 SSH 连接
 const sessions = new Map();
 const liveSession = (sid) => {
@@ -523,6 +583,34 @@ class Session {
     this.sftpPromise = null;
     this.monPrev = null;
     this.attempt = 0;
+    this.lastAlert = 0;
+    // 提示音 / 通知序列 → 完成通知 (Claude Code、printf '\a' 等)
+    this.term.onBell(() => this.alert('终端提示音'));
+    this.term.parser.registerOscHandler(9, (d) => {
+      if (!/^\d+;/.test(d)) this.alert(d); // OSC 9;4;… 是进度条，不是通知
+      return true;
+    });
+    this.term.parser.registerOscHandler(777, (d) => {
+      const [kind, title, ...body] = d.split(';');
+      if (kind === 'notify') this.alert(body.join(';') || title, body.length ? title : '');
+      return true;
+    });
+  }
+
+  // 有设备正在看这个标签时不推送；同一会话 10 秒内最多推送一次
+  alert(message, title) {
+    this.broadcast({ type: 'bell' });
+    const now = Date.now();
+    if (now - this.lastAlert < 10000) return;
+    if ([...this.clients].some((ws) => ws.watching)) return;
+    this.lastAlert = now;
+    const name = `${this.title}-${this.n}`;
+    push.send({
+      title: title ? `${name} · ${title}` : name,
+      body: String(message || '终端提示音').slice(0, 200),
+      tag: this.id,
+      sessionId: this.id,
+    }).catch(() => {});
   }
 
   info() {
@@ -960,6 +1048,9 @@ wss.on('connection', (ws, req) => {
         break;
       case 'reconnect':
         if (sess) sess.connect();
+        break;
+      case 'watching': // 浏览器当前是否正在看这个标签 (页面可见且是当前标签)
+        ws.watching = !!msg.watching;
         break;
       case 'close':
         if (sess) sess.terminate();

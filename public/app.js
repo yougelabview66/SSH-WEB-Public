@@ -223,10 +223,49 @@
   $('#btnNew').addEventListener('click', () => openModal(null));
 
   // ------------------------------------------------------------ 终端会话
-  const THEME = {
-    background: '#000000', foreground: '#e5e7eb', cursor: '#22c55e',
-    selectionBackground: 'rgba(148,163,184,.35)',
+  // ------------------------------------------------------------ 主题 (跟随系统 / 浅色 / 深色)
+  const TERM_THEMES = {
+    dark: {
+      background: '#000000', foreground: '#e5e7eb', cursor: '#22c55e', cursorAccent: '#000000',
+      selectionBackground: 'rgba(148,163,184,.35)',
+    },
+    // 浅色终端用 GitHub Light 的 ANSI 色板，白底上黄色 / 白色也能看清
+    light: {
+      background: '#ffffff', foreground: '#1f2328', cursor: '#16a34a', cursorAccent: '#ffffff',
+      selectionBackground: 'rgba(9,105,218,.2)',
+      black: '#24292f', red: '#cf222e', green: '#116329', yellow: '#9a6700', blue: '#0969da',
+      magenta: '#8250df', cyan: '#1b7c83', white: '#6e7781',
+      brightBlack: '#57606a', brightRed: '#a40e26', brightGreen: '#1a7f37', brightYellow: '#633c01',
+      brightBlue: '#218bff', brightMagenta: '#a475f9', brightCyan: '#3192aa', brightWhite: '#8c959f',
+    },
   };
+  const THEME_NAMES = { auto: '跟随系统', light: '浅色', dark: '深色' };
+  const systemLight = window.matchMedia('(prefers-color-scheme: light)');
+  const themeMode = () => { try { return localStorage.getItem('sshweb.theme') || 'auto'; } catch { return 'auto'; } };
+  const effectiveTheme = () => {
+    const m = themeMode();
+    return m === 'auto' ? (systemLight.matches ? 'light' : 'dark') : m;
+  };
+  const termTheme = () => TERM_THEMES[effectiveTheme()];
+
+  function applyTheme() {
+    const m = themeMode();
+    if (m === 'auto') delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = m;
+    const eff = effectiveTheme();
+    document.querySelector('meta[name=theme-color]').content = eff === 'light' ? '#ffffff' : '#111827';
+    $('#btnTheme').textContent = (eff === 'light' ? '☀ ' : '🌙 ') + '主题：' + THEME_NAMES[m];
+    for (const s of sessions) s.term.options.theme = termTheme();
+    for (const s of sessions) if (s.mon && s.mon.redraw) s.mon.redraw();
+  }
+
+  $('#btnTheme').addEventListener('click', () => {
+    const order = ['auto', 'light', 'dark'];
+    const next = order[(order.indexOf(themeMode()) + 1) % order.length];
+    try { localStorage.setItem('sshweb.theme', next); } catch {}
+    applyTheme();
+  });
+  systemLight.addEventListener('change', () => { if (themeMode() === 'auto') applyTheme(); });
 
   // restore: 服务端已有的后台会话信息 (刷新 / 重新打开浏览器时恢复)
   function openSession(params, title, connType, restore) {
@@ -251,7 +290,7 @@
       cursorBlink: true,
       fontSize: window.innerWidth < 760 ? 12 : 14,
       fontFamily: 'ui-monospace, "Cascadia Code", Menlo, Consolas, "DejaVu Sans Mono", monospace',
-      theme: THEME,
+      theme: termTheme(),
       scrollback: 10000,
       allowProposedApi: true,
     });
@@ -372,6 +411,7 @@
         s.params = m.session.params || s.params;
         if (isNew) saveTabOrder();
         if (active === s) saveActive();
+        reportWatching();
       } else if (m.type === 'snapshot') {
         // 还原服务端保存的画面和滚动记录
         s.term.reset();
@@ -397,6 +437,8 @@
           if (answers === undefined) return; // 已在其他设备上回答
           send(s, answers ? { type: 'prompt-response', answers } : { type: 'prompt-response', cancel: true });
         });
+      } else if (m.type === 'bell') {
+        if (s !== active || document.hidden) s.tab.classList.add('ring');
       } else if (m.type === 'prompt-done') {
         dismissDialog(s.id);
       } else if (m.type === 'error') {
@@ -483,6 +525,12 @@
   function restoreSessions(list) {
     let want = null;
     try { want = localStorage.getItem('sshweb.active'); } catch {}
+    // 点击通知打开网页时 (?session=xxx) 直接切到对应标签
+    const fromNotify = new URLSearchParams(location.search).get('session');
+    if (fromNotify) {
+      want = fromNotify;
+      history.replaceState(null, '', '/');
+    }
     const opened = list.map((info) => openSession(info.params || {}, info.title, info.connType, info));
     activate(opened.find((x) => x.remoteId === want) || opened[opened.length - 1]);
   }
@@ -495,9 +543,11 @@
     });
     requestAnimationFrame(() => { syncSize(s); focusTerm(s); });
     s.tab.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    s.tab.classList.remove('ring');
     updateSftpBtn();
     updateMobileBar();
     saveActive();
+    reportWatching();
     document.title = active ? `${active.title} - SSH-WEB` : 'SSH-WEB';
   }
 
@@ -1084,6 +1134,8 @@
 
   const histPanel = $('#history');
   let histItems = [];
+  let favItems = [];
+  let histTab = (() => { try { return localStorage.getItem('sshweb.histTab') || 'fav'; } catch { return 'fav'; } })();
 
   const fmtAgo = (t) => {
     const d = (Date.now() - t) / 1000;
@@ -1097,10 +1149,12 @@
   async function openHistory() {
     histPanel.classList.remove('hidden');
     $('#histSearch').value = '';
+    $('#favInput').value = '';
     $('#histAll').checked = !active;
     $('#histList').innerHTML = '<div class="sftp-msg">加载中…</div>';
+    if (isTouch) mInput.blur();
     try {
-      histItems = await api('GET', '/api/history');
+      [histItems, favItems] = await Promise.all([api('GET', '/api/history'), api('GET', '/api/favorites')]);
       renderHistory();
     } catch (e) {
       $('#histList').innerHTML = `<div class="sftp-msg" style="color:var(--danger)">${esc(e.message)}</div>`;
@@ -1113,57 +1167,120 @@
     if (active) focusTerm(active);
   }
 
-  function visibleHistory() {
+  const showAll = () => $('#histAll').checked || !active;
+  const isFav = (cmd) => favItems.some((f) => f.cmd === cmd);
+
+  function visibleItems() {
     const q = $('#histSearch').value.trim().toLowerCase();
-    const all = $('#histAll').checked || !active;
-    return histItems.filter((h) => (all || h.host === active.histHost) && (!q || h.cmd.toLowerCase().includes(q)));
+    const all = showAll();
+    const match = (cmd) => !q || cmd.toLowerCase().includes(q);
+    if (histTab === 'fav') {
+      // 收藏: 所有主机通用的 + 当前主机专用的
+      return favItems.filter((f) => (all || !f.host || f.host === active.histHost) && match(f.cmd));
+    }
+    return histItems.filter((h) => (all || h.host === active.histHost) && match(h.cmd));
+  }
+
+  // 执行 / 填入到当前终端
+  function useCommand(cmd, op) {
+    if (!active || !active.sid) return;
+    closeHistory();
+    sendKeys(cmd);
+    // 等命令回显后再回车，这样也会记入历史 (次数 +1、移到最前)
+    if (op === 'run') setTimeout(() => { beginCapture(active); sendKeys('\r'); }, 50);
+  }
+
+  async function toggleFav(cmd) {
+    const f = favItems.find((x) => x.cmd === cmd);
+    if (f) {
+      await api('DELETE', '/api/favorites/' + f.id);
+      favItems = favItems.filter((x) => x !== f);
+    } else {
+      favItems.push(await api('POST', '/api/favorites', { cmd, host: '' }));
+    }
   }
 
   function renderHistory() {
+    histPanel.querySelectorAll('.htabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === histTab));
+    $('#favAdd').classList.toggle('hidden', histTab !== 'fav');
     const list = $('#histList');
-    const items = visibleHistory();
-    const all = $('#histAll').checked || !active;
-    $('#histClear').textContent = all ? '清空全部' : '清空本主机';
-    $('#histClear').disabled = !items.length;
+    const items = visibleItems();
+    const all = showAll();
+    const clear = $('#histClear');
+    clear.classList.toggle('hidden', histTab !== 'hist');
+    clear.textContent = all ? '清空全部' : '清空本主机';
+    clear.disabled = !items.length;
     list.innerHTML = '';
     if (!items.length) {
-      list.innerHTML = '<div class="sftp-msg">暂无历史命令<br><span class="hint">在终端里执行过的命令会记录在这里</span></div>';
+      list.innerHTML = histTab === 'fav'
+        ? '<div class="sftp-msg">还没有收藏的命令<br><span class="hint">在上面输入框添加，或在「历史」里点 ☆ 收藏</span></div>'
+        : '<div class="sftp-msg">暂无历史命令<br><span class="hint">在终端里执行过的命令会记录在这里</span></div>';
       return;
     }
     items.forEach((h) => {
+      const fav = histTab === 'fav';
       const row = document.createElement('div');
       row.className = 'hrow';
-      row.innerHTML = `<div class="hmain" title="点击执行"><div class="cmd"></div><div class="hmeta"></div></div>
+      row.innerHTML = `${fav ? '' : `<button data-op="star" class="star${isFav(h.cmd) ? ' on' : ''}" title="收藏">${isFav(h.cmd) ? '★' : '☆'}</button>`}
+        <div class="hmain" title="点击执行"><div class="cmd"></div><div class="hmeta"></div></div>
         <button data-op="fill" title="填入终端，不执行">填入</button>
         <button data-op="run" class="primary" title="执行">执行</button>
-        <button data-op="del" class="del" title="删除">✕</button>`;
+        <button data-op="del" class="del" title="${fav ? '取消收藏' : '删除'}">✕</button>`;
       $('.cmd', row).textContent = h.cmd;
-      $('.hmeta', row).textContent = [all ? h.host : '', fmtAgo(h.time), h.count > 1 ? `${h.count} 次` : '']
-        .filter(Boolean).join(' · ');
+      if (fav) {
+        // 适用范围: 点击在「所有主机」和「仅当前主机」之间切换
+        const scope = document.createElement('button');
+        scope.className = 'scope';
+        scope.dataset.op = 'scope';
+        scope.textContent = h.host ? `仅 ${h.host}` : '所有主机';
+        scope.title = '点击切换适用范围';
+        $('.hmeta', row).appendChild(scope);
+      } else {
+        $('.hmeta', row).textContent = [all ? h.host : '', fmtAgo(h.time), h.count > 1 ? `${h.count} 次` : '']
+          .filter(Boolean).join(' · ');
+      }
       row.addEventListener('click', async (e) => {
         const op = e.target.dataset.op || (e.target.closest('.hmain') ? 'run' : '');
-        if (op === 'del') {
-          try {
-            await api('DELETE', '/api/history/' + h.id);
-            histItems = histItems.filter((x) => x.id !== h.id);
-            renderHistory();
-          } catch (err) { alert(err.message); }
-          return;
-        }
-        if (!op || !active || !active.sid) return;
-        closeHistory();
-        if (op === 'run') {
-          sendKeys(h.cmd);
-          // 等命令回显后再回车，这样也会被记录 (次数 +1、移到最前)
-          setTimeout(() => { beginCapture(active); sendKeys('\r'); }, 50);
-        } else {
-          sendKeys(h.cmd);
-        }
+        try {
+          if (op === 'star') { await toggleFav(h.cmd); return renderHistory(); }
+          if (op === 'scope') {
+            const host = h.host ? '' : (active ? active.histHost : '');
+            Object.assign(h, await api('PUT', '/api/favorites/' + h.id, { host }));
+            return renderHistory();
+          }
+          if (op === 'del') {
+            if (fav) {
+              await api('DELETE', '/api/favorites/' + h.id);
+              favItems = favItems.filter((x) => x.id !== h.id);
+            } else {
+              await api('DELETE', '/api/history/' + h.id);
+              histItems = histItems.filter((x) => x.id !== h.id);
+            }
+            return renderHistory();
+          }
+        } catch (err) { return alert(err.message); }
+        if (op === 'run' || op === 'fill') useCommand(h.cmd, op);
       });
       list.appendChild(row);
     });
   }
 
+  histPanel.querySelectorAll('.htabs button').forEach((b) => b.addEventListener('click', () => {
+    histTab = b.dataset.tab;
+    try { localStorage.setItem('sshweb.histTab', histTab); } catch {}
+    renderHistory();
+  }));
+  $('#favAdd').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const cmd = $('#favInput').value.trim();
+    if (!cmd) return;
+    try {
+      const item = await api('POST', '/api/favorites', { cmd, host: '' });
+      if (!favItems.some((x) => x.id === item.id)) favItems.push(item);
+      $('#favInput').value = '';
+      renderHistory();
+    } catch (err) { alert(err.message); }
+  });
   $('#btnHistory').addEventListener('click', openHistory);
   $('#histClose').addEventListener('click', closeHistory);
   $('#histSearch').addEventListener('input', renderHistory);
@@ -1173,8 +1290,8 @@
     if (e.key === 'Escape' && !histPanel.classList.contains('hidden')) closeHistory();
   });
   $('#histClear').addEventListener('click', async () => {
-    const all = $('#histAll').checked || !active;
-    if (!confirm(all ? '清空所有主机的历史命令？' : `清空 ${active.histHost} 的历史命令？`)) return;
+    const all = showAll();
+    if (!confirm(all ? '清空所有主机的历史命令？(收藏不受影响)' : `清空 ${active.histHost} 的历史命令？(收藏不受影响)`)) return;
     try {
       await api('DELETE', '/api/history' + (all ? '' : '?host=' + encodeURIComponent(active.histHost)));
       histItems = all ? [] : histItems.filter((h) => h.host !== active.histHost);
@@ -1452,6 +1569,95 @@
     });
   }
 
+  // ------------------------------------------------------------ 完成通知 (Web Push)
+  // 告诉服务端哪个标签正被看着：正在看的标签响铃时不推送
+  function reportWatching() {
+    for (const x of sessions) send(x, { type: 'watching', watching: !document.hidden && x === active });
+  }
+  document.addEventListener('visibilitychange', () => {
+    reportWatching();
+    if (!document.hidden && active) active.tab.classList.remove('ring');
+  });
+
+  const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && window.isSecureContext;
+  const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  let swReg = null;
+
+  async function initPush() {
+    if ('serviceWorker' in navigator && window.isSecureContext) {
+      try {
+        swReg = await navigator.serviceWorker.register('/sw.js');
+        // 点击通知时，已打开的页面切到对应标签
+        navigator.serviceWorker.addEventListener('message', (e) => {
+          if (e.data && e.data.type === 'open-session') {
+            const t = sessions.find((x) => x.remoteId === e.data.id);
+            if (t) activate(t);
+          }
+        });
+      } catch {}
+    }
+    updateNotifyBtn();
+  }
+
+  async function currentSub() {
+    try { return swReg ? await swReg.pushManager.getSubscription() : null; } catch { return null; }
+  }
+
+  async function updateNotifyBtn() {
+    const b = $('#btnNotify');
+    if (!pushSupported()) { b.textContent = '🔕 完成通知：不可用'; return; }
+    b.textContent = (await currentSub()) && Notification.permission === 'granted' ? '🔔 完成通知：已开启' : '🔕 完成通知：未开启';
+  }
+
+  const b64ToBytes = (b64) => {
+    const s = atob((b64 + '='.repeat((4 - (b64.length % 4)) % 4)).replace(/-/g, '+').replace(/_/g, '/'));
+    return Uint8Array.from(s, (c) => c.charCodeAt(0));
+  };
+
+  async function enablePush() {
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') throw new Error('没有获得通知权限，请在浏览器设置里允许这个网站发送通知');
+    const reg = swReg || await navigator.serviceWorker.ready;
+    const { publicKey } = await api('GET', '/api/push/key');
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(publicKey) });
+    await api('POST', '/api/push/subscribe', { subscription: sub.toJSON() });
+  }
+
+  $('#btnNotify').addEventListener('click', async () => {
+    if (!window.isSecureContext) {
+      return alert('完成通知需要通过 HTTPS 访问（例如 Cloudflare 隧道的域名），局域网 http:// 地址无法使用。');
+    }
+    if (!pushSupported()) {
+      return alert(isIOS && !standalone
+        ? 'iPhone / iPad 需要先点 Safari 的「分享 → 添加到主屏幕」，从主屏幕图标打开后再开启通知（iOS 16.4 以上）。'
+        : '当前浏览器不支持推送通知。');
+    }
+    const sub = await currentSub();
+    try {
+      if (sub && Notification.permission === 'granted') {
+        const r = await dialog('完成通知', `<p>已开启。终端出现提示音（如 Claude Code 完成任务、<code>printf '\\a'</code>）时推送到这台设备；
+          正在看的标签不会推送。</p>`, [
+          { label: '关闭通知', value: 'off', cls: 'danger' },
+          { label: '发送测试通知', value: 'test' },
+          { label: '取消', value: null, cls: 'primary', cancel: true },
+        ]);
+        if (r.value === 'test') await api('POST', '/api/push/test');
+        if (r.value === 'off') {
+          await api('POST', '/api/push/unsubscribe', { endpoint: sub.endpoint }).catch(() => {});
+          await sub.unsubscribe();
+        }
+      } else {
+        await enablePush();
+        await api('POST', '/api/push/test');
+      }
+    } catch (e) {
+      alert('操作失败：' + e.message);
+    }
+    updateNotifyBtn();
+  });
+
   // ------------------------------------------------------------ 性能监控
   const MON_INTERVAL = 2000;
   const MON_POINTS = 60; // 图表保留 60 个点 (约 2 分钟)
@@ -1651,7 +1857,7 @@
       const x = (i) => w - (pts.length - 1 - i) * (w / (MON_POINTS - 1));
       const css = getComputedStyle(el);
       // 网格与刻度 (弱化)
-      ctx.strokeStyle = 'rgba(148,163,184,.15)';
+      ctx.strokeStyle = css.getPropertyValue('--border').trim();
       ctx.lineWidth = 1;
       for (const f of [0, 0.5, 1]) {
         const gy = Math.round(bottom - f * (bottom - top)) + 0.5;
@@ -1680,7 +1886,7 @@
       const i = Math.round((pts.length - 1) - (w - m.hover) / (w / (MON_POINTS - 1)));
       const p = pts[Math.min(Math.max(i, 0), pts.length - 1)];
       const px = x(pts.indexOf(p));
-      ctx.strokeStyle = 'rgba(226,232,240,.4)';
+      ctx.strokeStyle = css.getPropertyValue('--muted').trim();
       ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(Math.round(px) + 0.5, top); ctx.lineTo(Math.round(px) + 0.5, bottom); ctx.stroke();
       for (const [k, col] of [['rx', '--dl'], ['tx', '--ul']]) {
@@ -1699,6 +1905,7 @@
       tip.style.left = (px + 8 + tw > w ? Math.max(px - tw - 8, 0) : px + 8) + 'px';
     }
 
+    m.redraw = drawChart;
     return m;
   }
 
@@ -1781,5 +1988,7 @@
   function closeSidebarOnMobile() { if (mobile()) app.classList.remove('side-open'); }
   $('#terms').addEventListener('click', closeSidebarOnMobile);
 
+  applyTheme();
+  initPush();
   init().catch((e) => alert('初始化失败: ' + e.message));
 })();

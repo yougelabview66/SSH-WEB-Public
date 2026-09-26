@@ -4,6 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, interactive-widget=resizes-content">
   <title>SSH-WEB</title>
+  <meta name="theme-color" content="#111827">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="SSH-WEB">
+  <script>
+    // 尽早应用手动选择的主题，避免页面先闪一下深色
+    try { var t = localStorage.getItem('sshweb.theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {}
+  </script>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%231e293b'/><text x='5' y='22' font-family='monospace' font-size='16' fill='%2322c55e'>&gt;_</text></svg>">
   <link rel="stylesheet" href="/vendor/xterm/css/xterm.css">
   <link rel="stylesheet" href="/style.css?v={{VERSION}}">
@@ -28,6 +37,8 @@
       <div id="hostList"></div>
       <div class="sidebar-foot">
         <span class="ver">SSH-WEB v{{VERSION}}</span>
+        <button id="btnNotify" class="link" title="终端有提示音时推送通知"></button>
+        <button id="btnTheme" class="link theme-btn" title="切换主题"></button>
         <button id="btnKnown" class="link">已信任的主机指纹</button>
         <button id="btnLogout" class="link hidden">退出登录</button>
       </div>
@@ -170,10 +181,17 @@
   <div id="history" class="overlay hidden">
     <div class="card wide hist">
       <div class="hist-head">
-        <h3>历史命令</h3>
+        <div class="htabs">
+          <button type="button" data-tab="fav">★ 收藏</button>
+          <button type="button" data-tab="hist">🕘 历史</button>
+        </div>
         <label class="check"><input type="checkbox" id="histAll"> 全部主机</label>
       </div>
       <input id="histSearch" placeholder="搜索命令…" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <form id="favAdd" class="fav-add hidden" autocomplete="off">
+        <input id="favInput" placeholder="添加常用命令，如 tmux attach" autocapitalize="off" spellcheck="false">
+        <button type="submit" class="primary">添加</button>
+      </form>
       <div id="histList"></div>
       <div class="actions">
         <button type="button" id="histClear" class="danger">清空</button>

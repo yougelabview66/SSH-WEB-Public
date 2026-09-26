@@ -1,0 +1,13 @@
+{
+  "name": "SSH-WEB",
+  "short_name": "SSH-WEB",
+  "description": "Web SSH 终端",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#111827",
+  "theme_color": "#111827",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
