@@ -409,3 +409,7 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
   padding-top: 6px; }
 .foot-links .link { font-size: 12px; padding: 2px; }
 .sidebar-foot .ver { color: var(--muted); font-size: 11px; opacity: .7; padding: 0 2px; }
+
+/* 侧边栏主机拖动排序 */
+.host { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.host.dragging { background: var(--panel2); box-shadow: 0 0 0 1px var(--accent), 0 6px 16px var(--shadow); position: relative; z-index: 2; cursor: grabbing; }

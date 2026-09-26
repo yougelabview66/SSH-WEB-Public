@@ -95,9 +95,11 @@
         t.textContent = g;
         list.appendChild(t);
       }
-      groups[g].sort((a, b) => a.name.localeCompare(b.name)).forEach((h) => {
+      groups[g].sort(hostOrder).forEach((h) => {
         const el = document.createElement('div');
         el.className = 'host';
+        el.dataset.id = h.id;
+        el.dataset.group = h.group || '';
         el.innerHTML = `
           <div class="info"><div class="name"></div><div class="addr"></div></div>
           ${h.connType === 'cloudflare' ? '<span class="badge" title="Cloudflare 隧道">CF</span>' : ''}
@@ -106,6 +108,7 @@
         $('.addr', el).textContent = h.connType === 'cloudflare'
           ? `${h.username}@${h.host}` : `${h.username}@${h.host}:${h.port}`;
         el.addEventListener('click', async (e) => {
+          if (Date.now() < hostDragUntil) return; // 刚拖动完，不当作点击
           const op = e.target.dataset.op;
           if (op === 'edit') return openModal(h, true);
           if (op === 'del') {
@@ -123,6 +126,77 @@
     if (!filtered.length) list.innerHTML = '<div class="muted" style="padding:8px">暂无主机</div>';
   }
   $('#search').addEventListener('input', renderHosts);
+
+  // 排过序的按自定义顺序，没排过的按名称 (排在后面，如新加的主机)
+  function hostOrder(a, b) {
+    const ao = a.order ?? Infinity;
+    const bo = b.order ?? Infinity;
+    return ao !== bo ? ao - bo : a.name.localeCompare(b.name);
+  }
+
+  // ------------------------------------------------------------ 侧边栏主机拖动排序
+  // 电脑：按住拖动超过 5px 开始；手机：长按 350ms 开始 (避免和上下滑动列表冲突)；只在同一分组内移动
+  const hostListEl = $('#hostList');
+  let hostDrag = null;
+  let hostDragUntil = 0;
+
+  function beginHostDrag() {
+    if (!hostDrag) return;
+    hostDrag.started = true;
+    hostDrag.el.classList.add('dragging');
+    if (hostDrag.touch) navigator.vibrate?.(15);
+  }
+
+  function moveHostDrag(y) {
+    const el = hostDrag.el;
+    const same = (x) => x && x.classList.contains('host') && x.dataset.group === el.dataset.group;
+    const prev = el.previousElementSibling;
+    const next = el.nextElementSibling;
+    const mid = (x) => { const r = x.getBoundingClientRect(); return r.top + r.height / 2; };
+    if (same(prev) && y < mid(prev)) hostListEl.insertBefore(el, prev);
+    else if (same(next) && y > mid(next)) hostListEl.insertBefore(el, next.nextSibling);
+    // 拖到边缘时自动滚动列表
+    const r = hostListEl.getBoundingClientRect();
+    if (y < r.top + 30) hostListEl.scrollTop -= 10;
+    else if (y > r.bottom - 30) hostListEl.scrollTop += 10;
+  }
+
+  async function endHostDrag() {
+    if (!hostDrag) return;
+    clearTimeout(hostDrag.timer);
+    const d = hostDrag;
+    hostDrag = null;
+    if (!d.started) return;
+    d.el.classList.remove('dragging');
+    hostDragUntil = Date.now() + 400;
+    // 界面上的顺序 (搜索过滤时，未显示的主机保持原来的相对位置排在后面)
+    const shown = [...hostListEl.querySelectorAll('.host')].map((x) => x.dataset.id);
+    const rest = hosts.slice().sort(hostOrder).map((h) => h.id).filter((id) => !shown.includes(id));
+    const ids = [...shown, ...rest];
+    ids.forEach((id, i) => { const h = hosts.find((x) => x.id === id); if (h) h.order = i; });
+    try { await api('PUT', '/api/hosts/order', { ids }); } catch (e) { alert('保存顺序失败：' + e.message); }
+  }
+
+  hostListEl.addEventListener('pointerdown', (e) => {
+    const el = e.target.closest('.host');
+    if (!el || e.target.closest('.ops') || e.button > 0) return;
+    hostDrag = { el, startX: e.clientX, startY: e.clientY, started: false, touch: e.pointerType !== 'mouse' };
+    if (hostDrag.touch) hostDrag.timer = setTimeout(beginHostDrag, 350);
+  });
+  window.addEventListener('pointermove', (e) => {
+    if (!hostDrag) return;
+    if (!hostDrag.started) {
+      const moved = Math.max(Math.abs(e.clientX - hostDrag.startX), Math.abs(e.clientY - hostDrag.startY));
+      if (hostDrag.touch) { if (moved > 8) endHostDrag(); return; } // 长按前就移动了 = 在滚动列表
+      if (moved < 5) return;
+      beginHostDrag();
+    }
+    moveHostDrag(e.clientY);
+  });
+  window.addEventListener('pointerup', endHostDrag);
+  window.addEventListener('pointercancel', endHostDrag);
+  hostListEl.addEventListener('touchmove', (e) => { if (hostDrag && hostDrag.started) e.preventDefault(); }, { passive: false });
+  hostListEl.addEventListener('contextmenu', (e) => { if (e.target.closest('.host')) e.preventDefault(); });
 
   // ------------------------------------------------------------ 连接表单
   let editing = null; // 当前编辑的已保存主机

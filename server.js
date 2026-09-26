@@ -199,6 +199,7 @@ function publicHost(h) {
     cfClientId: h.cfClientId || '',
     hasCfSecret: !!h.cfClientSecret,
     group: h.group || '',
+    order: typeof h.order === 'number' ? h.order : null, // 侧边栏自定义顺序 (未排序过为 null，按名称排)
     hasSecret: !!(h.password || h.privateKey),
   };
 }
@@ -386,6 +387,19 @@ app.post('/api/hosts', (req, res) => {
   if (b.cfClientSecret && h.connType === 'cloudflare') h.cfClientSecret = encrypt(b.cfClientSecret);
   writeHosts(list);
   res.json(publicHost(h));
+});
+
+// 侧边栏拖动排序: ids 为新的完整顺序
+app.put('/api/hosts/order', (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String) : null;
+  if (!ids) return res.status(400).json({ error: '顺序无效' });
+  const list = readHosts();
+  for (const h of list) {
+    const i = ids.indexOf(h.id);
+    if (i >= 0) h.order = i;
+  }
+  writeHosts(list);
+  res.json({ ok: true });
 });
 
 app.delete('/api/hosts/:id', (req, res) => {
