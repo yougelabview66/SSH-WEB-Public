@@ -1880,6 +1880,7 @@
   }
   document.addEventListener('visibilitychange', () => {
     reportWatching();
+    sessions.forEach(syncMonitor); // 页面不可见时暂停性能监控采集
     if (!document.hidden && active) active.tab.classList.remove('ring');
   });
 
@@ -1997,11 +1998,11 @@
     requestAnimationFrame(() => s.fit.fit());
   });
 
-  // 只为「当前标签 + 面板打开 + 已连接」的会话采集，其他暂停
+  // 只为「页面可见 + 当前标签 + 面板打开 + 已连接」的会话采集，其他暂停
   function syncMonitor(s) {
     const m = s.mon;
     if (!m) return;
-    const want = m.open && s === active && !!s.sid && !s.closed;
+    const want = m.open && s === active && !!s.sid && !s.closed && !document.hidden;
     if (want && !m.running) {
       m.running = true;
       m.poll();
