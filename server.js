@@ -1200,6 +1200,10 @@ wss.on('connection', (ws, req) => {
         const s = new Session(cfg, {
           title: msg.title, n: msg.n, histHost: msg.histHost, hostId: msg.hostId, cols: msg.cols, rows: msg.rows, clientIp,
         });
+        // 序号由服务端决定：接着所有设备上同名会话的最大序号往后排 (浏览器只知道自己打开时的标签)
+        let maxN = 0;
+        for (const x of sessions.values()) if (x.title === s.title) maxN = Math.max(maxN, x.n);
+        s.n = Math.min(maxN + 1, 999);
         sessions.set(s.id, s);
         s.attach(ws);
         s.connect();

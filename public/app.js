@@ -418,7 +418,8 @@
     s.tab = document.createElement('div');
     s.tab.className = 'tab';
     s.tab.innerHTML = '<span class="dot"></span><span class="title"></span><button class="x" title="关闭">×</button>';
-    // 标签显示「主机名-序号」: 家里 NAS-1、家里 NAS-2…，同一主机多开时序号递增，关闭后空出的序号可复用
+    // 标签显示「主机名-序号」: 家里 NAS-1、家里 NAS-2…，新开的标签接着同一主机当前最大的序号往后排
+    // (有 1 和 3 时新开的是 4，不补空出的 2)；该主机没有打开的标签时从 1 开始
     if (restore && restore.n) {
       s.baseTitle = title;
       s.n = restore.n;
@@ -427,10 +428,9 @@
       s.baseTitle = m ? m[1] : title;
       s.n = m ? +m[2] : 1;
     } else {
-      const used = new Set(sessions.filter((x) => x.baseTitle === title).map((x) => x.n));
+      const max = Math.max(0, ...sessions.filter((x) => x.baseTitle === title).map((x) => x.n));
       s.baseTitle = title;
-      s.n = 1;
-      while (used.has(s.n)) s.n++;
+      s.n = max + 1;
     }
     s.title = title = `${s.baseTitle}-${s.n}`;
     $('.title', s.tab).textContent = title;
@@ -507,6 +507,7 @@
         const isNew = !s.remoteId;
         s.remoteId = m.session.id;
         s.params = m.session.params || s.params;
+        if (m.session.n && m.session.n !== s.n) setTabNumber(s, m.session.n); // 其他设备可能已用了这个序号
         if (isNew) saveTabOrder();
         if (active === s) saveActive();
         reportWatching();
@@ -669,6 +670,14 @@
     if (!s.webgl) return;
     try { s.webgl.dispose(); } catch {}
     s.webgl = null;
+  }
+
+  function setTabNumber(s, n) {
+    s.n = n;
+    s.title = `${s.baseTitle}-${n}`;
+    $('.title', s.tab).textContent = s.title;
+    s.tab.title = s.title;
+    if (active === s) document.title = `${s.title} - SSH-WEB`;
   }
 
   function activate(s) {
