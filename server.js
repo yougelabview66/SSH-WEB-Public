@@ -314,10 +314,19 @@ app.use((req, res, next) => {
   next();
 });
 
+// 带版本号 (?v=) 的前端资源内容不会变，让浏览器长期缓存，打开页面时不用再逐个向服务器确认；
+// 升级后首页里的版本号变了，会自动加载新文件
+// (只在文件存在时设置，404 不会被缓存)
+const staticOpts = {
+  setHeaders(res) {
+    if (res.req.query.v !== undefined) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  },
+};
+
 // 前端静态资源 (xterm 直接从 node_modules 提供，NAS 离线也能用)
-app.use('/vendor/xterm', express.static(path.join(__dirname, 'node_modules/@xterm/xterm')));
-app.use('/vendor/addon-fit', express.static(path.join(__dirname, 'node_modules/@xterm/addon-fit')));
-app.use('/vendor/addon-web-links', express.static(path.join(__dirname, 'node_modules/@xterm/addon-web-links')));
+app.use('/vendor/xterm', express.static(path.join(__dirname, 'node_modules/@xterm/xterm'), staticOpts));
+app.use('/vendor/addon-fit', express.static(path.join(__dirname, 'node_modules/@xterm/addon-fit'), staticOpts));
+app.use('/vendor/addon-web-links', express.static(path.join(__dirname, 'node_modules/@xterm/addon-web-links'), staticOpts));
 // 首页不缓存，并给前端资源加版本号，升级后浏览器一定会加载新的 app.js / style.css
 const VERSION = require('./package.json').version;
 const INDEX_HTML = fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8').replace(/\{\{VERSION\}\}/g, VERSION);
@@ -331,7 +340,7 @@ app.get('/sw.js', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
   res.sendFile(path.join(__dirname, 'public', 'sw.js'));
 });
-app.use(express.static(path.join(__dirname, 'public'), { index: false }));
+app.use(express.static(path.join(__dirname, 'public'), { ...staticOpts, index: false }));
 
 app.get('/api/me', (req, res) => {
   res.json({ authEnabled, authed: isAuthed(req), user: authEnabled ? AUTH_USER : null, version: VERSION, weakPassword: WEAK_PASSWORD });
