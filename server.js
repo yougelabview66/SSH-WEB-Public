@@ -51,6 +51,13 @@ const MAX_SESSIONS = parseInt(process.env.MAX_SESSIONS || '30', 10);
 const SCROLLBACK = parseInt(process.env.SCROLLBACK || '5000', 10);
 // 等待用户输入验证码 / 确认指纹的最长时间
 const USER_INPUT_TIMEOUT = 5 * 60 * 1000;
+// 终端输出流控: 几毫秒内的零碎输出合并成一帧发送；
+// 浏览器积压超过 HIGH (网速慢 + 大量输出) 时暂停读取 SSH，降到 LOW 以下再继续，避免数据堆在服务端内存
+const OUTPUT_FLUSH_MS = 4;
+const WS_HIGH = 1024 * 1024;
+const WS_LOW = 256 * 1024;
+const TERM_HIGH = 4 * 1024 * 1024; // 无界面终端来不及解析的数据上限
+const STUCK_MS = 15000; // 积压一直不减少 (网络已断但还没检测到)，断开这个浏览器，它会自动重连并拿到最新画面
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -573,7 +580,16 @@ app.get('/healthz', (req, res) => res.send('ok'));
 const server = http.createServer(app);
 // Node 默认 5 分钟收不完请求就返回 408，大文件 / 慢网络上传会中途失败；这里不限制 (连接空闲仍由 keep-alive 管理)
 server.requestTimeout = 0;
-const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
+// 压缩终端输出 (文本压缩率高，手机 / 隧道上省流量、更快)；按键回显这类小帧不压缩，不增加延迟
+const wss = new WebSocketServer({
+  noServer: true,
+  maxPayload: 1024 * 1024,
+  perMessageDeflate: {
+    threshold: 256,
+    zlibDeflateOptions: { level: 3 },
+    concurrencyLimit: 4,
+  },
+});
 
 // 拒绝其他网站发起的 WebSocket 连接 (跨站 WebSocket 劫持)
 function sameOrigin(req) {
@@ -632,6 +648,9 @@ class Session {
     this.monPrev = null;
     this.attempt = 0;
     this.lastAlert = 0;
+    this.flushTimer = null;
+    this.flowTimer = null; // 暂停读取 SSH 期间轮询积压
+    this.termPending = 0;
     // 提示音 / 通知序列 → 完成通知 (Claude Code、printf '\a' 等)
     this.term.onBell(() => this.alert('终端提示音'));
     this.term.parser.registerOscHandler(9, (d) => {
@@ -672,7 +691,9 @@ class Session {
     };
   }
 
+  // 先发出排队中的终端输出，保证控制消息和输出的先后顺序不变
   sendTo(ws, obj) {
+    this.flushWs(ws);
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj));
   }
 
@@ -682,10 +703,67 @@ class Session {
 
   // 终端输出：写入无界面终端 (用于还原) 并转发给所有挂载的浏览器
   output(buf) {
-    this.term.write(buf);
+    const len = buf.length;
+    this.termPending += len;
+    this.term.write(buf, () => { this.termPending -= len; });
     for (const ws of this.clients) {
       if (ws.syncBuf) ws.syncBuf.push(buf);
-      else if (ws.readyState === ws.OPEN) ws.send(buf, { binary: true });
+      else (ws.outQ ||= []).push(buf);
+    }
+    if (!this.flushTimer) this.flushTimer = setTimeout(() => this.flush(), OUTPUT_FLUSH_MS);
+    if (!this.flowTimer && this.overHigh()) this.pause();
+  }
+
+  flush() {
+    clearTimeout(this.flushTimer);
+    this.flushTimer = null;
+    for (const ws of this.clients) this.flushWs(ws);
+  }
+
+  flushWs(ws) {
+    const q = ws.outQ;
+    if (!q || !q.length) return;
+    ws.outQ = null;
+    if (ws.readyState === ws.OPEN) ws.send(q.length === 1 ? q[0] : Buffer.concat(q), { binary: true });
+  }
+
+  overHigh() {
+    if (this.termPending > TERM_HIGH) return true;
+    for (const ws of this.clients) if (ws.bufferedAmount > WS_HIGH) return true;
+    return false;
+  }
+
+  // 暂停读取 SSH (远端程序会被阻塞，和真实终端的流控一样)，积压消化后恢复
+  pause() {
+    if (!this.stream) return;
+    this.stream.pause();
+    this.stream.stderr.pause();
+    const now = Date.now();
+    this.flowTimer = setInterval(() => {
+      const t = Date.now();
+      let low = this.termPending < TERM_HIGH / 4;
+      for (const ws of this.clients) {
+        const b = ws.bufferedAmount;
+        if (b <= WS_LOW) continue;
+        if (ws.lastBuf === undefined || b < ws.lastBuf) ws.lastProgress = t;
+        ws.lastBuf = b;
+        if (t - (ws.lastProgress || now) > STUCK_MS) {
+          ws.terminate(); // close 事件里会 detach
+          continue;
+        }
+        low = false;
+      }
+      if (low) this.resume();
+    }, 50);
+  }
+
+  resume() {
+    clearInterval(this.flowTimer);
+    this.flowTimer = null;
+    for (const ws of this.clients) ws.lastBuf = ws.lastProgress = undefined;
+    if (this.stream) {
+      this.stream.resume();
+      this.stream.stderr.resume();
     }
   }
 
@@ -772,6 +850,8 @@ class Session {
 
   closeConn() {
     clearTimeout(this.timer);
+    clearInterval(this.flowTimer);
+    this.flowTimer = null;
     this.pending = null;
     try { this.stream && this.stream.close(); } catch {}
     try { this.ssh && this.ssh.end(); } catch {}
@@ -804,6 +884,7 @@ class Session {
     this.broadcast({ type: 'terminated' });
     for (const ws of this.clients) ws.session = null;
     this.clients.clear();
+    clearTimeout(this.flushTimer);
     this.term.dispose();
   }
 
@@ -945,6 +1026,7 @@ class Session {
 
     try {
       ssh.connect(connectOpts);
+      ssh.setNoDelay(true); // 和 OpenSSH 一样关闭 Nagle，按键不等待合并，回显更快
     } catch (e) {
       this.fail(e.message);
     }
