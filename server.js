@@ -327,6 +327,7 @@ const staticOpts = {
 app.use('/vendor/xterm', express.static(path.join(__dirname, 'node_modules/@xterm/xterm'), staticOpts));
 app.use('/vendor/addon-fit', express.static(path.join(__dirname, 'node_modules/@xterm/addon-fit'), staticOpts));
 app.use('/vendor/addon-web-links', express.static(path.join(__dirname, 'node_modules/@xterm/addon-web-links'), staticOpts));
+app.use('/vendor/addon-webgl', express.static(path.join(__dirname, 'node_modules/@xterm/addon-webgl'), staticOpts));
 // 首页不缓存，并给前端资源加版本号，升级后浏览器一定会加载新的 app.js / style.css
 const VERSION = require('./package.json').version;
 const INDEX_HTML = fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8').replace(/\{\{VERSION\}\}/g, VERSION);
@@ -343,7 +344,7 @@ app.get('/sw.js', (req, res) => {
 app.use(express.static(path.join(__dirname, 'public'), { ...staticOpts, index: false }));
 
 app.get('/api/me', (req, res) => {
-  res.json({ authEnabled, authed: isAuthed(req), user: authEnabled ? AUTH_USER : null, version: VERSION, weakPassword: WEAK_PASSWORD });
+  res.json({ authEnabled, authed: isAuthed(req), user: authEnabled ? AUTH_USER : null, version: VERSION, weakPassword: WEAK_PASSWORD, scrollback: SCROLLBACK });
 });
 
 app.post('/api/login', (req, res) => {

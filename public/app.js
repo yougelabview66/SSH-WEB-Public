@@ -50,8 +50,12 @@
     location.reload();
   });
 
+  // 终端保留的滚动行数，与服务端 (重新打开页面时能还原的行数) 一致
+  let scrollback = 5000;
+
   async function init() {
     const me = await api('GET', '/api/me');
+    if (me.scrollback > 0) scrollback = me.scrollback;
     if (me.weakPassword) $('#weakPw').classList.remove('hidden');
     if (me.authEnabled && !me.authed) return showLogin();
     $('#btnLogout').classList.toggle('hidden', !me.authEnabled);
@@ -365,7 +369,7 @@
       fontSize,
       fontFamily: 'ui-monospace, "Cascadia Code", Menlo, Consolas, "DejaVu Sans Mono", monospace',
       theme: termTheme(),
-      scrollback: 10000,
+      scrollback,
       allowProposedApi: true,
     });
     s.fit = new FitAddon.FitAddon();
@@ -623,12 +627,46 @@
     activate(opened.find((x) => x.remoteId === want) || opened[opened.length - 1]);
   }
 
+  // ------------------------------------------------------------ GPU 渲染 (WebGL)
+  // 整屏重画的程序 (Claude Code / top 等) 更流畅、更省电。只给当前标签启用：
+  // 隐藏的标签本来就不绘制，且浏览器同时能用的 WebGL 数量有限。
+  // 不支持 WebGL 或 GPU 上下文丢失 (手机切到后台时可能发生) 时退回默认渲染，回到前台再启用
+  // 先检测再加载：插件在不支持的浏览器上加载失败时会残留在终端里，导致触摸滚动失效
+  const webglSupported = (() => {
+    try { return !!window.WebglAddon && !!document.createElement('canvas').getContext('webgl2'); } catch { return false; }
+  })();
+  let webglFails = webglSupported ? 0 : 3;
+
+  function enableWebgl(s) {
+    if (s.webgl || s.closed || webglFails >= 3) return;
+    const addon = new WebglAddon.WebglAddon();
+    try {
+      addon.onContextLoss(() => {
+        webglFails++;
+        disableWebgl(s);
+      });
+      s.term.loadAddon(addon);
+      s.webgl = addon;
+    } catch {
+      try { addon.dispose(); } catch {}
+      webglFails = 3;
+    }
+  }
+
+  function disableWebgl(s) {
+    if (!s.webgl) return;
+    try { s.webgl.dispose(); } catch {}
+    s.webgl = null;
+  }
+
   function activate(s) {
     active = s;
     sessions.forEach((x) => {
       x.el.classList.toggle('active', x === s);
       x.tab.classList.toggle('active', x === s);
+      if (x !== s) disableWebgl(x);
     });
+    enableWebgl(s);
     requestAnimationFrame(() => { syncSize(s); focusTerm(s); });
     s.tab.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     s.tab.classList.remove('ring');
@@ -1881,6 +1919,7 @@
   document.addEventListener('visibilitychange', () => {
     reportWatching();
     sessions.forEach(syncMonitor); // 页面不可见时暂停性能监控采集
+    if (!document.hidden && active) enableWebgl(active);
     if (!document.hidden && active) active.tab.classList.remove('ring');
   });
 
