@@ -469,7 +469,8 @@
     ws.onopen = () => {
       s.retries = 0;
       if (s.remoteId) {
-        ws.send(JSON.stringify({ type: 'attach', id: s.remoteId, ...size }));
+        // offset: 已收到的输出字节数，断线重连时服务端只补发缺的部分
+        ws.send(JSON.stringify({ type: 'attach', id: s.remoteId, offset: s.offset, ...size }));
       } else {
         ws.send(JSON.stringify({ type: 'connect', ...s.params, title: s.baseTitle, n: s.n, histHost: s.histHost, ...size }));
       }
@@ -480,6 +481,7 @@
     ws.onmessage = (ev) => {
       if (s.ws !== ws) return;
       if (ev.data instanceof ArrayBuffer) {
+        if (s.offset !== undefined) s.offset += ev.data.byteLength;
         s.term.write(new Uint8Array(ev.data), () => checkCapture(s));
         return;
       }
@@ -496,6 +498,11 @@
         // 还原服务端保存的画面和滚动记录
         s.term.reset();
         s.term.write(m.data);
+        s.offset = m.offset;
+        doneRestoring(s);
+        if (active === s) syncSize(s);
+      } else if (m.type === 'resume') {
+        // 画面还在，服务端接着补发断开期间的输出
         doneRestoring(s);
         if (active === s) syncSize(s);
       } else if (m.type === 'status') {
@@ -535,6 +542,7 @@
         doneRestoring(s);
         // 服务端没有这个会话了 (服务重启过)
         s.remoteId = null;
+        s.offset = undefined;
         s.sid = null;
         setStatus(s, 'bad');
         updateSftpBtn();

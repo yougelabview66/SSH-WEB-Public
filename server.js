@@ -58,6 +58,9 @@ const WS_HIGH = 1024 * 1024;
 const WS_LOW = 256 * 1024;
 const TERM_HIGH = 4 * 1024 * 1024; // 无界面终端来不及解析的数据上限
 const STUCK_MS = 15000; // 积压一直不减少 (网络已断但还没检测到)，断开这个浏览器，它会自动重连并拿到最新画面
+// 每个会话保留最近这么多原始输出：浏览器断线重连时只补发断开期间的输出，不用重发整个画面快照
+const REPLAY_MAX = 1024 * 1024;
+const REPLAY_SMALL = 64 * 1024; // 补发量小于此值直接补发，不再序列化快照比较大小
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -651,6 +654,9 @@ class Session {
     this.flushTimer = null;
     this.flowTimer = null; // 暂停读取 SSH 期间轮询积压
     this.termPending = 0;
+    this.outBytes = 0; // 累计输出字节数，浏览器用它告诉服务端自己收到了哪里
+    this.replay = []; // 最近的输出块
+    this.replayLen = 0;
     // 提示音 / 通知序列 → 完成通知 (Claude Code、printf '\a' 等)
     this.term.onBell(() => this.alert('终端提示音'));
     this.term.parser.registerOscHandler(9, (d) => {
@@ -704,6 +710,10 @@ class Session {
   // 终端输出：写入无界面终端 (用于还原) 并转发给所有挂载的浏览器
   output(buf) {
     const len = buf.length;
+    this.outBytes += len;
+    this.replay.push(buf);
+    this.replayLen += len;
+    while (this.replayLen - this.replay[0].length >= REPLAY_MAX) this.replayLen -= this.replay.shift().length;
     this.termPending += len;
     this.term.write(buf, () => { this.termPending -= len; });
     for (const ws of this.clients) {
@@ -771,14 +781,36 @@ class Session {
     this.output(Buffer.from(text + '\r\n'));
   }
 
-  attach(ws) {
+  // 从第 from 字节到当前的输出；已经不在保留范围内返回 null
+  since(from) {
+    if (!Number.isSafeInteger(from) || from > this.outBytes || from < this.outBytes - this.replayLen) return null;
+    let skip = from - (this.outBytes - this.replayLen);
+    const parts = [];
+    for (const b of this.replay) {
+      if (skip >= b.length) { skip -= b.length; continue; }
+      parts.push(skip ? b.subarray(skip) : b);
+      skip = 0;
+    }
+    return Buffer.concat(parts);
+  }
+
+  // from: 浏览器已收到的字节数 (断线重连时)，能补发就只补发缺的部分，否则发整个画面快照
+  attach(ws, from) {
     this.clients.add(ws);
     ws.session = this;
     // 先缓存挂载期间的新输出，等快照发出后再补发，保证不丢不重
     ws.syncBuf = [];
+    const offset = this.outBytes;
+    const delta = from === undefined ? null : this.since(from);
     this.sendTo(ws, { type: 'attached', session: this.info() });
     this.term.write('', () => {
-      this.sendTo(ws, { type: 'snapshot', data: this.serializer.serialize() + this.extraModes() });
+      const snap = delta && delta.length <= REPLAY_SMALL ? null : this.serializer.serialize() + this.extraModes();
+      if (delta && (snap === null || delta.length < Buffer.byteLength(snap))) {
+        this.sendTo(ws, { type: 'resume' });
+        if (delta.length && ws.readyState === ws.OPEN) ws.send(delta, { binary: true });
+      } else {
+        this.sendTo(ws, { type: 'snapshot', data: snap, offset });
+      }
       const buf = ws.syncBuf;
       ws.syncBuf = null;
       for (const b of buf) if (ws.readyState === ws.OPEN) ws.send(b, { binary: true });
@@ -885,6 +917,7 @@ class Session {
     for (const ws of this.clients) ws.session = null;
     this.clients.clear();
     clearTimeout(this.flushTimer);
+    this.replay = [];
     this.term.dispose();
   }
 
@@ -1167,7 +1200,7 @@ wss.on('connection', (ws, req) => {
         const s = sessions.get(String(msg.id));
         if (!s) return sendCtl({ type: 'gone' });
         s.resize(msg.cols, msg.rows);
-        s.attach(ws);
+        s.attach(ws, msg.offset);
         break;
       }
       case 'data':
