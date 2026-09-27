@@ -248,4 +248,8 @@ npm install
 AUTH_PASSWORD=test npm start
 ```
 
-快捷键：`Ctrl+Shift+C` 复制选中内容，鼠标中键关闭标签。
+快捷键（电脑）：
+- 复制：选中文字后按 `Ctrl+C`（没有选中时 `Ctrl+C` 仍是中断）或 `Ctrl+Shift+C`；Mac 用 `Cmd+C`
+- 粘贴：`Ctrl+V` 或 `Ctrl+Shift+V`；Mac 用 `Cmd+V`。vim 里需要 `Ctrl+V` 进入列选择时，可用 `Ctrl+Q` 代替
+- 远端程序开了鼠标（tmux 鼠标模式、vim、Claude Code 等）时，按住 `Shift` 拖动才能选中文字
+- 鼠标中键关闭标签

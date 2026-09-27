@@ -10,6 +10,7 @@
   let active = null;
   // 触屏设备 (手机 / 平板)
   const isTouch = window.matchMedia('(pointer: coarse)').matches;
+  const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
   // ------------------------------------------------------------ API
   async function api(method, url, body) {
@@ -394,12 +395,23 @@
     s.term.onBinary((data) => {
       if (s.ws && s.ws.readyState === WebSocket.OPEN) s.ws.send(Uint8Array.from(data, (c) => c.charCodeAt(0) & 255));
     });
-    // Ctrl+Shift+C / Ctrl+Shift+V 复制粘贴
+    // 复制粘贴快捷键
     s.term.attachCustomKeyEventHandler((e) => {
-      if (e.type === 'keydown' && e.ctrlKey && e.shiftKey && e.code === 'KeyC') {
-        navigator.clipboard?.writeText(s.term.getSelection());
+      // 复制: Ctrl+Shift+C；Windows / Linux 上有选中内容时 Ctrl+C 也复制 (同 Windows Terminal)，没选中仍发送 ^C 中断
+      if (e.type === 'keydown' && e.ctrlKey && !e.altKey && !e.metaKey && e.code === 'KeyC'
+          && (e.shiftKey || (!isMac && s.term.hasSelection()))) {
+        e.preventDefault();
+        const text = s.term.getSelection();
+        if (text) {
+          copyText(text); // HTTP 下没有剪贴板接口时会借用临时文本框，复制完把焦点还给终端
+          s.term.focus();
+          if (!e.shiftKey) s.term.clearSelection();
+        }
         return false;
       }
+      // Windows / Linux 上 Ctrl+V 也粘贴 (同 Windows Terminal、VS Code)；xterm 默认会把它当 ^V 发给终端。
+      // 返回 false 让浏览器执行默认的粘贴，由 xterm 的粘贴处理发送 (支持括号粘贴)。vim 列选择可用 Ctrl+Q
+      if (!isMac && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.code === 'KeyV') return false;
       return true;
     });
 
