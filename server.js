@@ -522,6 +522,16 @@ app.post('/api/favorites', (req, res) => {
   res.json(item);
 });
 
+// 拖动排序: ids 为新的完整顺序；没有列出的收藏保持原来的相对顺序排在后面
+app.put('/api/favorites/order', (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String) : null;
+  if (!ids) return res.status(400).json({ error: '顺序无效' });
+  const list = readFavs();
+  const pos = (f) => { const i = ids.indexOf(f.id); return i < 0 ? ids.length : i; };
+  writeFavs(list.map((f, i) => [f, i]).sort((a, b) => pos(a[0]) - pos(b[0]) || a[1] - b[1]).map(([f]) => f));
+  res.json({ ok: true });
+});
+
 // 修改适用范围 (所有主机 / 仅某台主机)
 app.put('/api/favorites/:id', (req, res) => {
   const list = readFavs();

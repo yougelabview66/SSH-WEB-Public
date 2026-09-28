@@ -1637,7 +1637,8 @@
     items.forEach((h) => {
       const fav = histTab === 'fav';
       const row = document.createElement('div');
-      row.className = 'hrow';
+      row.className = fav ? 'hrow fav' : 'hrow';
+      if (fav) row.dataset.id = h.id;
       row.innerHTML = `${fav ? '' : `<button data-op="star" class="star${isFav(h.cmd) ? ' on' : ''}" title="收藏">${isFav(h.cmd) ? '★' : '☆'}</button>`}
         <div class="hmain" title="点击执行"><div class="cmd"></div><div class="hmeta"></div></div>
         <button data-op="fill" title="填入终端，不执行">填入</button>
@@ -1657,6 +1658,7 @@
           .filter(Boolean).join(' · ');
       }
       row.addEventListener('click', async (e) => {
+        if (Date.now() < favDragUntil) return; // 刚拖动完，不当作点击 (点击会执行命令)
         const op = e.target.dataset.op || (e.target.closest('.hmain') ? 'run' : '');
         try {
           if (op === 'star') { await toggleFav(h.cmd); return renderHistory(); }
@@ -1681,6 +1683,76 @@
       list.appendChild(row);
     });
   }
+
+  // 收藏拖动排序：电脑按住拖动，手机长按后拖动 (同侧边栏主机)。
+  // 列表按主机 / 搜索筛选时，只调整显示出来的这几条的相对顺序，隐藏的收藏留在原位
+  const histListEl = $('#histList');
+  let favDrag = null;
+  let favDragUntil = 0;
+
+  function beginFavDrag() {
+    if (!favDrag) return;
+    favDrag.started = true;
+    favDrag.el.classList.add('dragging');
+    histListEl.classList.add('drag-active');
+    if (favDrag.touch) navigator.vibrate?.(15);
+  }
+
+  function moveFavDrag(y) {
+    const el = favDrag.el;
+    const prev = el.previousElementSibling;
+    const next = el.nextElementSibling;
+    const mid = (x) => { const r = x.getBoundingClientRect(); return r.top + r.height / 2; };
+    if (prev && y < mid(prev)) histListEl.insertBefore(el, prev);
+    else if (next && y > mid(next)) histListEl.insertBefore(el, next.nextSibling);
+    const r = histListEl.getBoundingClientRect();
+    if (y < r.top + 30) histListEl.scrollTop -= 10;
+    else if (y > r.bottom - 30) histListEl.scrollTop += 10;
+  }
+
+  async function endFavDrag() {
+    if (!favDrag) return;
+    clearTimeout(favDrag.timer);
+    const d = favDrag;
+    favDrag = null;
+    if (!d.started) return;
+    d.el.classList.remove('dragging');
+    histListEl.classList.remove('drag-active');
+    favDragUntil = Date.now() + 400;
+    const shown = [...histListEl.querySelectorAll('.hrow.fav')].map((x) => x.dataset.id);
+    // 显示出来的收藏按新顺序依次填回它们原来占的位置
+    const slots = favItems.map((f, i) => (shown.includes(f.id) ? i : -1)).filter((i) => i >= 0);
+    const next = favItems.slice();
+    slots.forEach((slot, k) => { next[slot] = favItems.find((f) => f.id === shown[k]); });
+    if (next.every((f, i) => f === favItems[i])) return;
+    favItems = next;
+    try {
+      await api('PUT', '/api/favorites/order', { ids: favItems.map((f) => f.id) });
+    } catch (e) {
+      alert('保存顺序失败：' + e.message);
+    }
+  }
+
+  histListEl.addEventListener('pointerdown', (e) => {
+    const el = e.target.closest('.hrow.fav');
+    if (!el || e.target.closest('button') || e.button > 0) return;
+    favDrag = { el, startX: e.clientX, startY: e.clientY, started: false, touch: e.pointerType !== 'mouse' };
+    if (favDrag.touch) favDrag.timer = setTimeout(beginFavDrag, 350);
+  });
+  window.addEventListener('pointermove', (e) => {
+    if (!favDrag) return;
+    if (!favDrag.started) {
+      const moved = Math.max(Math.abs(e.clientX - favDrag.startX), Math.abs(e.clientY - favDrag.startY));
+      if (favDrag.touch) { if (moved > 8) endFavDrag(); return; } // 长按前就移动了 = 在滚动列表
+      if (moved < 5) return;
+      beginFavDrag();
+    }
+    moveFavDrag(e.clientY);
+  });
+  window.addEventListener('pointerup', endFavDrag);
+  window.addEventListener('pointercancel', endFavDrag);
+  histListEl.addEventListener('touchmove', (e) => { if (favDrag && favDrag.started) e.preventDefault(); }, { passive: false });
+  histListEl.addEventListener('contextmenu', (e) => { if (e.target.closest('.hrow.fav')) e.preventDefault(); });
 
   histPanel.querySelectorAll('.htabs button').forEach((b) => b.addEventListener('click', () => {
     histTab = b.dataset.tab;

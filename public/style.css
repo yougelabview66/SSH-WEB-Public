@@ -236,6 +236,10 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 #histList { flex: 1; overflow-y: auto; min-height: 120px; margin: 0 -8px 12px; }
 .hrow { display: flex; align-items: center; gap: 6px; padding: 7px 8px; border-radius: 6px; }
 .hrow:hover { background: var(--panel2); }
+/* 收藏可拖动排序 */
+.hrow.fav { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.hrow.fav.dragging { background: var(--panel2); box-shadow: 0 0 0 1px var(--accent), 0 6px 16px var(--shadow); position: relative; z-index: 2; cursor: grabbing; }
+#histList.drag-active { cursor: grabbing; }
 .hrow .hmain { flex: 1; min-width: 0; cursor: pointer; }
 .hrow .cmd { font: 13px ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-all;
   color: var(--text); }
