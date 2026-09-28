@@ -11,6 +11,8 @@
   // 触屏设备 (手机 / 平板)
   const isTouch = window.matchMedia('(pointer: coarse)').matches;
   const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+  // 本页面的标识：服务端广播「新建会话 / 标签顺序」时，自己发起的就不用再处理
+  const pageId = Math.random().toString(36).slice(2);
 
   // ------------------------------------------------------------ API
   async function api(method, url, body) {
@@ -70,6 +72,7 @@
     const [list] = await Promise.all([fetchSessions(), loadHosts().catch(() => {}), loadKeybar()]);
     if (list.length) restoreSessions(list);
     else showEmpty('idle');
+    startEvents();
   }
 
   // 没有标签时的占位: loading = 正在恢复会话，idle = 新建连接提示
@@ -501,7 +504,7 @@
         // offset: 已收到的输出字节数，断线重连时服务端只补发缺的部分
         ws.send(JSON.stringify({ type: 'attach', id: s.remoteId, offset: s.offset, ...size }));
       } else {
-        ws.send(JSON.stringify({ type: 'connect', ...s.params, title: s.baseTitle, n: s.n, histHost: s.histHost, ...size }));
+        ws.send(JSON.stringify({ type: 'connect', ...s.params, title: s.baseTitle, n: s.n, histHost: s.histHost, pageId, ...size }));
       }
       // 应用层心跳，避免 Cloudflare / 反向代理 100 秒空闲断开
       clearInterval(s.ping);
@@ -635,7 +638,7 @@
   // 标签顺序与当前标签保存起来，重新打开时恢复
   function saveTabOrder() {
     const ids = sessions.map((x) => x.remoteId).filter(Boolean);
-    if (ids.length) api('PUT', '/api/sessions/order', { ids }).catch(() => {});
+    if (ids.length) api('PUT', '/api/sessions/order', { ids, pageId }).catch(() => {});
   }
 
   function saveActive() {
@@ -657,6 +660,66 @@
     }
     const opened = list.map((info) => openSession(info.params || {}, info.title, info.connType, info));
     activate(opened.find((x) => x.remoteId === want) || opened[opened.length - 1]);
+  }
+
+  // ------------------------------------------------------------ 多设备同步标签
+  // 其他设备新开的标签、调整的顺序实时同步过来 (关闭标签由各会话自己的连接通知)。
+  // 事件连接断开 (手机锁屏 / 断网) 重连后和服务端对一次账，补上漏掉的标签
+  let eventsWs = null;
+  let eventsRetry = 0;
+  let eventsTimer = 0;
+
+  function startEvents() {
+    clearTimeout(eventsTimer);
+    if (eventsWs && eventsWs.readyState <= WebSocket.OPEN) return;
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    const ws = new WebSocket(`${proto}://${location.host}/ws`);
+    eventsWs = ws;
+    let ping = 0;
+    ws.onopen = () => {
+      eventsRetry = 0;
+      ws.send(JSON.stringify({ type: 'events' }));
+      ping = setInterval(() => ws.send(JSON.stringify({ type: 'ping' })), 25000);
+      syncTabs();
+    };
+    ws.onmessage = (ev) => {
+      let m;
+      try { m = JSON.parse(ev.data); } catch { return; }
+      if (m.pageId === pageId) return;
+      if (m.type === 'session-created') addRemoteTab(m.session);
+      else if (m.type === 'order') applyTabOrder(m.ids);
+    };
+    ws.onclose = () => {
+      clearInterval(ping);
+      if (eventsWs !== ws) return;
+      eventsTimer = setTimeout(startEvents, Math.min(1000 * 2 ** eventsRetry++, 10000));
+    };
+  }
+
+  // 页面回到前台时立即重连 (手机锁屏期间连接可能已断)
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && eventsWs && eventsWs.readyState > WebSocket.OPEN) startEvents();
+  });
+
+  function addRemoteTab(info) {
+    if (!info || sessions.some((x) => x.remoteId === info.id)) return;
+    const s = openSession(info.params || {}, info.title, info.connType, info);
+    if (!active) activate(s);
+  }
+
+  async function syncTabs() {
+    const list = await fetchSessions();
+    // 本页正在新建的标签还不知道自己的会话 id，稍后再对账，避免重复
+    if (sessions.some((x) => !x.remoteId && !x.closed)) { setTimeout(syncTabs, 1500); return; }
+    list.forEach(addRemoteTab);
+    applyTabOrder(list.map((x) => x.id));
+  }
+
+  function applyTabOrder(ids) {
+    if (drag) return; // 本地正在拖动
+    const pos = (x) => { const i = ids.indexOf(x.remoteId); return i < 0 ? Infinity : i; };
+    sessions.sort((a, b) => pos(a) - pos(b));
+    sessions.forEach((x) => tabsEl.appendChild(x.tab));
   }
 
   // ------------------------------------------------------------ GPU 渲染 (WebGL)

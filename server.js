@@ -539,6 +539,12 @@ app.delete('/api/favorites/:id', (req, res) => {
 
 // 后台会话 id -> Session；SFTP / 监控复用已连接会话的 SSH 连接
 const sessions = new Map();
+// 各页面的事件连接：新建会话、标签顺序变化时通知所有打开的页面 (手机电脑同时开着时实时同步标签)
+const eventSockets = new Set();
+function broadcastEvent(obj) {
+  const msg = JSON.stringify(obj);
+  for (const ws of eventSockets) if (ws.readyState === ws.OPEN) ws.send(msg);
+}
 const liveSession = (sid) => {
   const s = sessions.get(sid);
   return s && s.status === 'connected' && s.ssh ? s : null;
@@ -554,6 +560,7 @@ app.get('/api/sessions', (req, res) => {
 app.put('/api/sessions/order', (req, res) => {
   const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
   ids.forEach((id, i) => { const s = sessions.get(String(id)); if (s) s.order = i; });
+  broadcastEvent({ type: 'order', ids: [...sessions.values()].sort((a, b) => a.order - b.order).map((x) => x.id), pageId: str(req.body?.pageId) });
   res.json({ ok: true });
 });
 
@@ -1207,6 +1214,7 @@ wss.on('connection', (ws, req) => {
         sessions.set(s.id, s);
         s.attach(ws);
         s.connect();
+        broadcastEvent({ type: 'session-created', session: s.info(), pageId: str(msg.pageId) });
         break;
       }
       case 'attach': {
@@ -1239,10 +1247,16 @@ wss.on('connection', (ws, req) => {
       case 'ping':
         sendCtl({ type: 'pong' });
         break;
+      case 'events': // 页面的事件连接 (不挂载会话)
+        if (!sess) eventSockets.add(ws);
+        break;
     }
   });
 
-  const detach = () => { if (ws.session) ws.session.detach(ws); };
+  const detach = () => {
+    eventSockets.delete(ws);
+    if (ws.session) ws.session.detach(ws);
+  };
   ws.on('close', detach);
   ws.on('error', detach);
 });
