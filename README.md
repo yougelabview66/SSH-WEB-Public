@@ -251,5 +251,6 @@ AUTH_PASSWORD=test npm start
 快捷键（电脑）：
 - 复制：选中文字后按 `Ctrl+C`（没有选中时 `Ctrl+C` 仍是中断）或 `Ctrl+Shift+C`；Mac 用 `Cmd+C`
 - 粘贴：`Ctrl+V` 或 `Ctrl+Shift+V`；Mac 用 `Cmd+V`。vim 里需要 `Ctrl+V` 进入列选择时，可用 `Ctrl+Q` 代替
-- 远端程序开了鼠标（tmux 鼠标模式、vim、Claude Code 等）时，按住 `Shift` 拖动才能选中文字
+- tmux 开了鼠标时：直接拖动选中，**松开鼠标就自动复制**到电脑剪贴板（tmux 通过 OSC 52 把内容交给网页，不用再按 `Ctrl+C`，按了会变成中断）。如果没有复制，在目标主机执行 `tmux set -g set-clipboard on`
+- 其他开了鼠标的程序（vim、Claude Code 等）：按住 `Shift` 拖动由网页选中，再按 `Ctrl+C` 复制
 - 鼠标中键关闭标签

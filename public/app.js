@@ -377,6 +377,19 @@
     s.term.loadAddon(s.fit);
     s.term.loadAddon(new WebLinksAddon.WebLinksAddon());
     s.term.open(s.box);
+    // 远端程序通过 OSC 52 设置剪贴板：tmux 开鼠标后拖动选中、松开即复制，vim 等插件的复制也走这里。
+    // 只允许写入，不响应读取请求 (同 Windows Terminal)，避免剪贴板内容被远端读走
+    s.term.parser.registerOscHandler(52, (data) => {
+      const b64 = data.slice(data.indexOf(';') + 1);
+      if (!b64 || b64 === '?' || s.muteOsc52 || b64.length > 4 * 1024 * 1024) return true;
+      try {
+        const text = new TextDecoder().decode(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)));
+        const had = document.activeElement;
+        copyText(text); // HTTP 下借用临时文本框复制，会抢走焦点，复制完还回去
+        if (had && had !== document.activeElement) had.focus({ preventScroll: true });
+      } catch {}
+      return true;
+    });
     enableTouchScroll(s);
     if (isTouch) {
       // 触屏：xterm 的隐藏输入框在手机输入法下会丢字 / 重复，改用底部输入栏
@@ -498,7 +511,11 @@
       if (s.ws !== ws) return;
       if (ev.data instanceof ArrayBuffer) {
         if (s.offset !== undefined) s.offset += ev.data.byteLength;
-        s.term.write(new Uint8Array(ev.data), () => checkCapture(s));
+        const replay = s.muteOsc52;
+        s.term.write(new Uint8Array(ev.data), () => {
+          if (replay) s.muteOsc52 = false;
+          checkCapture(s);
+        });
         return;
       }
       let m;
@@ -519,6 +536,8 @@
         doneRestoring(s);
         if (active === s) syncSize(s);
       } else if (m.type === 'resume') {
+        // 接下来的一帧是断开期间的输出补发，其中的复制序列是以前的，不再写剪贴板
+        if (m.bytes) s.muteOsc52 = true;
         // 画面还在，服务端接着补发断开期间的输出
         doneRestoring(s);
         if (active === s) syncSize(s);

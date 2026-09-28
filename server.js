@@ -816,7 +816,7 @@ class Session {
     this.term.write('', () => {
       const snap = delta && delta.length <= REPLAY_SMALL ? null : this.serializer.serialize() + this.extraModes();
       if (delta && (snap === null || delta.length < Buffer.byteLength(snap))) {
-        this.sendTo(ws, { type: 'resume' });
+        this.sendTo(ws, { type: 'resume', bytes: delta.length });
         if (delta.length && ws.readyState === ws.OPEN) ws.send(delta, { binary: true });
       } else {
         this.sendTo(ws, { type: 'snapshot', data: snap, offset });
