@@ -257,10 +257,13 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 .dp-tab .dot.bad { background: var(--danger); }
 .dp-tab .nm { font-weight: 600; min-width: 64px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
 .dp-tab .stt { font-size: 12px; padding: 1px 8px; border-radius: 10px; white-space: nowrap; }
-.dp-tab .stt.wait { background: var(--warn); color: #000; font-weight: 600; }
-.dp-tab .stt.run { background: var(--accent2); color: #fff; }
-.dp-tab .stt.idle { color: var(--muted); border: 1px solid var(--border); }
-.dp-tab .stt.off { color: var(--danger); border: 1px solid var(--danger); }
+.dp-tab .stt.run { background: var(--warn); color: #000; font-weight: 600; animation: dp-blink 1s ease-in-out infinite; }
+.dp-tab .stt.done { background: var(--accent2); color: #fff; font-weight: 600; }
+.dp-tab .stt.bad { background: var(--danger); color: #fff; font-weight: 600; }
+.dp-tab .stt.idle { color: var(--muted); background: var(--panel2); border: 1px solid var(--border); }
+.dp-tab .stt.off { color: var(--muted); border: 1px dashed var(--muted); }
+@keyframes dp-blink { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .dp-tab .stt.run { animation: none; } }
 .dp-tab .ago { margin-left: auto; font-size: 12px; color: var(--muted); white-space: nowrap; }
 #deskBar.float { position: absolute; left: 8px; right: 8px; z-index: 4; border: 1px solid var(--border);
   border-radius: 8px; box-shadow: 0 6px 24px var(--shadow); }

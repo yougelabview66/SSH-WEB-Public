@@ -515,6 +515,9 @@
       if (ev.data instanceof ArrayBuffer) {
         if (s.offset !== undefined) s.offset += ev.data.byteLength;
         s.lastOut = Date.now();
+        (s.outTimes ||= []).push(s.lastOut);
+        if (s.outTimes.length > 30) s.outTimes.splice(0, s.outTimes.length - 30);
+        if (s.alertAt && isRunning(s, s.lastOut)) s.alertAt = 0; // 又开始干活了，之前的「完成」作废
         const replay = s.muteOsc52;
         s.term.write(new Uint8Array(ev.data), () => {
           if (replay) s.muteOsc52 = false;
@@ -566,6 +569,7 @@
         });
       } else if (m.type === 'bell') {
         if (s !== active || document.hidden) s.tab.classList.add('ring');
+        s.alertAt = Date.now();
         renderDeskTabs();
       } else if (m.type === 'prompt-done') {
         dismissDialog(s.id);
@@ -1530,27 +1534,54 @@
     return `${Math.floor(sec / 3600)} 小时前有输出`;
   };
 
-  // 状态：后台收到提示音 = 等你处理 (Claude Code 要确认 / 做完了)；3 秒内有输出 = 运行中
+  // 屏幕上最新的 20 行 (到最后一行有字的地方为止)：选择题 / 报错都出现在最新的内容里；
+  // 只看这一段，避免对话里早先的内容一直算数。tmux 里屏幕是满的，普通 shell 内容可能只在上半部分
+  function screenTail(x) {
+    const b = x.term.buffer.active, top = b.viewportY;
+    let end = top + x.term.rows - 1;
+    while (end > top && !b.getLine(end)?.translateToString(true).trim()) end--;
+    const out = [];
+    for (let y = Math.max(top, end - 19); y <= end; y++) out.push(b.getLine(y)?.translateToString(true) || '');
+    return out.join('\n');
+  }
+  const CHOICE_RE = /Do you want to|Would you like to|❯\s*1\.\s|\[Y\/n\]|\[y\/N\]|\(yes\/no\)/;
+  const ERROR_RE = /API Error|⎿\s+Error|Request timed out|Overloaded/i;
+
+  // 运行中：最近 3 秒内持续有输出 (跨度超过 0.6 秒)；Claude Code 工作时的转圈动画会不停输出，
+  // tmux 状态栏时钟之类的一次性刷新不算；只算提示音 0.5 秒之后的输出 (之前的是完成前的转圈)
+  function isRunning(x, now) {
+    const since = x.alertAt ? x.alertAt + 500 : 0;
+    const t = (x.outTimes || []).filter((v) => now - v < 3000 && v > since);
+    return t.length >= 3 && t[t.length - 1] - t[0] > 600;
+  }
+
+  // 运行中 (黄色闪烁) / 待选择、报错 (红色) / 完成 (绿色，收到提示音后没再运行) / 空闲 (灰色)
+  function tabState(x, now) {
+    if (!x.sid) return ['未连接', 'off'];
+    if (isRunning(x, now)) return ['运行中', 'run'];
+    const tail = screenTail(x);
+    if (CHOICE_RE.test(tail)) return ['待选择', 'bad'];
+    if (ERROR_RE.test(tail)) return ['报错', 'bad'];
+    if (x.alertAt) return ['完成', 'done'];
+    return ['空闲', 'idle'];
+  }
+
   function renderDeskTabs() {
     const box = deskSpace.querySelector('.dp-tabs');
     if (!box || !panelShown()) return;
     deskTabList = tabOrder();
     const now = Date.now();
     const html = deskTabList.map((x, i) => {
-      let st, cls;
-      if (!x.sid) { st = '未连接'; cls = 'off'; }
-      else if (x.tab.classList.contains('ring')) { st = '🔔 等你处理'; cls = 'wait'; }
-      else if (now - (x.lastOut || 0) < 3000) { st = '运行中'; cls = 'run'; }
-      else { st = '空闲'; cls = 'idle'; }
+      const [st, cls] = tabState(x, now);
       return `<div class="dp-tab${x === active ? ' cur' : ''}" data-k="${i}">
         <span class="${$('.dot', x.tab).className}"></span><span class="nm">${esc($('.title', x.tab).textContent)}</span>
         <span class="stt ${cls}">${st}</span><span class="ago">${x.sid && x.lastOut ? agoText(now - x.lastOut) : ''}</span></div>`;
     }).join('');
     if (box.innerHTML !== html) box.innerHTML = html;
   }
-  setInterval(renderDeskTabs, 1000);
+  setInterval(renderDeskTabs, 500);
 
-  // 按下就切标签 (每秒会重画，不等 click)，不抢走输入框焦点
+  // 按下就切标签 (每 0.5 秒会重画，不等 click)，不抢走输入框焦点
   deskSpace.addEventListener('mousedown', (e) => {
     if (e.button !== 0) return;
     const row = e.target.closest('.dp-tab');
