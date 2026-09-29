@@ -30,7 +30,8 @@
     return rows;
   }
 
-  // 探测的字回显到了哪里：先看终端光标处，再找屏幕上新出现这个字的格子 (只有一个才算，找到多个不确定就放弃)
+  // 探测的字回显到了哪里：先看终端光标处；再找屏幕上新出现这个字、而且紧跟着程序自己画的光标 (反色格子) 的地方
+  // (Claude Code 这类程序)。只是别处的输出恰好冒出同一个字不算——否则输密码时可能误判，把密码显示出来
   function findProbe(s, pr) {
     if (cellText(s, pr.guess.x, pr.guess.y) === pr.ch && pr.snap[pr.guess.y]?.[pr.guess.x] !== pr.ch) return pr.guess;
     const b = s.term.buffer.active;
@@ -38,7 +39,7 @@
     for (let y = 0; y < s.term.rows; y++) {
       const line = b.getLine(b.baseY + y);
       for (let x = 0; x < s.term.cols; x++) {
-        if (line?.getCell(x)?.getChars() === pr.ch && pr.snap[y]?.[x] !== pr.ch) {
+        if (line?.getCell(x)?.getChars() === pr.ch && pr.snap[y]?.[x] !== pr.ch && line?.getCell(x + pr.w)?.isInverse()) {
           if (found) return null;
           found = { x, y };
         }
@@ -70,8 +71,12 @@
     const p = predState(s);
     const b = s.term.buffer.active;
     // 回车：这一行结束，下一行的第一个字重新探测
-    if (/[\r\n]/.test(data)) { p.sure = false; p.next = null; p.probe = null; return; }
+    if (/[\r\n]/.test(data)) { predClear(s); p.sure = false; p.next = null; return; }
     if (data === '\x7f' || data === '\b') {
+      if (p.probe) { // 探测期间退格：删掉探测后打的字，或者连探测的字也删了就取消探测
+        if (p.probe.after.length) p.probe.after.pop(); else p.probe = null;
+        return;
+      }
       const last = p.list[p.list.length - 1];
       if (last) { // 撤销还没确认的预测
         last.el?.remove();
@@ -163,7 +168,7 @@
   // 服务器输出写进终端之后调用：核对探测和预测
   function predCheck(s) {
     const p = s.pred;
-    if (!p) return;
+    if (!p || (!p.list.length && !p.probe && !p.cursor)) return; // 没有预测：什么都不做 (终端每次输出都会调用)
     const now = Date.now();
     if (p.probe) {
       const pr = p.probe, at = findProbe(s, pr);

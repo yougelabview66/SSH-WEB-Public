@@ -144,19 +144,23 @@
     onMobileText();
   });
   // 键盘上的「发送」(textarea 里默认是换行) 和实体键盘的回车 = 发送；Shift+回车才换行
+  let shiftEnter = false; // 实体键盘 Shift+回车：放行换行
   mInput.addEventListener('beforeinput', (e) => {
+    if (shiftEnter) return; // 放行，input 里再清掉标记
     if ((e.inputType === 'insertLineBreak' || e.inputType === 'insertParagraph') && !composing) {
       e.preventDefault();
       mobileEnter();
     }
   });
   mInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); mobileEnter(); }
+    if (e.key === 'Enter' && e.shiftKey) { shiftEnter = true; return; }
+    if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); mobileEnter(); }
   });
   mInput.addEventListener('input', (e) => {
     if (composing || e.isComposing) return;
     // 个别输入法的「发送」没有先经过 beforeinput：换行已经插进去了，删掉再发送
-    if ((e.inputType === 'insertLineBreak' || e.inputType === 'insertParagraph')) {
+    if (shiftEnter && (e.inputType === 'insertLineBreak' || e.inputType === 'insertParagraph')) shiftEnter = false; // Shift+回车：保留换行
+    else if (e.inputType === 'insertLineBreak' || e.inputType === 'insertParagraph') {
       const at = mInput.selectionStart;
       if (mInput.value[at - 1] === '\n') mInput.value = mInput.value.slice(0, at - 1) + mInput.value.slice(at);
       return mobileEnter();

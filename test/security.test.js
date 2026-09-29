@@ -38,7 +38,11 @@ run(async () => {
   ok(a.status === 200 && a.cookie.startsWith('sshweb_session='), '登录成功拿到凭证');
   ok((await get('/api/hosts', a.cookie)).status === 200 && await wsOk(a.cookie), '凭证可以访问接口和 WebSocket');
   const b = await login(); // 另一台设备的登录
+  const openWs = new WebSocket(BASE.replace('http', 'ws') + '/ws', { headers: { cookie: a.cookie } });
+  await new Promise((r) => openWs.on('open', r));
+  const closed = new Promise((r) => openWs.on('close', (code) => r(code)));
   await fetch(BASE + '/api/logout', { method: 'POST', headers: { cookie: a.cookie } });
+  ok(await Promise.race([closed, wait(2000).then(() => 'timeout')]) === 4001, '退出登录：用这个凭证打开着的 WebSocket 马上断开');
   ok((await get('/api/hosts', a.cookie)).status === 401, '退出登录后，同一个旧凭证在服务端作废 (接口 401)');
   ok(!(await wsOk(a.cookie)), '旧凭证也连不上 WebSocket');
   ok((await get('/api/hosts', b.cookie)).status === 200, '另一台设备的登录不受影响');

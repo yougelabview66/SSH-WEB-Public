@@ -99,6 +99,8 @@
     s.ro = new ResizeObserver(() => { if (active === s) s.fit.fit(); });
     s.ro.observe(s.box);
     s.term.onData((data) => {
+      // 终端对程序询问的自动应答 (不是用户打的字)：服务端不算输入，不影响主机状态和打字预测
+      if (TERM_REPLY_RE.test(data)) return send(s, { type: 'data', data, auto: true });
       if (data === '\r') beginCapture(s);
       send(s, { type: 'data', data });
     });
@@ -175,10 +177,14 @@
     dot.className = 'dot' + (st === 'ok' ? ' ok' : st === 'bad' ? ' bad' : '');
   }
 
+  // 终端自动应答：设备属性 (DA1/DA2)、状态 / 光标位置报告 (DSR/CPR)、模式报告 (DECRPM)、焦点进出、
+  // OSC 颜色查询的回答 (10/11/12/4 …)、DCS 回答 (XTGETTCAP 等)
+  const TERM_REPLY_RE = /^(?:\x1b\[[?>]?[\d;]*c|\x1b\[\??[\d;]*[Rn]|\x1b\[\??[\d;]*\$y|\x1b\[[IO]|\x1b\][\d;]+[^\x07\x1b]*(?:\x07|\x1b\\)|\x1bP[^\x1b]*\x1b\\)+$/;
+
   function send(s, obj) {
     if (!s.ws || s.ws.readyState !== WebSocket.OPEN) return;
     if (obj.type === 'data' && s.scrollView) closeLocalScroll(s); // 打字 / 按键 = 回到实时画面
-    if (obj.type === 'data' && typeof obj.data === 'string') predictInput(s, obj.data); // 打字预测回显
+    if (obj.type === 'data' && typeof obj.data === 'string' && !obj.auto) predictInput(s, obj.data); // 打字预测回显
     // 大段粘贴分块发送，避免单条消息超过服务端 1MB 上限导致连接被断开
     if (obj.type === 'data' && typeof obj.data === 'string' && obj.data.length > 32768) {
       for (let i = 0; i < obj.data.length; i += 32768) s.ws.send(JSON.stringify({ type: 'data', data: obj.data.slice(i, i + 32768) }));
@@ -238,6 +244,7 @@
         reportWatching();
       } else if (m.type === 'snapshot') {
         // 还原服务端保存的画面和滚动记录
+        predClear(s, false);
         s.term.reset();
         s.term.write(m.data);
         s.offset = m.offset;

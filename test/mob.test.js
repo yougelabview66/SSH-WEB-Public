@@ -47,6 +47,10 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   await m.evaluate(() => document.getElementById('mInput').dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertLineBreak', bubbles: true, cancelable: true })));
   await wait(400);
   ok(got === 'echo hi\r', '输入法的「发送」(insertLineBreak) 也是发送: ' + JSON.stringify(got));
+  got = ''; await m.keyboard.type('line1'); await m.keyboard.press('Shift+Enter'); await m.keyboard.type('line2'); await wait(200);
+  ok(got === '' && await m.evaluate(() => document.getElementById('mInput').value.includes('line1\nline2')), '实体键盘 Shift+回车：换行，不发送');
+  await m.keyboard.press('Enter'); await wait(400);
+  ok(got.includes('line1') && got.includes('line2') && got.endsWith('\r'), '再按回车整段发送');
   // 中文输入法 (CDP 模拟组字)
   got = '';
   await cdp.send('Input.imeSetComposition', { text: 'ni', selectionStart: 2, selectionEnd: 2 });

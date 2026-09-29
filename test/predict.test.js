@@ -21,6 +21,7 @@ function mockServer(port, mode) {
           const k = String(d); got += k;
           for (const ch of k) {
             if (mode === 'noecho') continue;
+            if (mode === 'noecho-log') { st.write(`\x1b7\x1b[12;1H\x1b[2Klog: got ${ch} from somewhere\x1b8`); continue; }
             if (ch === '\r') { text = ''; n = 0; if (mode === 'claude') drawClaude(); else st.write('\r\n$ '); continue; }
             if (ch === '\x7f') { text = text.slice(0, -1); if (mode === 'claude') drawClaude(); else st.write('\b \b'); continue; }
             if (ch < ' ') continue;
@@ -43,11 +44,12 @@ function delayProxy(listenPort, targetPort, d) {
     a.on('error', () => {}); b.on('error', () => {});
   }).listen(listenPort, '127.0.0.1');
 }
+mockServer(2266, 'noecho-log'); delayProxy(2276, 2266, 70);
 mockServer(2260, 'shell'); mockServer(2261, 'claude'); mockServer(2262, 'noecho'); mockServer(2263, 'upper'); mockServer(2264, 'shell');
 delayProxy(2270, 2260, 70); delayProxy(2271, 2261, 70); delayProxy(2272, 2262, 70); delayProxy(2273, 2263, 70);
 
 run(async () => {
-  for (const [n, port] of [['SHELL', 2270], ['CLAUDE', 2271], ['PASSWD', 2272], ['WRONG', 2273], ['FAST', 2264]]) await addHost(n, port);
+  for (const [n, port] of [['PWLOG', 2276], ['SHELL', 2270], ['CLAUDE', 2271], ['PASSWD', 2272], ['WRONG', 2273], ['FAST', 2264]]) await addHost(n, port);
   const browser = await launch();
   const p = await (await browser.newContext({ viewport: { width: 1280, height: 800 } })).newPage();
   const errors = []; p.on('pageerror', (e) => errors.push(e.message));
@@ -78,7 +80,17 @@ run(async () => {
   await p.keyboard.press('ArrowLeft'); await wait(30);
   ok(await pred() === '', '方向键会移动光标：马上清掉预测');
   await wait(600);
-  await p.keyboard.press('Enter'); await wait(400);
+  await type('z'); await wait(600); // 方向键之后重新探测
+  await type('zz'); await wait(30);
+  ok(await pred() === 'zz', '回车前的预测');
+  await p.keyboard.press('Enter'); await wait(20);
+  ok(await pred() === '', '按回车马上清掉预测 (输出滚屏后位置就不对了)');
+  await wait(400);
+  await type('q'); await type('w'); await p.keyboard.press('Backspace'); await wait(600);
+  ok(await pred() === '', '探测期间打的字又删掉了：不会画出来');
+  await type('e'); await wait(30);
+  ok(await pred() === 'e', '探测期间退格没有引起「猜错」暂停，接着照常预测');
+  await wait(500); await p.keyboard.press('Enter'); await wait(400);
   await type('l'); await wait(30);
   ok(await pred() === '', '回车后新的一行重新探测');
   await wait(500); await type('s'); await wait(30);
@@ -106,6 +118,11 @@ run(async () => {
   for (const ch of 'secret123') { await type(ch); await wait(80); shown += await pred(); }
   await wait(700); shown += await pred();
   ok(shown === '', '服务器不回显 (输密码)：打的字一个都不显示');
+  await open('PWLOG');
+  shown = '';
+  for (const ch of 'sesame12') { await type(ch); await wait(120); shown += await pred(); }
+  await wait(700); shown += await pred();
+  ok(shown === '', '输密码时别处的日志恰好冒出打的字：也不会误判，一个都不显示');
 
   // ---- 猜错了：撤掉，暂停 5 秒
   await open('WRONG');

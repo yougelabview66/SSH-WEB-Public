@@ -63,8 +63,9 @@
   let pipClosedByUser = false;
   const autoBtn = hostFloat.querySelector('[data-a=auto]');
   autoBtn?.classList.toggle('on', autoPin);
-  const tryAutoPin = () => {
-    if (autoPin && pipOk && !pipWin && !pipClosedByUser && !isTouch && active) openStatusPip();
+  const tryAutoPin = (e) => {
+    if (e.type === 'keydown' && (e.key === 'Escape' || e.repeat)) return; // 浏览器不把 Esc 算作用户操作，打不开
+    if (autoPin && pipOk && !pipWin && !pipClosedByUser && !isTouch && active) openStatusPip(true);
   };
   window.addEventListener('pointerdown', tryAutoPin, true);
   window.addEventListener('keydown', tryAutoPin, true);
@@ -141,7 +142,7 @@
 
   // 置顶到桌面：内容和网页里的一样，样式直接引用同一个 style.css
   let pipOpening = false;
-  async function openStatusPip() {
+  async function openStatusPip(auto) {
     if (pipWin) return pipWin.focus();
     if (pipOpening) return;
     pipOpening = true;
@@ -150,7 +151,8 @@
       // disallowReturnToOpener：不显示 Chrome 自带的「返回标签页」按钮 (点了会关掉小窗口)，用自己的「↩ 网页」代替
       w = await window.documentPictureInPicture.requestWindow({ width: 300, height: 170, disallowReturnToOpener: true });
     } catch (e) {
-      return alert('无法打开置顶窗口：' + e.message);
+      if (!auto) alert('无法打开置顶窗口：' + e.message); // 自动钉住失败不打扰，下次操作再试
+      return;
     } finally {
       pipOpening = false;
     }

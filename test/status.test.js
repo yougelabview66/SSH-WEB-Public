@@ -3,12 +3,12 @@
 const { BASE, ok, wait, shot, launch, addHost, run, hostKey } = require('./helpers');
 const { Server, utils } = require('ssh2');
 
-const streams = [];
+const streams = []; let got = '';
 new Server({ hostKeys: [hostKey()] }, (c) => {
   c.on('authentication', (ctx) => ctx.accept());
   c.on('ready', () => c.on('session', (acc) => {
     const s = acc(); s.on('pty', (a) => a()); s.on('window-change', (a) => a && a());
-    s.on('shell', (a) => { const st = a(); streams.push(st); st.write('$ '); });
+    s.on('shell', (a) => { const st = a(); streams.push(st); st.write('$ '); st.on('data', (d) => { got += d; }); });
   }));
 }).listen(2253, '127.0.0.1');
 
@@ -50,5 +50,14 @@ run(async () => {
   // 选择框：待选择
   streams[0].write(claudeScreen('').replace('❯ \r\n', ' Do you want to proceed?\r\n ❯ 1. Yes\r\n   2. No\r\n')); await wait(1500);
   ok(await chip(q) === '待选择', '选择框 → 待选择 (' + await chip(q) + ')');
+
+  // 程序询问终端 (设备属性、光标位置、背景色)：网页自动回答，不算用户输入
+  streams[0].write(claudeScreen('✻ Frosting… (2s)')); await wait(1500);
+  streams[0].write(claudeScreen('✻ Worked for 2s')); await wait(1500);
+  ok(await chip(p) === '完成', '又做完了一次');
+  got = '';
+  streams[0].write('\x1b[c\x1b[6n\x1b]11;?\x07'); await wait(1500);
+  ok(await chip(p) === '完成' && await chip(q) === '完成', '程序询问终端后，网页的自动回答不算输入，状态还是完成 (' + await chip(p) + ')');
+  ok((got.match(/\x1b\[\?1;2c/g) || []).length === 1, '两个网页都开着：同一个询问只转发一个回答给程序 (收到 ' + (got.match(/\x1b\[\?1;2c/g) || []).length + ' 个)');
   await browser.close();
 });

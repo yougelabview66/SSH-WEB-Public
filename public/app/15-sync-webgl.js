@@ -120,6 +120,7 @@
   // remote: 会话已在服务端结束 (其他设备关闭)，只移除本地标签
   function closeSession(s, remote) {
     s.closed = true;
+    if (s.pred) predClear(s);
     clearInterval(s.ping);
     clearTimeout(s.retryTimer);
     if (s.mon) clearTimeout(s.mon.timer);

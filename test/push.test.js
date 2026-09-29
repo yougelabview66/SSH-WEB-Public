@@ -53,6 +53,13 @@ run(async () => {
   ws.send(JSON.stringify({ type: 'watching', watching: false }));
   pushes = [];
 
+  // 普通程序一阵一阵地输出 (tail -f 看日志)：显示运行中 / 完成，但不推送
+  for (let k = 0; k < 2; k++) {
+    for (let i = 0; i < 8; i++) { streams[0].write(`log line ${k}-${i}\r\n`); await wait(150); }
+    await wait(4000);
+  }
+  ok(pushes.length === 0, '一阵一阵的普通输出 (像 tail -f)：不推送 ' + JSON.stringify(pushes));
+
   streams[0].write(claudeScreen('✻ Frosting… (5s · ↓ 1k tokens)')); await wait(1500);
   ok(pushes.length === 0, '运行中不推送');
   streams[0].write(claudeScreen('✻ Worked for 9s')); await wait(1800);
@@ -64,11 +71,16 @@ run(async () => {
   await wait(10500); // 同一会话 10 秒内最多推送一次
   streams[0].write(claudeScreen('', ' Do you want to proceed?\r\n ❯ 1. Yes\r\n   2. No\r\n')); await wait(1800);
   ok(pushes.length === 2 && pushes[1].title === 'M-1 · 待选择' && pushes[1].body === '需要你选择', '变成待选择 → 推送 ' + JSON.stringify(pushes[1]));
+  ws.send(JSON.stringify({ type: 'data', data: '1' })); // 在手机上回复了
+  await wait(10500);
+  streams[0].write('\x07'); await wait(800);
+  ok(pushes.length === 3 && pushes[2].body === '终端提示音', '回复过之后，下一次提示音照常推送 ' + JSON.stringify(pushes[2]));
 
   await wait(10500);
   ws.send(JSON.stringify({ type: 'watching', watching: true }));
+  const before = pushes.length;
   streams[0].write(claudeScreen('✻ Frosting… (2s)')); await wait(1500);
   streams[0].write(claudeScreen('✻ Worked for 3s')); await wait(1800);
-  ok(pushes.length === 2, '有人正在看这个标签：状态变了也不推送');
+  ok(pushes.length === before, '有人正在看这个标签：状态变了也不推送');
   ws.close();
 });

@@ -131,7 +131,8 @@ function verify(token) {
   if (!safeEqual(mac, expect)) return null;
   try {
     const p = JSON.parse(Buffer.from(body, 'base64url').toString());
-    return p.exp > Date.now() && !(p.jti && revoked.has(p.jti)) ? p : null;
+    // 必须带 jti (v1.36.0 之前发的凭证没有，没法单独作废，更新后需要重新登录一次)
+    return p.exp > Date.now() && typeof p.jti === 'string' && !revoked.has(p.jti) ? p : null;
   } catch {
     return null;
   }
@@ -393,7 +394,10 @@ app.post('/api/login', (req, res) => {
 });
 
 app.post('/api/logout', (req, res) => {
-  revoke(verify(parseCookies(req.headers.cookie)[COOKIE_NAME]));
+  const p = verify(parseCookies(req.headers.cookie)[COOKIE_NAME]);
+  try { revoke(p); } catch (e) { console.error('退出登录：保存作废凭证失败', e.message); } // 写不了文件也照样清 Cookie
+  // 用这个凭证打开的 WebSocket 马上断开
+  if (p) for (const ws of wss.clients) if (ws.jti === p.jti) ws.close(4001, 'logged out');
   res.setHeader('Set-Cookie', `${COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0`);
   res.json({ ok: true });
 });
@@ -672,7 +676,8 @@ server.on('upgrade', (req, socket, head) => {
     if (!req.url.startsWith('/ws') || new URL(req.url, 'http://x').pathname !== '/ws') return reject(404, 'Not Found');
     if (!isAuthed(req)) return reject(401, 'Unauthorized');
     if (!sameOrigin(req)) return reject(403, 'Forbidden');
-    wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+    const jti = authEnabled ? verify(parseCookies(req.headers.cookie)[COOKIE_NAME])?.jti : null;
+    wss.handleUpgrade(req, socket, head, (ws) => { ws.jti = jti; wss.emit('connection', ws, req); });
   } catch {
     reject(400, 'Bad Request');
   }
@@ -738,7 +743,8 @@ class Session {
     const now = Date.now();
     this.tracker.onBell(now);
     this.scheduleState();
-    if (now - this.lastAlert < 10000 || now - this.statePushAt < 120000) return;
+    // 刚按状态推送过、而且之后还没人操作过：提示音多半是同一件事，不重复推送
+    if (now - this.lastAlert < 10000 || (now - this.statePushAt < 120000 && this.tracker.dataAt < this.statePushAt)) return;
     if ([...this.clients].some((ws) => ws.watching)) return;
     this.lastAlert = now;
     const name = `${this.title}-${this.n}`;
@@ -762,7 +768,7 @@ class Session {
     const prev = this.state;
     this.state = st;
     this.broadcast({ type: 'state', label: st.label, cls: st.cls });
-    // 推送：刚进入待选择 / 报错；或者从运行中变成完成 (只有提示音的完成已经由 alert 推送过了)
+    // 推送：刚进入待选择 / 报错；或者 Claude Code 从运行中变成完成 (why 只有这几种情况才有)
     if (st.why && (st.cls === 'bad' || prev.cls === 'run')) this.notifyState(st);
   }
 
@@ -938,8 +944,17 @@ class Session {
     this.broadcast({ type: 'status', status, sid: status === 'connected' ? this.id : null });
   }
 
-  write(data) {
+  // autoFrom：终端自动应答来自哪个浏览器 (不是用户打的字)。几台设备同时开着时每台都会回答同一个询问，
+  // 0.5 秒内来自不同设备的相同应答只转发一次；自动应答不算输入，不影响主机状态
+  write(data, autoFrom) {
     if (!this.stream) return;
+    if (autoFrom) {
+      const now = Date.now(), last = this.lastAuto;
+      if (last && last.data === data && last.ws !== autoFrom && now - last.t < 500) return;
+      this.lastAuto = { data, ws: autoFrom, t: now };
+      this.stream.write(data);
+      return;
+    }
     this.stream.write(data);
     this.tracker.onInput(Date.now(), true); // 有人往这个标签发了内容：回显不算运行中，「完成」算已经看到了
     this.scheduleState();
@@ -1380,7 +1395,7 @@ wss.on('connection', (ws, req) => {
         break;
       }
       case 'data':
-        if (sess && typeof msg.data === 'string') sess.write(msg.data);
+        if (sess && typeof msg.data === 'string') sess.write(msg.data, msg.auto === true ? ws : null);
         break;
       case 'resize':
         if (sess) sess.resize(msg.cols, msg.rows);
