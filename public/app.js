@@ -976,14 +976,55 @@
   // ------------------------------------------------------------ 延迟显示：网页 ↔ SSH-WEB、SSH-WEB ↔ 目标主机
   // 打字、方向键、tmux 滚动都要等一个来回，看这两个数字就知道慢在哪一段
   const latCls = (ms) => (ms < 80 ? 'g' : ms < 200 ? 'y' : 'r');
+  const latEl = $('#lat'), latPop = $('#latPop');
+  const latOk = (s, ms) => s.sid && Number.isFinite(ms);
+
+  // 标签栏只显示信号图标：两段里较慢的那段决定颜色 (三格绿 / 两格黄 / 一格红，还没测到是灰色)
   function updateLat() {
-    const el = $('#lat');
     const s = active;
-    el.classList.toggle('hidden', !s);
-    if (!s) return;
-    const num = (ms) => (Number.isFinite(ms) && s.sid ? `<b class="${latCls(ms)}">${ms}</b>` : '<b>–</b>');
-    el.innerHTML = `<span class="lat-l">网页</span>${num(s.rtt)}<span class="lat-l"> · SSH</span><span class="lat-s">·</span>${num(s.sshRtt)}<span> ms</span>`;
+    latEl.classList.toggle('hidden', !s);
+    if (!s) return closeLatPop();
+    const vals = [s.rtt, s.sshRtt].filter((ms) => latOk(s, ms));
+    latEl.dataset.q = vals.length ? latCls(Math.max(...vals)) : 'na';
+    if (!latPop.classList.contains('hidden')) renderLatPop();
   }
+
+  function renderLatPop() {
+    const s = active;
+    if (!s) return;
+    const num = (ms) => (latOk(s, ms) ? `<b class="${latCls(ms)}">${ms} ms</b>` : '<b>–</b>');
+    latPop.innerHTML = `
+      <div class="lp-row"><span>网页</span>${num(s.rtt)}</div>
+      <div class="lp-sub">浏览器 ↔ SSH-WEB（经过 Cloudflare 隧道 / 你的网络）</div>
+      <div class="lp-row"><span>SSH</span>${num(s.sshRtt)}</div>
+      <div class="lp-sub">SSH-WEB ↔ 目标主机</div>
+      <div class="lp-tip">打字、方向键都要等一个来回。<br>绿 &lt; 80ms，黄 &lt; 200ms，红更慢</div>`;
+    const r = latEl.getBoundingClientRect();
+    latPop.style.top = r.bottom + 6 + 'px';
+    latPop.style.right = Math.max(8, window.innerWidth - r.right) + 'px';
+  }
+
+  function closeLatPop() {
+    latPop.classList.add('hidden');
+    latEl.classList.remove('on');
+  }
+
+  latEl.addEventListener('mousedown', (e) => e.preventDefault()); // 不抢走输入框焦点
+  latEl.addEventListener('click', () => {
+    if (!latPop.classList.contains('hidden')) return closeLatPop();
+    latPop.classList.remove('hidden');
+    latEl.classList.add('on');
+    renderLatPop();
+  });
+  // 点别处 / Esc 关闭
+  document.addEventListener('pointerdown', (e) => {
+    if (!latPop.classList.contains('hidden') && !latPop.contains(e.target) && !latEl.contains(e.target)) closeLatPop();
+  }, true);
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !latPop.classList.contains('hidden')) { closeLatPop(); e.stopPropagation(); e.preventDefault(); }
+  }, true);
+  window.addEventListener('resize', () => { if (!latPop.classList.contains('hidden')) renderLatPop(); });
+
   function measureRtt() {
     if (active && active.sid && !document.hidden) send(active, { type: 'ping', t: performance.now() });
     updateLat();

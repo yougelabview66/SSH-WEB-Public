@@ -73,8 +73,7 @@
       <div id="tabbar">
         <button id="btnToggle" title="主机列表">☰</button>
         <div id="tabs"></div>
-        <span id="lat" class="lat hidden"
-              title="网页：浏览器 ↔ SSH-WEB 的往返延迟（经过 Cloudflare 隧道 / 你的网络）&#10;SSH：SSH-WEB ↔ 目标主机的往返延迟&#10;打字、方向键、滚动都要等一个来回；绿 &lt; 80ms，黄 &lt; 200ms，红更慢"></span>
+        <button id="lat" class="lat hidden" title="网络延迟，点击查看"><span class="bars"><i></i><i></i><i></i></span></button>
         <button id="btnInput" class="tbtn hidden" title="底部输入框：打字先在本地编辑，回车才发送，没有卡顿">✏️<span class="lbl"> 输入框</span></button>
         <button id="btnMon" class="tbtn hidden" title="性能监控">📊<span class="lbl"> 监控</span></button>
         <button id="btnHistory" class="tbtn hidden" title="历史命令">🕘<span class="lbl"> 历史</span></button>
@@ -115,6 +114,9 @@
       <div id="deskSpace" class="hidden"></div>
     </main>
   </div>
+
+  <!-- 延迟详情 (点标签栏的信号图标) -->
+  <div id="latPop" class="hidden"></div>
 
   <!-- 连接 / 编辑主机 -->
   <div id="modal" class="overlay hidden">

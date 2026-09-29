@@ -312,15 +312,27 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 }
 
 /* 标签栏右侧按钮 */
-/* 延迟显示 */
-.lat { display: flex; align-items: center; gap: 4px; padding: 0 10px; flex-shrink: 0; white-space: nowrap; cursor: help;
-  font: 12px ui-monospace, Menlo, Consolas, monospace; color: var(--muted); border-left: 1px solid var(--border); }
-.lat b { font-weight: 600; }
-.lat b.g { color: var(--accent); }
-.lat b.y { color: var(--warn); }
-.lat b.r { color: var(--danger); }
-.lat .lat-s { display: none; }
-@media (max-width: 760px) { .lat .lat-l { display: none; } .lat .lat-s { display: inline; } .lat { padding: 0 6px; } }
+/* 延迟：标签栏里只显示信号图标 (两段里较慢的那段决定颜色)，点击弹出详情 */
+#tabbar .lat { display: flex; align-items: center; padding: 0 12px; flex-shrink: 0; border: none; border-radius: 0;
+  border-left: 1px solid var(--border); background: none; }
+#tabbar .lat.on { background: var(--bg); }
+.lat .bars { display: flex; align-items: flex-end; gap: 2px; height: 12px; }
+.lat .bars i { width: 3px; border-radius: 1px; background: var(--border); }
+.lat .bars i:nth-child(1) { height: 4px; }
+.lat .bars i:nth-child(2) { height: 8px; }
+.lat .bars i:nth-child(3) { height: 12px; }
+.lat[data-q=g] .bars i { background: var(--accent); }
+.lat[data-q=y] .bars i:nth-child(-n+2) { background: var(--warn); }
+.lat[data-q=r] .bars i:nth-child(1) { background: var(--danger); }
+#latPop { position: fixed; z-index: 60; min-width: 230px; max-width: calc(100vw - 16px); padding: 10px 12px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 24px var(--shadow); font-size: 13px; }
+.lp-row { display: flex; justify-content: space-between; gap: 16px; font-weight: 600; }
+.lp-row b { font-family: ui-monospace, Menlo, Consolas, monospace; }
+.lp-row b.g { color: var(--accent); }
+.lp-row b.y { color: var(--warn); }
+.lp-row b.r { color: var(--danger); }
+.lp-sub { margin: 2px 0 8px; font-size: 12px; color: var(--muted); }
+.lp-tip { padding-top: 6px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); line-height: 1.5; }
 #btnMon, #btnInput { border: none; border-left: 1px solid var(--border); border-radius: 0; background: none;
   white-space: nowrap; flex-shrink: 0; }
 .tbtn.on { background: var(--bg); color: var(--accent); }
