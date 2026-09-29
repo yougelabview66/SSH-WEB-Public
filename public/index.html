@@ -9,10 +9,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="SSH-WEB">
-  <script>
-    // 尽早应用手动选择的主题，避免页面先闪一下深色
-    try { var t = localStorage.getItem('sshweb.theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {}
-  </script>
+  <!-- 尽早应用手动选择的主题，避免页面先闪一下深色 (单独的文件：安全策略不允许内联脚本) -->
+  <script src="/theme.js?v={{VERSION}}"></script>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%231e293b'/><text x='5' y='22' font-family='monospace' font-size='16' fill='%2322c55e'>&gt;_</text></svg>">
   <link rel="stylesheet" href="/vendor/xterm/css/xterm.css?v={{VERSION}}">
   <link rel="stylesheet" href="/style.css?v={{VERSION}}">

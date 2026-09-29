@@ -46,8 +46,8 @@ const SSH_KEEPALIVE = parseInt(process.env.SSH_KEEPALIVE || '15000', 10);
 //                  off = 不校验 (不推荐)
 const HOSTKEY_POLICY = ['ask', 'accept-new', 'off'].includes(process.env.HOSTKEY_POLICY)
   ? process.env.HOSTKEY_POLICY : 'ask';
-// 后台会话: 无人挂载超过多少小时自动关闭 (0 = 永不)；最多同时保留的会话数；每个会话保留的滚动行数
-const BG_TIMEOUT_HOURS = parseFloat(process.env.BG_TIMEOUT_HOURS || '0') || 0;
+// 后台会话: 无人挂载超过多少小时自动关闭 (默认 168 = 7 天，0 = 永不)；最多同时保留的会话数；每个会话保留的滚动行数
+const BG_TIMEOUT_HOURS = parseFloat(process.env.BG_TIMEOUT_HOURS ?? '168') || 0;
 const MAX_SESSIONS = parseInt(process.env.MAX_SESSIONS || '30', 10);
 const SCROLLBACK = parseInt(process.env.SCROLLBACK || '5000', 10);
 // 等待用户输入验证码 / 确认指纹的最长时间
@@ -110,6 +110,19 @@ function sign(payload) {
   return body + '.' + mac;
 }
 
+// 退出登录后作废的凭证 id -> 过期时间 (保存到文件，服务重启后仍然有效)
+const REVOKED_FILE = path.join(DATA_DIR, 'revoked.json');
+const revoked = new Map((() => { try { return Object.entries(JSON.parse(fs.readFileSync(REVOKED_FILE, 'utf8'))); } catch { return []; } })());
+function revoke(p) {
+  if (!p || !p.jti) return;
+  const now = Date.now();
+  for (const [k, exp] of revoked) if (exp < now) revoked.delete(k);
+  revoked.set(p.jti, p.exp);
+  const tmp = REVOKED_FILE + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(Object.fromEntries(revoked)), { mode: 0o600 });
+  fs.renameSync(tmp, REVOKED_FILE);
+}
+
 function verify(token) {
   if (!token || typeof token !== 'string') return null;
   const [body, mac] = token.split('.');
@@ -118,7 +131,7 @@ function verify(token) {
   if (!safeEqual(mac, expect)) return null;
   try {
     const p = JSON.parse(Buffer.from(body, 'base64url').toString());
-    return p.exp > Date.now() ? p : null;
+    return p.exp > Date.now() && !(p.jti && revoked.has(p.jti)) ? p : null;
   } catch {
     return null;
   }
@@ -312,6 +325,10 @@ app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'no-referrer');
+  // 样式允许内联 (终端、历史视图的颜色都是内联样式)；脚本只能来自本站 (没有内联脚本)
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+    + "img-src 'self' data: blob:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; "
+    + "base-uri 'self'; form-action 'self'; frame-ancestors 'self'");
   next();
 });
 
@@ -355,7 +372,7 @@ app.post('/api/login', (req, res) => {
   const { username, password } = req.body || {};
   if (safeEqual(username || '', AUTH_USER) && safeEqual(password || '', AUTH_PASSWORD)) {
     loginFails.delete(ip);
-    const token = sign({ u: AUTH_USER, exp: Date.now() + SESSION_HOURS * 3600 * 1000 });
+    const token = sign({ u: AUTH_USER, exp: Date.now() + SESSION_HOURS * 3600 * 1000, jti: crypto.randomBytes(12).toString('base64url') });
     res.setHeader('Set-Cookie',
       `${COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${Math.floor(SESSION_HOURS * 3600)}` +
       (COOKIE_SECURE || req.secure ? '; Secure' : '')); // 通过 HTTPS (如 Cloudflare 隧道) 访问时自动加 Secure
@@ -366,6 +383,7 @@ app.post('/api/login', (req, res) => {
 });
 
 app.post('/api/logout', (req, res) => {
+  revoke(verify(parseCookies(req.headers.cookie)[COOKIE_NAME]));
   res.setHeader('Set-Cookie', `${COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0`);
   res.json({ ok: true });
 });
