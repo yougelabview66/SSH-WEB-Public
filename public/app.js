@@ -2467,7 +2467,6 @@
     s.heldWheel = 1;
     send(s, { type: 'tmux-history', lines: LS_LINES });
     s.lsTimer = setTimeout(() => onTmuxHistory(s, { ok: false, reason: 'timeout' }), 4000);
-    s.lsToast = setTimeout(() => fontToast(s, '读取 tmux 历史…'), 250);
     return false;
   }
 
@@ -2489,18 +2488,10 @@
     if (!s.scrollLoading) return;
     s.scrollLoading = false;
     clearTimeout(s.lsTimer);
-    clearTimeout(s.lsToast);
-    s.box.querySelector('.font-toast')?.remove();
     if (m.ok && historyMatchesScreen(s, m.data)) return openLocalScroll(s, m.data, Math.max(1, s.heldWheel));
-    // 用不了：一段时间内不再尝试，把刚才拦下的滚轮补发给程序 (会进入 tmux 自己的复制模式)；说明原因，方便排查
+    // 用不了：一段时间内不再尝试，把刚才拦下的滚轮补发给程序 (会进入 tmux 自己的复制模式，不弹提示)
     const reason = m.ok ? 'mismatch' : m.reason;
     s.noTmuxUntil = Date.now() + ({ 'no-tmux': 300000, busy: 5000, 'in-mode': 3000 }[reason] || 30000);
-    const why = {
-      mismatch: '抓到的 tmux 画面和当前屏幕对不上 (可能是分屏或多个 tmux 客户端)',
-      busy: 'pane 里是全屏程序，滚动交给它',
-      failed: '读取 tmux 历史失败', timeout: '读取 tmux 历史超时', offline: '连接已断开',
-    }[reason];
-    if (why) fontToast(s, '本地滚动不可用：' + why + '，改用 tmux 自己的滚动', 3000);
     const target = s.term.element.querySelector('.xterm-screen') || s.term.element;
     const r = target.getBoundingClientRect();
     s.bypassWheel = true;
