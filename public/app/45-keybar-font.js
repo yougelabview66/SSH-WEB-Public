@@ -194,7 +194,8 @@
     const vv = window.visualViewport;
     const onVV = () => {
       const h = Math.round(vv.height), full = document.documentElement.clientHeight;
-      const want = h > 0 && h < full - 1 ? h + 'px' : '';
+      // 双指放大页面 (电脑触控板、手机) 时可视区域也会变小，那不是键盘弹出，不固定高度
+      const want = h > 0 && h < full - 1 && vv.scale <= 1.01 ? h + 'px' : '';
       if (app.style.height !== want) app.style.height = want;
       window.scrollTo(0, 0);
       if (active) {

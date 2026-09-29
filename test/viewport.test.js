@@ -59,6 +59,27 @@ run(async () => {
   await wait(800);
   l = await layout();
   ok(l.style === '' && Math.abs(l.appH - l.winH) < 2, '重新获得焦点：同样恢复占满屏幕');
+
+  // 电脑：页面高度一直占满窗口；双指放大页面不会被当成键盘弹出；最小化再恢复 / 改变窗口大小终端跟着调整
+  const d = await (await browser.newContext({ viewport: { width: 1280, height: 800 } })).newPage();
+  d.on('pageerror', (e) => errors.push(e.message));
+  await d.goto(BASE + '/'); await d.waitForSelector('.tab'); await wait(1500);
+  const dl = () => d.evaluate(() => ({ style: document.getElementById('app').style.height, appH: document.getElementById('app').getBoundingClientRect().height, winH: document.documentElement.clientHeight }));
+  let x = await dl();
+  ok(x.style === '' && Math.abs(x.appH - x.winH) < 2, '电脑：页面占满窗口，不固定高度');
+  await d.evaluate(() => {
+    Object.defineProperty(window.visualViewport, 'height', { configurable: true, get: () => 400 });
+    Object.defineProperty(window.visualViewport, 'scale', { configurable: true, get: () => 2 });
+    window.visualViewport.dispatchEvent(new Event('resize'));
+  });
+  await wait(300); x = await dl();
+  ok(x.style === '' && Math.abs(x.appH - x.winH) < 2, '电脑：触控板双指放大页面 (可视区域变小) 不会被当成键盘弹出');
+  await d.evaluate(() => { delete window.visualViewport.height; delete window.visualViewport.scale; });
+  const r0 = rows;
+  await d.setViewportSize({ width: 1000, height: 600 }); await wait(600);
+  await d.evaluate(() => document.dispatchEvent(new Event('visibilitychange'))); await wait(800);
+  x = await dl();
+  ok(x.style === '' && Math.abs(x.appH - 600) < 2 && rows < r0, `电脑：窗口变小 / 恢复显示后，页面和终端跟着调整 (终端 ${r0} → ${rows} 行)`);
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
   await browser.close();
 });
