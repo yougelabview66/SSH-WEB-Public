@@ -1041,7 +1041,9 @@
     updateLat();
   }
   setInterval(() => {
-    const gap = latPop.classList.contains('hidden') ? 10000 : 2000;
+    // 打开详情卡片、或者还有一段没测到 (刚连上) 时 2 秒一次，其余 10 秒一次
+    const pending = active && active.sid && !(Number.isFinite(active.rtt) && Number.isFinite(active.sshRtt));
+    const gap = latPop.classList.contains('hidden') && !pending ? 10000 : 2000;
     if (performance.now() - rttAt >= gap - 50) measureRtt();
   }, 1000);
 
