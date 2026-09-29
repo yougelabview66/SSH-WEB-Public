@@ -1517,12 +1517,12 @@
     dInput.focus();
   });
 
-  // ------------------------------------------------------------ 抬高模式下方留白里的信息面板：各标签状态
+  // ------------------------------------------------------------ 抬高模式下方留白里的信息面板：各主机 (标签) 状态
   let deskTabList = [];
   const panelShown = () => !deskSpace.classList.contains('hidden');
 
   function renderDeskPanel() {
-    if (!deskSpace.firstChild) deskSpace.innerHTML = '<div class="dp-h">标签状态</div><div class="dp-tabs"></div>';
+    if (!deskSpace.firstChild) deskSpace.innerHTML = '<div class="dp-h">主机状态</div><div class="dp-tabs"></div>';
     renderDeskTabs();
   }
 
