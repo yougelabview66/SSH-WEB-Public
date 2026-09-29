@@ -264,6 +264,27 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 .dp-tab .stt.idle { color: var(--muted); background: var(--panel2); border: 1px solid var(--border); }
 .dp-tab .stt.off { color: var(--muted); border: 1px dashed var(--muted); }
 @keyframes dp-blink { 50% { opacity: .35; } }
+/* 电脑：主机状态悬浮窗 */
+#hostFloat { position: absolute; z-index: 8; min-width: 170px; max-width: min(420px, calc(100% - 16px)); background: var(--panel);
+  border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 6px 24px var(--shadow); font-size: 13px; }
+#hostFloat.dragging { opacity: .85; }
+.hf-head { display: flex; align-items: center; gap: 6px; padding: 4px 4px 4px 10px; cursor: move; user-select: none;
+  -webkit-user-select: none; touch-action: none; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--border); }
+.hf-head .hf-title { font-weight: 600; white-space: nowrap; }
+.hf-head button { border: none; background: none; padding: 2px 6px; font-size: 13px; line-height: 1; color: var(--muted); cursor: pointer; }
+.hf-head button:hover { color: var(--text); background: var(--panel2); }
+.hf-head .hf-sum { display: none; gap: 4px; margin-left: 4px; flex: 1; }
+#hostFloat .dp-tabs { padding: 8px; }
+#hostFloat.min .dp-tabs { display: none; }
+#hostFloat.min .hf-head { border-bottom: none; }
+#hostFloat.min .hf-sum { display: flex; }
+.hf-d { width: 8px; height: 8px; border-radius: 50%; background: var(--border); }
+.hf-d.run { background: var(--warn); animation: dp-blink 1s ease-in-out infinite; }
+.hf-d.done { background: var(--accent2); }
+.hf-d.bad { background: var(--danger); }
+.hf-d.off { background: none; border: 1px dashed var(--muted); }
+/* 置顶到桌面的小窗口 */
+.pip-body { margin: 0; padding: 8px; background: var(--panel); color: var(--text); font: 13px system-ui, sans-serif; }
 @media (prefers-reduced-motion: reduce) { .dp-tab .stt.run { animation: none; } }
 #deskBar.float { position: absolute; left: 8px; right: 8px; z-index: 4; border: 1px solid var(--border);
   border-radius: 8px; box-shadow: 0 6px 24px var(--shadow); }
@@ -460,11 +481,13 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 .lscroll { position: absolute; inset: 0; z-index: 20; display: flex; }
 .ls-body { flex: 1; margin: 0; padding: 4px 0 0 6px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;
   overscroll-behavior: contain; -webkit-overflow-scrolling: touch; user-select: text; -webkit-user-select: text; }
-.ls-close { position: absolute; top: 8px; right: 18px; z-index: 1; font-size: 12px; padding: 4px 10px; opacity: .92;
+.ls-close { position: absolute; bottom: 12px; right: 18px; /* 右上角是主机状态悬浮窗的默认位置 */ z-index: 1; font-size: 12px; padding: 4px 10px; opacity: .92;
   box-shadow: 0 2px 10px var(--shadow); }
+.ls-close.tmux-exit { z-index: 25; } /* 直接放在终端上，要高于 xterm 内部图层 */
 .font-toast { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); z-index: 6; pointer-events: none;
   background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 10px;
-  padding: 8px 16px; font-size: 16px; box-shadow: 0 6px 20px var(--shadow); }
+  padding: 8px 16px; font-size: 16px; box-shadow: 0 6px 20px var(--shadow);
+  width: max-content; max-width: calc(100% - 32px); text-align: center; }
 /* xterm 内部滚动层背景跟随主题 (否则浅色下边缘露出一圈黑 / 灰线) */
 .xterm .xterm-viewport { background-color: var(--term-bg) !important; }
 /* 全局输入框样式不要作用到 xterm 的隐藏输入框 */

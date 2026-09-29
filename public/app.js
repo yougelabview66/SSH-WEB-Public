@@ -339,6 +339,7 @@
     $('#themeSeg').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.mode === m));
     for (const s of sessions) s.term.options.theme = termTheme();
     for (const s of sessions) if (s.mon && s.mon.redraw) s.mon.redraw();
+    syncPipTheme();
   }
 
   $('#themeSeg').addEventListener('click', (e) => {
@@ -524,6 +525,7 @@
       if (ev.data instanceof ArrayBuffer) {
         if (s.offset !== undefined) s.offset += ev.data.byteLength;
         s.lastOut = Date.now();
+        if (pipWin && s.lastOut - (lastStatusPaint || 0) > 300) { lastStatusPaint = s.lastOut; renderDeskTabs(); }
         if (s.lastOut - (s.inputAt || 0) > 400) { // 输入后 0.4 秒内的是回显
           (s.outTimes ||= []).push(s.lastOut);
           if (s.outTimes.length > 30) s.outTimes.splice(0, s.outTimes.length - 30);
@@ -1602,11 +1604,12 @@
     deskMode = order[(order.indexOf(deskMode) + 1) % order.length];
     saveDeskPos();
     applyDeskPos();
+    updateHostFloat();
     dInput.focus();
   });
 
   // ------------------------------------------------------------ 抬高模式下方留白里的信息面板：各主机 (标签) 状态
-  let deskTabList = [];
+  let deskTabList = [], lastStatusPaint = 0;
   const panelShown = () => !deskSpace.classList.contains('hidden');
 
   function renderDeskPanel() {
@@ -1666,31 +1669,153 @@
     return ['空闲', 'idle'];
   }
 
+  // 主机状态画到所有显示着的地方：抬高模式的留白、网页内悬浮窗、置顶到桌面的小窗口
+  function statusBoxes() {
+    const out = [];
+    if (panelShown()) out.push(deskSpace.querySelector('.dp-tabs'));
+    if (!hostFloat.classList.contains('hidden') && !hostFloat.classList.contains('min')) out.push(hfTabs);
+    if (pipWin) out.push(pipWin.document.querySelector('.dp-tabs'));
+    return out.filter(Boolean);
+  }
+
   function renderDeskTabs() {
-    const box = deskSpace.querySelector('.dp-tabs');
-    if (!box || !panelShown()) return;
+    const boxes = statusBoxes();
+    const sumOn = !hostFloat.classList.contains('hidden') && hostFloat.classList.contains('min');
+    if (!boxes.length && !sumOn) return;
     deskTabList = tabOrder();
     const now = Date.now();
+    const states = deskTabList.map((x) => tabState(x, now));
     const html = deskTabList.map((x, i) => {
-      const [st, cls] = tabState(x, now);
+      const [st, cls] = states[i];
       return `<div class="dp-tab${x === active ? ' cur' : ''}" data-k="${i}">
         <span class="${$('.dot', x.tab).className}"></span><span class="nm">${esc($('.title', x.tab).textContent)}</span>
         <span class="stt ${cls}">${st}</span></div>`;
     }).join('');
-    if (box.innerHTML !== html) box.innerHTML = html;
+    for (const box of boxes) if (box.innerHTML !== html) box.innerHTML = html;
+    // 悬浮窗收起时，标题栏上用小圆点显示每个标签的状态
+    const sum = states.map(([st, cls], i) => `<i class="hf-d ${cls}" title="${esc($('.title', deskTabList[i].tab).textContent)}：${st}"></i>`).join('');
+    if (hfSum.innerHTML !== sum) hfSum.innerHTML = sum;
   }
   setInterval(renderDeskTabs, 500);
 
   // 按下就切标签 (每 0.5 秒会重画，不等 click)，不抢走输入框焦点
-  deskSpace.addEventListener('mousedown', (e) => {
+  function onStatusDown(e) {
     if (e.button !== 0) return;
     const row = e.target.closest('.dp-tab');
-    if (row) {
-      e.preventDefault();
-      const x = deskTabList[+row.dataset.k];
-      if (x && x !== active) activate(x);
+    if (!row) return;
+    e.preventDefault();
+    const x = deskTabList[+row.dataset.k];
+    if (x && x !== active) activate(x);
+  }
+  deskSpace.addEventListener('mousedown', onStatusDown);
+
+  // ------------------------------------------------------------ 电脑：主机状态悬浮窗
+  // 输入框不是「抬高」模式时显示在终端上，按住标题栏拖动，位置 / 收起状态每台电脑各自记住；
+  // 📌 置顶到桌面：浏览器的文档画中画 (Chrome / Edge 116+)，浏览器最小化后也浮在最上面
+  const hostFloat = $('#hostFloat'), hfTabs = $('#hostFloat .dp-tabs'), hfSum = $('#hostFloat .hf-sum');
+  let pipWin = null;
+  const hfPos = (() => { try { return JSON.parse(localStorage.getItem('sshweb.hostFloat')) || {}; } catch { return {}; } })();
+  const saveHf = () => { try { localStorage.setItem('sshweb.hostFloat', JSON.stringify(hfPos)); } catch {} };
+  if (hfPos.min) hostFloat.classList.add('min');
+  if (!('documentPictureInPicture' in window)) hostFloat.querySelector('[data-a=pip]').remove();
+
+  // 位置用「离 main 右边 / 上边的距离」保存，窗口大小变了也贴着右上角；超出范围时收回来
+  function placeHostFloat() {
+    const main = hostFloat.parentElement;
+    const top0 = $('#tabbar').offsetHeight;
+    const maxR = Math.max(0, main.clientWidth - hostFloat.offsetWidth);
+    const maxT = Math.max(top0, main.clientHeight - hostFloat.offsetHeight);
+    const r = Math.min(Math.max(0, hfPos.r ?? 12), maxR);
+    const t = Math.min(Math.max(top0, hfPos.t ?? top0 + 8), maxT);
+    hostFloat.style.right = r + 'px';
+    hostFloat.style.top = t + 'px';
+  }
+
+  function updateHostFloat() {
+    const show = !isTouch && !!active && deskMode !== 'lift' && !pipWin;
+    const was = !hostFloat.classList.contains('hidden');
+    hostFloat.classList.toggle('hidden', !show);
+    if (show) {
+      if (!was) renderDeskTabs();
+      placeHostFloat();
     }
+  }
+  new ResizeObserver(() => { if (!hostFloat.classList.contains('hidden')) placeHostFloat(); }).observe(hostFloat.parentElement);
+
+  hostFloat.addEventListener('mousedown', onStatusDown);
+  hostFloat.querySelector('.hf-head').addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || e.target.closest('button')) return;
+    e.preventDefault();
+    const head = e.currentTarget;
+    head.setPointerCapture(e.pointerId);
+    const r0 = hostFloat.getBoundingClientRect(), main = hostFloat.parentElement.getBoundingClientRect();
+    const x0 = e.clientX, y0 = e.clientY;
+    const r0px = main.right - r0.right, t0px = r0.top - main.top;
+    hostFloat.classList.add('dragging');
+    const move = (ev) => {
+      hfPos.r = r0px - (ev.clientX - x0);
+      hfPos.t = t0px + (ev.clientY - y0);
+      placeHostFloat();
+    };
+    const up = () => {
+      head.removeEventListener('pointermove', move);
+      head.removeEventListener('pointerup', up);
+      head.removeEventListener('pointercancel', up);
+      hostFloat.classList.remove('dragging');
+      hfPos.r = parseFloat(hostFloat.style.right);
+      hfPos.t = parseFloat(hostFloat.style.top);
+      saveHf();
+      if (active) focusTerm(active);
+    };
+    head.addEventListener('pointermove', move);
+    head.addEventListener('pointerup', up);
+    head.addEventListener('pointercancel', up);
   });
+  hostFloat.querySelector('.hf-head').addEventListener('mousedown', (e) => e.preventDefault()); // 不抢走输入框焦点
+  hostFloat.addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.a === 'min') {
+      hfPos.min = hostFloat.classList.toggle('min');
+      saveHf();
+      renderDeskTabs();
+      placeHostFloat();
+    } else if (b.dataset.a === 'pip') openStatusPip();
+  });
+
+  // 置顶到桌面：内容和网页里的一样，样式直接引用同一个 style.css
+  async function openStatusPip() {
+    if (pipWin) return pipWin.focus();
+    let w;
+    try {
+      w = await window.documentPictureInPicture.requestWindow({ width: 300, height: 150 });
+    } catch (e) {
+      return alert('无法打开置顶窗口：' + e.message);
+    }
+    pipWin = w;
+    const d = w.document;
+    d.title = '主机状态 - SSH-WEB';
+    const link = d.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = new URL('style.css', location.href).href;
+    d.head.appendChild(link);
+    syncPipTheme();
+    d.body.className = 'pip-body';
+    d.body.innerHTML = '<div class="dp-tabs"></div>';
+    d.addEventListener('mousedown', onStatusDown);
+    w.addEventListener('pagehide', () => {
+      pipWin = null;
+      updateHostFloat();
+    });
+    updateHostFloat();
+    renderDeskTabs();
+  }
+  function syncPipTheme() {
+    if (!pipWin) return;
+    const t = document.documentElement.dataset.theme;
+    if (t) pipWin.document.documentElement.dataset.theme = t;
+    else delete pipWin.document.documentElement.dataset.theme;
+  }
 
   // 按住上下拖动的通用处理：onMove(鼠标相对按下时的位移 dy)，requestAnimationFrame 节流，松开后保存
   function dragY(e, onMove) {
@@ -1945,12 +2070,12 @@
   $('#fontDec').addEventListener('click', () => setFontSize(fontSize - 1));
   $('#fontInc').addEventListener('click', () => setFontSize(fontSize + 1));
 
-  function fontToast(s, text) {
+  function fontToast(s, text, ms) {
     let t = s.box.querySelector('.font-toast');
     if (!t) { t = document.createElement('div'); t.className = 'font-toast'; s.box.appendChild(t); }
     t.textContent = text;
     clearTimeout(t.timer);
-    t.timer = setTimeout(() => t.remove(), 800);
+    t.timer = setTimeout(() => t.remove(), ms || 800);
   }
 
   function updateMobileBar() {
@@ -1959,6 +2084,7 @@
     $('#btnInput').classList.toggle('hidden', !(!isTouch && active));
     $('#btnInput').classList.toggle('on', deskOn);
     applyDeskPos();
+    updateHostFloat();
     if (cmdMode && cmdMode.s !== active) setCmdMode(false);
     // 每个标签有自己的草稿
     const draft = active?.draft || '';
@@ -2335,8 +2461,15 @@
     clearTimeout(s.lsToast);
     s.box.querySelector('.font-toast')?.remove();
     if (m.ok && historyMatchesScreen(s, m.data)) return openLocalScroll(s, m.data, Math.max(1, s.heldWheel));
-    // 用不了：一段时间内不再尝试，把刚才拦下的滚轮补发给程序
-    s.noTmuxUntil = Date.now() + (m.reason === 'no-tmux' ? 300000 : m.reason === 'busy' ? 5000 : 30000);
+    // 用不了：一段时间内不再尝试，把刚才拦下的滚轮补发给程序 (会进入 tmux 自己的复制模式)；说明原因，方便排查
+    const reason = m.ok ? 'mismatch' : m.reason;
+    s.noTmuxUntil = Date.now() + ({ 'no-tmux': 300000, busy: 5000, 'in-mode': 3000 }[reason] || 30000);
+    const why = {
+      mismatch: '抓到的 tmux 画面和当前屏幕对不上 (可能是分屏或多个 tmux 客户端)',
+      busy: 'pane 里是全屏程序，滚动交给它',
+      failed: '读取 tmux 历史失败', timeout: '读取 tmux 历史超时', offline: '连接已断开',
+    }[reason];
+    if (why) fontToast(s, '本地滚动不可用：' + why + '，改用 tmux 自己的滚动', 3000);
     const target = s.term.element.querySelector('.xterm-screen') || s.term.element;
     const r = target.getBoundingClientRect();
     s.bypassWheel = true;
@@ -2395,6 +2528,28 @@
     s.scrollView = null;
     if (s === active) focusTerm(s);
   }
+
+  // 用不了本地滚动时滚轮交给 tmux，进入 tmux 自己的复制模式 (pane 右上角有 [5/300] 这样的位置标记)：
+  // 同样显示「回到实时画面」，点了发 q 退出复制模式
+  function tmuxInCopyMode(s) {
+    const b = s.term.buffer.active;
+    if (b.type !== 'alternate' || s.scrollView) return false;
+    return /\[\d+\/\d+\]\s*$/.test(b.getLine(b.viewportY)?.translateToString(true) || '');
+  }
+  function updateCopyModeBtn(s) {
+    const on = !!s.sid && tmuxInCopyMode(s);
+    if (on && !s.copyBtn) {
+      s.copyBtn = document.createElement('button');
+      s.copyBtn.className = 'ls-close tmux-exit';
+      s.copyBtn.textContent = '回到实时画面 ✕';
+      s.copyBtn.title = '退出 tmux 复制模式 (发送 q)';
+      s.copyBtn.addEventListener('mousedown', (e) => e.preventDefault());
+      s.copyBtn.addEventListener('click', () => { send(s, { type: 'data', data: 'q' }); focusTerm(s); });
+      s.box.appendChild(s.copyBtn);
+    }
+    if (s.copyBtn) s.copyBtn.classList.toggle('hidden', !on);
+  }
+  setInterval(() => { if (active) updateCopyModeBtn(active); }, 300);
 
   // 历史视图打开时 Esc 只用来返回，不发给终端 (免得打断 Claude Code)
   window.addEventListener('keydown', (e) => {

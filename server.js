@@ -934,7 +934,7 @@ class Session {
 
   // 本地快速滚动：在目标主机上抓 tmux 当前 pane 的历史 (带颜色，折行合并)，浏览器在本地滚动查看，不用每滚一格等一个来回。
   // 当前 pane：优先选终端大小和这个会话一样的 tmux 客户端，其次最近有操作的；没有 tmux 时 exit 3，
-  // pane 里是全屏程序或复制模式时 exit 4 (浏览器照旧把滚轮发给程序)
+  // pane 里是全屏程序时 exit 4、已在复制模式时 exit 5 (浏览器照旧把滚轮发给程序)
   captureTmux(ws, lines) {
     const reply = (obj) => this.sendTo(ws, { type: 'tmux-history', ...obj });
     const ssh = this.ssh;
@@ -945,8 +945,10 @@ class Session {
       'command -v tmux >/dev/null 2>&1 || exit 3',
       `p=$(tmux list-clients -F '#{client_width}x#{client_height} #{client_activity} #{pane_id}' 2>/dev/null | awk '{ print ($1 == "${this.cols}x${this.rows}") ? 1 : 0, $2, $3 }' | sort -k1,1nr -k2,2nr | head -n 1 | cut -d' ' -f3)`,
       '[ -n "$p" ] || exit 3',
-      // pane 里是 vim / less 等全屏程序 (备用屏幕) 或已在 tmux 复制模式：滚轮交给它们，不抓历史
-      `[ "$(tmux display -p -t "$p" '#{alternate_on}#{pane_in_mode}')" = 00 ] || exit 4`,
+      // 已在 tmux 复制模式 (exit 5)、pane 里是 vim / less 等全屏程序 (exit 4)：滚轮交给它们，不抓历史
+      `m=$(tmux display -p -t "$p" '#{alternate_on}#{pane_in_mode}')`,
+      '[ "${m#?}" = 1 ] && exit 5',
+      '[ "$m" = 00 ] || exit 4',
       `exec tmux capture-pane -p -e -J -S -${n} -t "$p"`,
     ].join('\n');
     const MAX = 4 * 1024 * 1024;
@@ -960,7 +962,7 @@ class Session {
       ch.on('close', (code) => {
         clearTimeout(timer);
         if (code !== 0 || !len || len > MAX) {
-          return reply({ ok: false, reason: code === 3 ? 'no-tmux' : code === 4 ? 'busy' : 'failed' });
+          return reply({ ok: false, reason: { 3: 'no-tmux', 4: 'busy', 5: 'in-mode' }[code] || 'failed' });
         }
         reply({ ok: true, data: Buffer.concat(chunks).toString('utf8') });
       });
