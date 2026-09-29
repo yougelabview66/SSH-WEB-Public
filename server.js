@@ -22,6 +22,7 @@ const { Client } = require('ssh2');
 const registerSftp = require('./lib/sftp');
 const registerMonitor = require('./lib/monitor');
 const createPush = require('./lib/push');
+const { StatusTracker } = require('./lib/status');
 const { Terminal: HeadlessTerminal } = require('@xterm/headless');
 const { SerializeAddon } = require('@xterm/addon-serialize');
 
@@ -684,6 +685,11 @@ class Session {
     this.outBytes = 0; // 累计输出字节数，浏览器用它告诉服务端自己收到了哪里
     this.replay = []; // 最近的输出块
     this.replayLen = 0;
+    // 主机状态 (运行中 / 完成 / 待选择 / 报错 / 空闲)，见 lib/status.js
+    this.tracker = new StatusTracker();
+    this.state = { label: '空闲', cls: 'idle' };
+    this.stateTimer = null;
+    this.statePushAt = 0;
     // 提示音 / 通知序列 → 完成通知 (Claude Code、printf '\a' 等)
     this.term.onBell(() => this.alert('终端提示音'));
     this.term.parser.registerOscHandler(9, (d) => {
@@ -697,11 +703,14 @@ class Session {
     });
   }
 
-  // 有设备正在看这个标签时不推送；同一会话 10 秒内最多推送一次
+  // 有设备正在看这个标签时不推送；同一会话 10 秒内最多推送一次；
+  // 2 分钟内已经按主机状态推送过 (完成 / 待选择 / 报错) 就不再重复推送提示音
   alert(message, title) {
     this.broadcast({ type: 'bell' });
     const now = Date.now();
-    if (now - this.lastAlert < 10000) return;
+    this.tracker.onBell(now);
+    this.scheduleState();
+    if (now - this.lastAlert < 10000 || now - this.statePushAt < 120000) return;
     if ([...this.clients].some((ws) => ws.watching)) return;
     this.lastAlert = now;
     const name = `${this.title}-${this.n}`;
@@ -711,6 +720,30 @@ class Session {
       tag: this.id,
       sessionId: this.id,
     }).catch(() => {});
+  }
+
+  // 输出 / 输入之后稍等一下再判断 (无界面终端解析是异步的)，另外每秒整体判断一次 (见下面的定时器)
+  scheduleState() {
+    if (!this.stateTimer) this.stateTimer = setTimeout(() => { this.stateTimer = null; this.updateState(); }, 300);
+  }
+
+  updateState() {
+    if (this.status !== 'connected') return;
+    const st = this.tracker.evaluate(this.term, Date.now());
+    if (st.label === this.state.label) return;
+    const prev = this.state;
+    this.state = st;
+    this.broadcast({ type: 'state', label: st.label, cls: st.cls });
+    // 推送：刚进入待选择 / 报错；或者从运行中变成完成 (只有提示音的完成已经由 alert 推送过了)
+    if (st.why && (st.cls === 'bad' || prev.cls === 'run')) this.notifyState(st);
+  }
+
+  notifyState(st) {
+    const now = Date.now();
+    if ([...this.clients].some((ws) => ws.watching)) return;
+    if (now - this.lastAlert < 10000) return;
+    this.lastAlert = this.statePushAt = now;
+    push.send({ title: `${this.title}-${this.n} · ${st.label}`, body: st.why, tag: this.id, sessionId: this.id }).catch(() => {});
   }
 
   info() {
@@ -743,6 +776,11 @@ class Session {
     while (this.replayLen - this.replay[0].length >= REPLAY_MAX) this.replayLen -= this.replay.shift().length;
     this.termPending += len;
     this.term.write(buf, () => { this.termPending -= len; });
+    // 连接过程中的提示、远端欢迎信息、tmux 首次重画不算「运行中」
+    if (this.status === 'connected' && Date.now() - this.connectedAt > 1500) {
+      this.tracker.onOutput(Date.now());
+      this.scheduleState();
+    }
     for (const ws of this.clients) {
       if (ws.syncBuf) ws.syncBuf.push(buf);
       else (ws.outQ ||= []).push(buf);
@@ -843,6 +881,7 @@ class Session {
       for (const b of buf) if (ws.readyState === ws.OPEN) ws.send(b, { binary: true });
       this.sendTo(ws, { type: 'status', status: this.status, sid: this.status === 'connected' ? this.id : null });
       if (this.sshRtt !== undefined) this.sendTo(ws, { type: 'lat', ssh: this.sshRtt });
+      this.sendTo(ws, { type: 'state', label: this.state.label, cls: this.state.cls });
       if (this.pending) this.sendTo(ws, { type: this.pending.type, ...this.pending.payload });
     });
   }
@@ -867,11 +906,15 @@ class Session {
 
   setStatus(status) {
     this.status = status;
+    if (status === 'connected') { this.connectedAt = Date.now(); this.tracker = new StatusTracker(); }
     this.broadcast({ type: 'status', status, sid: status === 'connected' ? this.id : null });
   }
 
   write(data) {
-    if (this.stream) this.stream.write(data);
+    if (!this.stream) return;
+    this.stream.write(data);
+    this.tracker.onInput(Date.now(), true); // 有人往这个标签发了内容：回显不算运行中，「完成」算已经看到了
+    this.scheduleState();
   }
 
   resize(cols, rows) {
@@ -880,6 +923,7 @@ class Session {
     if (!cols || !rows || (cols === this.cols && rows === this.rows)) return;
     this.cols = cols;
     this.rows = rows;
+    this.tracker.onInput(Date.now(), false); // 调整大小引起的重绘不算运行中
     this.term.resize(cols, rows);
     if (this.stream) this.stream.setWindow(rows, cols, 0, 0);
   }
@@ -1347,6 +1391,11 @@ wss.on('connection', (ws, req) => {
   ws.on('close', detach);
   ws.on('error', detach);
 });
+
+// 每秒判断一次所有已连接会话的主机状态 (没人打开网页时也判断，手机才能收到推送)
+setInterval(() => {
+  for (const s of sessions.values()) s.updateState();
+}, 1000);
 
 // 清理长时间无人挂载的会话
 setInterval(() => {

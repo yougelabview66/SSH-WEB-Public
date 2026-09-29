@@ -480,13 +480,7 @@
 
   function send(s, obj) {
     if (!s.ws || s.ws.readyState !== WebSocket.OPEN) return;
-    // 主机状态：输入 / 调整大小后的回显、重绘不算「运行中」；发了输入 = 已经看到了，「完成」清掉
-    if (obj.type === 'data' || obj.type === 'resize') s.inputAt = Date.now();
-    if (obj.type === 'data') {
-      s.alertAt = s.doneAt = 0;
-      s.dataAt = Date.now();
-      if (s.scrollView) closeLocalScroll(s); // 打字 / 按键 = 回到实时画面
-    }
+    if (obj.type === 'data' && s.scrollView) closeLocalScroll(s); // 打字 / 按键 = 回到实时画面
     // 大段粘贴分块发送，避免单条消息超过服务端 1MB 上限导致连接被断开
     if (obj.type === 'data' && typeof obj.data === 'string' && obj.data.length > 32768) {
       for (let i = 0; i < obj.data.length; i += 32768) s.ws.send(JSON.stringify({ type: 'data', data: obj.data.slice(i, i + 32768) }));
@@ -526,11 +520,6 @@
         if (s.offset !== undefined) s.offset += ev.data.byteLength;
         s.lastOut = Date.now();
         if (pipWin && s.lastOut - (lastStatusPaint || 0) > 300) { lastStatusPaint = s.lastOut; renderDeskTabs(); }
-        if (s.lastOut - (s.inputAt || 0) > 400) { // 输入后 0.4 秒内的是回显
-          (s.outTimes ||= []).push(s.lastOut);
-          if (s.outTimes.length > 30) s.outTimes.splice(0, s.outTimes.length - 30);
-          if (isRunning(s, s.lastOut)) { s.running = true; s.alertAt = s.doneAt = 0; } // 又开始干活了，之前的「完成」作废
-        }
         const replay = s.muteOsc52;
         s.term.write(new Uint8Array(ev.data), () => {
           if (replay) s.muteOsc52 = false;
@@ -584,6 +573,9 @@
         });
       } else if (m.type === 'tmux-history') {
         onTmuxHistory(s, m);
+      } else if (m.type === 'state') {
+        s.srvState = { label: m.label, cls: m.cls };
+        renderDeskTabs();
       } else if (m.type === 'pong') {
         if (Number.isFinite(m.t)) { s.rtt = latSample(s, 'web', Math.round(performance.now() - m.t)); if (s === active) updateLat(); }
       } else if (m.type === 'lat') {
@@ -591,8 +583,6 @@
         if (s === active) updateLat();
       } else if (m.type === 'bell') {
         if (s !== active || document.hidden) s.tab.classList.add('ring');
-        s.alertAt = Date.now();
-        renderDeskTabs();
       } else if (m.type === 'prompt-done') {
         dismissDialog(s.id);
       } else if (m.type === 'error') {
@@ -1633,58 +1623,6 @@
     renderDeskTabs();
   }
 
-  // 屏幕上最后 20 行有字的内容：Claude Code 的转圈状态行、选择框、API 报错都在最底部
-  // (下面还有输入框、自定义状态栏、tmux 状态栏，所以要看 20 行)；
-  // 只看这一段，避免对话里早先的内容一直算数 (tmux 里屏幕是满的，普通 shell 内容可能只在上半部分)
-  function screenTail(x) {
-    const b = x.term.buffer.active, top = b.viewportY, out = [];
-    for (let y = top + x.term.rows - 1; y >= top && out.length < 20; y--) {
-      const line = b.getLine(y)?.translateToString(true) || '';
-      if (line.trim()) out.unshift(line);
-    }
-    return out.join('\n');
-  }
-  // 只认整行的格式，不认句子中间提到的字样 (对话内容里常会出现这些词)：
-  // 待选择 = 选择框里当前选中的「❯ 1. xxx」、「Do you want to …」开头的行、行尾 [Y/n]
-  // 报错 = 以 API Error 开头的行；普通的「⎿ Error: …」是工具调用失败，Claude 会自己处理，不算
-  const CHOICE_RE = /^[\s│]*❯\s*\d+\.\s|^[\s│]*Do you want to |\[[Yy]\/[Nn]\]\s*$/m;
-  const ERROR_RE = /^[\s│]*(⎿\s*)?API Error\b/m;
-  // Claude Code 自己的状态行：干活时「✻ Frosting… (13m 58s · ↓ 37k tokens)」(转圈符号 + 随机动词 + …)，
-  // 做完是「✻ Worked for 1m 2s」(固定的几个过去式动词)
-  const CLAUDE_RUN_RE = /^\s*[·✢✳✶✻✽*]\s+[A-Z][A-Za-z\u00c0-\u024f-]+…/m;
-  const CLAUDE_DONE_RE = /^\s*[·✢✳✶✻✽*]\s+(Baked|Brewed|Churned|Cogitated|Cooked|Crunched|Sautéed|Worked) for \d/m;
-
-  // 运行中：最近 3 秒内持续有输出 (跨度超过 0.6 秒)；Claude Code 工作时的转圈动画会不停输出，
-  // tmux 状态栏时钟之类的一次性刷新不算；只算提示音 0.5 秒之后的输出 (之前的是完成前的转圈)
-  function isRunning(x, now) {
-    const since = x.alertAt ? x.alertAt + 500 : 0;
-    const t = (x.outTimes || []).filter((v) => now - v < 3000 && v > since);
-    return t.length >= 3 && t[t.length - 1] - t[0] > 600;
-  }
-
-  // 运行中 (黄色闪烁) / 待选择、报错 (红色) / 完成 (绿色) / 空闲 (灰色)
-  // 完成 = 运行中停下来了，或收到提示音 (Claude Code 的「等你输入」提示音默认要闲置 60 秒才发)；
-  // 之后往这个标签发了输入就回到空闲
-  // 先看 Claude Code 界面上的字 (最准)，不是 Claude Code 时再按输出节奏判断
-  function tabState(x, now) {
-    if (!x.sid) return ['未连接', 'off'];
-    const tail = screenTail(x);
-    if (CLAUDE_RUN_RE.test(tail)) { x.running = true; return ['运行中', 'run']; }
-    if (CHOICE_RE.test(tail)) { x.running = false; return ['待选择', 'bad']; }
-    if (ERROR_RE.test(tail)) { x.running = false; return ['报错', 'bad']; }
-    // 「Worked for …」出现后你还没往这个标签发过内容 = 完成；发过 = 已经看到了，算空闲
-    if (CLAUDE_DONE_RE.test(tail)) {
-      x.running = false;
-      if (!x.doneLineAt) x.doneLineAt = now;
-      return (x.dataAt || 0) > x.doneLineAt ? ['空闲', 'idle'] : ['完成', 'done'];
-    }
-    x.doneLineAt = 0;
-    if (isRunning(x, now)) { x.running = true; return ['运行中', 'run']; }
-    if (x.running) { x.running = false; x.doneAt = now; }
-    if (x.alertAt || x.doneAt) return ['完成', 'done'];
-    return ['空闲', 'idle'];
-  }
-
   // 主机状态画到所有显示着的地方：抬高模式的留白、网页内悬浮窗、置顶到桌面的小窗口
   function statusBoxes() {
     const out = [];
@@ -1699,8 +1637,8 @@
     const sumOn = !hostFloat.classList.contains('hidden') && hostFloat.classList.contains('min');
     if (!boxes.length && !sumOn) return;
     deskTabList = tabOrder();
-    const now = Date.now();
-    const states = deskTabList.map((x) => tabState(x, now));
+    // 状态由服务端判断后推过来 (lib/status.js)；没连上的显示未连接
+    const states = deskTabList.map((x) => (!x.sid ? ['未连接', 'off'] : x.srvState ? [x.srvState.label, x.srvState.cls] : ['空闲', 'idle']));
     const html = deskTabList.map((x, i) => {
       const [st, cls] = states[i];
       return `<div class="dp-tab${x === active ? ' cur' : ''}" data-k="${i}">

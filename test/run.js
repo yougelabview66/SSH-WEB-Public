@@ -32,9 +32,14 @@ function runOne(name) {
     const port = await freePort();
     const data = fs.mkdtempSync(path.join(os.tmpdir(), 'sshweb-test-'));
     const url = `http://127.0.0.1:${port}`;
+    // 测试文件里的「// @env KEY=VALUE …」：这个测试需要的服务端环境变量
+    const extra = {};
+    for (const m of fs.readFileSync(path.join(__dirname, name + '.test.js'), 'utf8').matchAll(/^\/\/ @env (.+)$/gm)) {
+      for (const kv of m[1].trim().split(/\s+/)) { const i = kv.indexOf('='); extra[kv.slice(0, i)] = kv.slice(i + 1); }
+    }
     const srv = spawn(process.execPath, ['server.js'], {
       cwd: ROOT,
-      env: { ...process.env, HOST: '127.0.0.1', PORT: String(port), DATA_DIR: data, HOSTKEY_POLICY: 'off', AUTH_PASSWORD: '' },
+      env: { ...process.env, HOST: '127.0.0.1', PORT: String(port), DATA_DIR: data, HOSTKEY_POLICY: 'off', AUTH_PASSWORD: '', ...extra },
       stdio: ['ignore', 'ignore', 'pipe'],
     });
     let srvErr = '';
