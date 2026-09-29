@@ -1224,49 +1224,88 @@
     return out;
   }
 
+  // 手机输入栏和电脑输入栏逻辑一致：打字先在本地编辑，点 ↵ / 键盘「发送」才整段发给终端；
+  // 空输入框里打 / 进入命令模式 (逐字发送，见 setCmdMode)，开着 Ctrl / Alt 时打的字也直接发送。
   // 输入框里常驻一个零宽字符作为「哨兵」：
   // 这样空输入框里按退格也会产生 input 事件，可以可靠地发送 ⌫
   const SENTINEL = '​';
   let composing = false;
 
-  function resetInput() {
-    mInput.value = SENTINEL;
-    try { mInput.setSelectionRange(1, 1); } catch {}
-  }
+  const mText = () => mInput.value.split(SENTINEL).join('');
 
-  // 把输入框里的文字发给终端并清空
+  function setMobileText(text, caret = text.length) {
+    mInput.value = SENTINEL + text;
+    try { mInput.setSelectionRange(caret + 1, caret + 1); } catch {}
+    if (active) active.draft = text;
+  }
+  const resetInput = () => setMobileText('');
+
+  // 把输入框里的文字立即发给终端并清空 (命令模式、修饰键，或按特殊键前保持先后顺序)
   function flushInput() {
-    const text = mInput.value.split(SENTINEL).join('');
-    if (text) sendKeys(applyMods(text));
-    resetInput();
+    const text = mText();
+    setMobileText('');
+    if (!text) return;
+    if (cmdMode) cmdMode.n += [...text].length;
+    sendKeys(text); // 修饰键留给后面的按键
   }
 
-  mInput.addEventListener('focus', () => { if (!mInput.value) resetInput(); });
+  // 本地编辑的内容变化后：需要立即发送的情况就发送，否则只保存草稿
+  function onMobileText() {
+    const text = mText();
+    if (mods.ctrl || mods.alt) {
+      // 开着 Ctrl / Alt：只把新打的字按组合键发出去 (如 Ctrl + c = ^C)，输入框里原来的文字不动
+      const prev = active?.draft || '';
+      let p = 0, q = 0;
+      while (p < prev.length && p < text.length && prev[p] === text[p]) p++;
+      while (q < prev.length - p && q < text.length - p && prev[prev.length - 1 - q] === text[text.length - 1 - q]) q++;
+      const typed = text.slice(p, text.length - q);
+      setMobileText(prev, p);
+      if (typed) {
+        if (cmdMode) cmdMode.n += [...typed].length;
+        sendKeys(applyMods(typed));
+      }
+      return;
+    }
+    if (cmdMode) return flushInput();
+    if (text === '/' && active?.sid) { setCmdMode(true); return flushInput(); }
+    if (active) active.draft = text;
+  }
+
+  mInput.addEventListener('focus', () => { if (!mInput.value.startsWith(SENTINEL)) setMobileText(mText()); });
   mInput.addEventListener('compositionstart', () => { composing = true; });
-  // 中文 / 联想输入：上屏后再发送
+  // 中文 / 联想输入：上屏后再处理
   mInput.addEventListener('compositionend', () => {
     composing = false;
-    flushInput();
+    onMobileText();
   });
   mInput.addEventListener('input', (e) => {
     if (composing || e.isComposing) return;
-    if (!mInput.value.includes(SENTINEL) || e.inputType === 'deleteContentBackward') {
-      // 哨兵被删掉 = 在空输入框里按了退格
-      const rest = mInput.value.split(SENTINEL).join('');
-      if (rest) sendKeys(applyMods(rest));
-      sendKeys('\x7f');
-      resetInput();
-      return;
+    if (!mInput.value.startsWith(SENTINEL)) {
+      // 哨兵被删掉 = 在输入框最前面按了退格：空输入框就发 ⌫ 给终端，有文字就什么都不删
+      const rest = mText();
+      if (!rest) {
+        const had = active?.draft;
+        resetInput();
+        if (had) return; // 选中文字后删除，只是清空输入框
+        if (cmdMode && --cmdMode.n <= 0) setCmdMode(false);
+        return sendKeys('\x7f');
+      }
+      setMobileText(rest, 0);
     }
-    flushInput();
+    onMobileText();
   });
   $('#mForm').addEventListener('submit', (e) => {
     e.preventDefault();
     composing = false;
-    flushInput();
-    if (active) beginCapture(active);
-    sendKeys('\r');
+    mobileEnter();
   });
+
+  function mobileEnter() {
+    if (cmdMode) { flushInput(); setCmdMode(false); }
+    const text = mText();
+    setMobileText('');
+    submitText(active, text);
+  }
 
   // 按钮按下时不抢走输入框焦点，避免键盘收起
   $('#mobileBar').addEventListener('mousedown', (e) => { if (e.target.closest('button')) e.preventDefault(); });
@@ -1275,11 +1314,30 @@
     if (!b) return;
     if (b.dataset.a === 'kset') return openKeysEditor();
     if (b.dataset.mod) return setMod(b.dataset.mod, !mods[b.dataset.mod]);
-    if (b.dataset.t) return sendKeys(applyMods(b.dataset.t));
-    if (b.dataset.seq != null) { clearMods(); return sendKeys(b.dataset.seq); }
+    if (b.dataset.t) {
+      // | / - ~ 等字符键：和键盘打字一样先放进输入框
+      const t = mods.shift ? b.dataset.t.toUpperCase() : b.dataset.t;
+      if (mods.shift) setMod('shift', false);
+      const v = mText(), at = Math.max(0, (mInput.selectionStart ?? v.length + 1) - 1);
+      setMobileText(v.slice(0, at) + t + v.slice(at), at + t.length);
+      return onMobileText();
+    }
     const k = b.dataset.k;
     if (k === 'history') return openHistory();
     if (k === 'copy') return openCopyPanel(active);
+    const text = mText();
+    if (text) {
+      const plain = !mods.shift && !mods.ctrl && !mods.alt;
+      const at = Math.max(0, (mInput.selectionStart ?? text.length + 1) - 1);
+      // 输入框有文字时 ⌫ ← → Home End 编辑输入框；回车 = 发送
+      if (plain && k === 'bs') return at > 0 && setMobileText(text.slice(0, at - 1) + text.slice(at), at - 1);
+      if (plain && CARET[k]) return setMobileText(text, CARET[k](at, text.length));
+      if (plain && k === 'enter') return mobileEnter();
+      // Esc、^C 等控制键不影响正在编辑的文字；其他键 (Tab 补全等) 先把文字发出去再发按键
+      if (!['esc', 'escesc'].includes(k) && !/^\^/.test(k)) flushInput();
+    }
+    if (cmdMode && (['esc', 'escesc', 'enter', '^c'].includes(k) || (k === 'bs' && --cmdMode.n <= 0))) setCmdMode(false);
+    if (b.dataset.seq != null) { clearMods(); return sendKeys(b.dataset.seq); }
     if (k === 'paste') {
       let text = '';
       try { text = await navigator.clipboard.readText(); } catch {}
@@ -1290,6 +1348,11 @@
     const seq = keySeq(k);
     if (seq) sendKeys(seq);
   });
+
+  const CARET = {
+    left: (at) => Math.max(0, at - 1), right: (at, n) => Math.min(n, at + 1),
+    home: () => 0, end: (at, n) => n,
+  };
 
   // ------------------------------------------------------------ 电脑输入栏
   // 打字先在本地输入框里编辑 (不走网络，没有回显延迟)，回车才整段发给终端；
@@ -1311,10 +1374,15 @@
   }
 
   function deskSend() {
-    const s = active;
-    if (!s || !s.sid) return;
     const text = dInput.value;
+    if (!active?.sid) return;
     setDeskText('');
+    submitText(active, text);
+  }
+
+  // 把输入栏里编辑好的一段文字发给终端并回车 (电脑 / 手机输入栏共用)
+  function submitText(s, text) {
+    if (!s || !s.sid) return;
     if (!text) { beginCapture(s); send(s, { type: 'data', data: '\r' }); return; }
     let data = text.replace(/\r?\n/g, '\r');
     // 多行内容按粘贴发送 (Claude Code 等支持括号粘贴的程序不会把中间的换行当回车)
@@ -1332,6 +1400,7 @@
   function setCmdMode(on) {
     cmdMode = on ? { s: active, n: 0 } : null;
     $('#deskBar').classList.toggle('cmd', on);
+    $('#mobileBar').classList.toggle('cmd', on);
     dInput.placeholder = on ? '命令模式：直接输入到终端，Enter 执行，Esc 退出' : DESK_PH;
   }
 
@@ -1585,7 +1654,9 @@
     $('#btnInput').classList.toggle('on', deskOn);
     if (cmdMode && cmdMode.s !== active) setCmdMode(false);
     // 每个标签有自己的草稿
-    if (dInput.value !== (active?.draft || '')) { dInput.value = active?.draft || ''; autosizeDesk(); }
+    const draft = active?.draft || '';
+    if (dInput.value !== draft) { dInput.value = draft; autosizeDesk(); }
+    if (mText() !== draft) setMobileText(draft);
   }
 
   // iOS 键盘弹出时不会缩小页面，用 visualViewport 调整高度，让输入栏始终在键盘上方

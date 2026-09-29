@@ -238,6 +238,7 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 /* 命令模式 (打 / 后逐字发给终端) */
 #deskBar.cmd #dInput { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
 #deskBar.cmd #dInput::placeholder { color: var(--accent); }
+#mobileBar.cmd #mInput { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
 #deskBar #dHide { width: 32px; color: var(--muted); }
 
 /* 历史命令 */
