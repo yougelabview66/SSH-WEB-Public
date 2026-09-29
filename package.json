@@ -1,11 +1,12 @@
 {
   "name": "ssh-web",
-  "version": "1.32.0",
+  "version": "1.33.0",
   "description": "轻量级 Web SSH 终端，适合 NAS Docker 部署",
   "main": "server.js",
   "private": true,
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node test/run.js"
   },
   "engines": {
     "node": ">=18"
@@ -21,5 +22,8 @@
     "ssh2": "^1.17.0",
     "web-push": "^3.6.7",
     "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "playwright-core": "1.49.0"
   }
 }

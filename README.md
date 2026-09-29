@@ -254,6 +254,14 @@ npm install
 AUTH_PASSWORD=test npm start
 ```
 
+自动化测试（浏览器 + 模拟 SSH 服务器，不会连接真实主机）：
+```bash
+npm install                   # 含开发依赖 playwright-core
+npx playwright install chromium   # 第一次需要下载测试用的浏览器 (或用 CHROME_PATH 指定)
+npm test                      # 全部测试；npm test -- desk lat 只跑其中几个
+```
+每个测试单独启动一个只监听 127.0.0.1 随机端口的临时服务，测完自动清理；有任何一项失败就以非 0 退出。
+
 快捷键（电脑）：
 - 复制：选中文字后按 `Ctrl+C`（没有选中时 `Ctrl+C` 仍是中断）或 `Ctrl+Shift+C`；Mac 用 `Cmd+C`
 - 粘贴：`Ctrl+V` 或 `Ctrl+Shift+V`；Mac 用 `Cmd+V`。vim 里需要 `Ctrl+V` 进入列选择时，可用 `Ctrl+Q` 代替

@@ -1,0 +1,44 @@
+'use strict';
+const { BASE, ok, wait, shot, launch, post, addHost, devices } = require('./helpers');
+const { Server, utils } = require('ssh2');
+let got = '';
+new Server({ hostKeys: [utils.generateKeyPairSync('ed25519').private] }, (c) => {
+  c.on('authentication', (ctx) => ctx.accept());
+  c.on('ready', () => c.on('session', (acc) => { const s = acc(); s.on('pty', (a) => a()); s.on('window-change', (a) => a && a());
+    s.on('shell', (a) => { const st = a(); st.write('$ '); st.on('data', (d) => { got += d; }); }); }));
+}).listen(2231, '127.0.0.1');
+(async () => {
+  await fetch(BASE + '/api/hosts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'A', host: '127.0.0.1', port: 2231, username: 'u', password: 'x' }) });
+  const browser = await launch();
+  const errors = [];
+  const p = await (await browser.newContext({ viewport: { width: 1280, height: 800 } })).newPage(); p.on('pageerror', (e) => errors.push(e.message));
+  await p.goto(BASE + '/'); await p.waitForSelector('#app:not(.hidden)');
+  for (let i = 0; i < 2; i++) { await p.locator('.host', { hasText: 'A' }).click(); await wait(1000); }
+  const where = () => p.evaluate(() => { const a = document.activeElement; return a.id === 'dInput' ? 'input' : a.classList.contains('xterm-helper-textarea') ? 'term' : a.tagName; });
+  const dbl = async (gap = 100) => { await p.keyboard.press('Alt'); await wait(gap); await p.keyboard.press('Alt'); await wait(150); };
+  ok(await where() === 'input', '开始焦点在输入框');
+  got = ''; await dbl(); ok(await where() === 'term', '连按两下 Alt → 终端');
+  await p.keyboard.type('ls'); await wait(200); ok(got === 'ls', '随后在终端里直接打字');
+  await dbl(); ok(await where() === 'input', '再连按两下 Alt → 回到输入框');
+  got = ''; await p.keyboard.type('pwd'); await wait(200); ok(got === '', '回到输入框后是本地编辑');
+  await p.fill('#dInput', '');
+  await p.keyboard.press('Alt'); await wait(300); ok(await where() === 'input', '只按一下 Alt 不切换');
+  await wait(500);
+  await dbl(600); ok(await where() === 'input', '两下间隔太久 (600ms) 不切换');
+  await wait(500);
+  await p.keyboard.press('Alt+1'); await wait(100); await p.keyboard.press('Alt'); await wait(200);
+  ok(await where() === 'input' && await p.evaluate(() => document.querySelector('.tab.active .title').textContent) === 'A-1', 'Alt+1 切标签后紧接着按一下 Alt 不会误切换');
+  await wait(500);
+  await p.keyboard.down('Alt'); await p.keyboard.press('b'); await p.keyboard.up('Alt'); await wait(80); await p.keyboard.press('Alt'); await wait(200);
+  ok(await where() === 'input', 'Alt+b 组合键里的 Alt 不算');
+  await wait(500); await p.fill('#dInput', '');
+  await p.click('#dHide'); await wait(300); ok(await where() === 'term', '隐藏输入框后焦点在终端');
+  await dbl(); ok(await p.isVisible('#deskBar') && await where() === 'input', '输入框隐藏时连按两下 Alt → 打开输入框并聚焦');
+  await p.click('#btnHistory'); await wait(400); await dbl();
+  ok(await p.isVisible('#history'), '历史窗口打开时连按 Alt 不切换');
+  await p.keyboard.press('Escape'); await wait(300);
+  got = ''; await dbl(); await dbl(); await wait(200);
+  ok(got === '', '连按 Alt 不会给终端发任何内容');
+  ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
+  await browser.close(); process.exit();
+})().catch((e) => { console.error(e); process.exit(1); });
