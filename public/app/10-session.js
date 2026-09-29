@@ -102,7 +102,11 @@
       if (data === '\r') beginCapture(s);
       send(s, { type: 'data', data });
     });
-    s.term.onResize(({ cols, rows }) => send(s, { type: 'resize', cols, rows }));
+    s.term.onResize(({ cols, rows }) => {
+      predClear(s, false);
+      if (s.pred) { s.pred.sure = false; s.pred.next = null; }
+      send(s, { type: 'resize', cols, rows });
+    });
     // 旧式鼠标编码 (X10 等) 的上报走 onBinary，需要按原始字节发送
     s.term.onBinary((data) => {
       if (s.ws && s.ws.readyState === WebSocket.OPEN) s.ws.send(Uint8Array.from(data, (c) => c.charCodeAt(0) & 255));
@@ -174,6 +178,7 @@
   function send(s, obj) {
     if (!s.ws || s.ws.readyState !== WebSocket.OPEN) return;
     if (obj.type === 'data' && s.scrollView) closeLocalScroll(s); // 打字 / 按键 = 回到实时画面
+    if (obj.type === 'data' && typeof obj.data === 'string') predictInput(s, obj.data); // 打字预测回显
     // 大段粘贴分块发送，避免单条消息超过服务端 1MB 上限导致连接被断开
     if (obj.type === 'data' && typeof obj.data === 'string' && obj.data.length > 32768) {
       for (let i = 0; i < obj.data.length; i += 32768) s.ws.send(JSON.stringify({ type: 'data', data: obj.data.slice(i, i + 32768) }));
@@ -217,6 +222,7 @@
         s.term.write(new Uint8Array(ev.data), () => {
           if (replay) s.muteOsc52 = false;
           checkCapture(s);
+          predCheck(s);
         });
         return;
       }

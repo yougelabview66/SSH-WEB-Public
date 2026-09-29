@@ -343,6 +343,11 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 #tabbar .lat { display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 0 12px; flex-shrink: 0;
   border: none; border-radius: 0; border-left: 1px solid var(--border); background: none; }
 #tabbar .lat.on { background: var(--bg); }
+/* 打字预测回显：本地先画出来的字 (下划线 = 还没被服务器确认) 和预测的光标 */
+.pred-layer { position: absolute; inset: 0; pointer-events: none; z-index: 9; }
+.pred-ch { position: absolute; white-space: pre; overflow: hidden; text-align: left;
+  text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; }
+.pred-cursor { position: absolute; opacity: .75; }
 .lat .bars { display: flex; align-items: flex-end; gap: 1.5px; height: 8px; }
 .lat .bars i { width: 3px; border-radius: 0.5px; background: var(--border); }
 .lat .bars i:nth-child(1) { height: 3px; }
