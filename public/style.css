@@ -237,7 +237,8 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
   padding: 8px 10px; min-height: 60px; max-height: 40vh; overflow-y: hidden; }
 /* 提示文字窄屏时不折行，放不下用省略号 */
 #dInput::placeholder { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#deskBar button { flex-shrink: 0; width: 48px; height: 60px; font-size: 18px; }
+#deskBar button { flex-shrink: 0; width: 48px; height: 60px; font-size: 18px; padding: 0;
+  display: flex; align-items: center; justify-content: center; }
 /* 命令模式 (打 / 后逐字发给终端) */
 #deskBar.cmd #dInput { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
 #deskBar.cmd #dInput::placeholder { color: var(--accent); }
