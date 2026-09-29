@@ -189,13 +189,26 @@
   }
 
   // iOS 键盘弹出时不会缩小页面，用 visualViewport 调整高度，让输入栏始终在键盘上方
+  // 只在键盘弹出 (可视区域比页面矮) 时固定高度，其余时候交回给 CSS 的 100%，不会停在过时的高度上
   if (window.visualViewport) {
     const vv = window.visualViewport;
     const onVV = () => {
-      app.style.height = vv.height + 'px';
+      const h = Math.round(vv.height), full = document.documentElement.clientHeight;
+      const want = h > 0 && h < full - 1 ? h + 'px' : '';
+      if (app.style.height !== want) app.style.height = want;
       window.scrollTo(0, 0);
-      if (active) active.fit.fit();
+      if (active) {
+        active.fit.fit();
+        active.term.refresh(0, active.term.rows - 1);
+      }
     };
     vv.addEventListener('resize', onVV);
+    // 从后台回来 / 旋转屏幕：键盘可能在后台收起了，浏览器却没通知 (或报的是过时的高度)，
+    // 主动重新算几次 (有的浏览器回到前台后过一会儿才更新可视区域)
+    const resync = () => { onVV(); setTimeout(onVV, 150); setTimeout(onVV, 500); };
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) resync(); });
+    window.addEventListener('pageshow', resync);
+    window.addEventListener('focus', resync);
+    window.addEventListener('orientationchange', resync);
   }
 

@@ -13,7 +13,7 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   const errors = [];
   const p = await (await browser.newContext({ viewport: { width: 1280, height: 800 } })).newPage(); p.on('pageerror', (e) => errors.push(e.message));
   await p.goto(BASE + '/'); await p.waitForSelector('#app:not(.hidden)');
-  await p.locator('.host', { hasText: 'C' }).click(); await wait(1200);
+  await p.locator('.host', { hasText: 'C' }).click(); await p.waitForSelector('.tab.active .dot.ok'); await wait(300);
   const isCmd = () => p.evaluate(() => document.getElementById('deskBar').classList.contains('cmd'));
   got = ''; chunks = [];
   await p.keyboard.type('/com', { delay: 40 }); await wait(300);
@@ -53,7 +53,7 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   await p.keyboard.press('Enter'); await wait(300); ok(got === '/compact\r', '粘贴的命令回车发送');
   // 切标签退出
   got = ''; await p.keyboard.type('/q'); ok(await isCmd(), '进入命令模式');
-  await p.locator('.host', { hasText: 'C' }).click(); await wait(1200);
+  await p.locator('.host', { hasText: 'C' }).click(); await p.waitForSelector('.tab.active .dot.ok'); await wait(300);
   ok(!(await isCmd()), '切换 / 新开标签后退出命令模式');
   got = ''; await p.keyboard.type('zz'); await wait(200); ok(got === '', '新标签里打字是本地编辑');
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
