@@ -1513,35 +1513,13 @@
     dInput.focus();
   });
 
-  // ------------------------------------------------------------ 抬高模式下方留白里的信息面板：收藏命令 + 各标签状态
-  let favLoaded = false, deskFavList = [], deskTabList = [];
+  // ------------------------------------------------------------ 抬高模式下方留白里的信息面板：各标签状态
+  let deskTabList = [];
   const panelShown = () => !deskSpace.classList.contains('hidden');
 
-  async function loadDeskFavs() {
-    try { favItems = await api('GET', '/api/favorites'); favLoaded = true; renderDeskFavs(); } catch {}
-  }
-
   function renderDeskPanel() {
-    if (!deskSpace.firstChild) {
-      deskSpace.innerHTML = `
-        <div class="dp-h">收藏命令 <span class="dp-tip">点一下执行</span><button class="link" data-a="favs">管理</button></div>
-        <div class="dp-favs"></div>
-        <div class="dp-h">标签状态</div>
-        <div class="dp-tabs"></div>`;
-    }
-    if (!favLoaded) loadDeskFavs();
-    renderDeskFavs();
+    if (!deskSpace.firstChild) deskSpace.innerHTML = '<div class="dp-h">标签状态</div><div class="dp-tabs"></div>';
     renderDeskTabs();
-  }
-
-  // 收藏：所有主机通用的 + 当前主机专用的 (同历史面板)
-  function renderDeskFavs() {
-    const box = deskSpace.querySelector('.dp-favs');
-    if (!box || !panelShown()) return;
-    deskFavList = favItems.filter((f) => !f.host || (active && f.host === active.histHost));
-    box.innerHTML = deskFavList.length
-      ? deskFavList.map((f, i) => `<button data-i="${i}" title="${esc(f.cmd)}">${esc(f.cmd.split('\n')[0])}</button>`).join('')
-      : '<span class="dp-empty">还没有收藏的命令，点右上角「管理」添加</span>';
   }
 
   const agoText = (ms) => {
@@ -1572,33 +1550,16 @@
   }
   setInterval(renderDeskTabs, 1000);
 
-  // 点按钮不抢走输入框焦点；按下就切标签 (每秒会重画，不等 click)
+  // 按下就切标签 (每秒会重画，不等 click)，不抢走输入框焦点
   deskSpace.addEventListener('mousedown', (e) => {
     if (e.button !== 0) return;
     const row = e.target.closest('.dp-tab');
-    if (e.target.closest('button') || row) e.preventDefault();
     if (row) {
+      e.preventDefault();
       const x = deskTabList[+row.dataset.k];
       if (x && x !== active) activate(x);
     }
   });
-  deskSpace.addEventListener('click', (e) => {
-    const b = e.target.closest('button');
-    if (!b) return;
-    if (b.dataset.a === 'favs') {
-      histTab = 'fav';
-      try { localStorage.setItem('sshweb.histTab', histTab); } catch {}
-      return openHistory();
-    }
-    const f = deskFavList[+b.dataset.i];
-    if (f && active?.sid) {
-      if (cmdMode) setCmdMode(false);
-      submitText(active, f.cmd);
-    }
-    dInput.focus();
-  });
-  // 其他设备可能改了收藏
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && panelShown()) loadDeskFavs(); });
 
   // 按住上下拖动的通用处理：onMove(鼠标相对按下时的位移 dy)，requestAnimationFrame 节流，松开后保存
   function dragY(e, onMove) {
@@ -1988,7 +1949,6 @@
 
   function closeHistory() {
     histPanel.classList.add('hidden');
-    renderDeskFavs(); // 收藏可能改过
     if (active) focusTerm(active);
   }
 
