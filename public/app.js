@@ -1297,8 +1297,12 @@
 
   function autosizeDesk() {
     dInput.style.height = 'auto';
-    dInput.style.height = dInput.scrollHeight + 2 + 'px';
+    const h = dInput.scrollHeight + 2;
+    dInput.style.height = h + 'px';
+    dInput.style.overflowY = h > dInput.clientHeight + 4 ? 'auto' : 'hidden'; // 到达最大高度才显示滚动条
   }
+  // 窗口宽度变化后文字折行数会变，重新算高度
+  window.addEventListener('resize', () => { if (deskOn) autosizeDesk(); });
 
   function setDeskText(text) {
     dInput.value = text;
