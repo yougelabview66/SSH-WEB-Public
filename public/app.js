@@ -1531,14 +1531,6 @@
     renderDeskTabs();
   }
 
-  const agoText = (ms) => {
-    const sec = Math.floor(ms / 1000);
-    if (sec < 5) return '刚刚有输出';
-    if (sec < 60) return `${sec} 秒前有输出`;
-    if (sec < 3600) return `${Math.floor(sec / 60)} 分钟前有输出`;
-    return `${Math.floor(sec / 3600)} 小时前有输出`;
-  };
-
   // 屏幕上最后 12 行有字的内容：Claude Code 的选择框、API 报错都在最底部；
   // 只看这一段，避免对话里早先的内容一直算数 (tmux 里屏幕是满的，普通 shell 内容可能只在上半部分)
   function screenTail(x) {
@@ -1586,7 +1578,7 @@
       const [st, cls] = tabState(x, now);
       return `<div class="dp-tab${x === active ? ' cur' : ''}" data-k="${i}">
         <span class="${$('.dot', x.tab).className}"></span><span class="nm">${esc($('.title', x.tab).textContent)}</span>
-        <span class="stt ${cls}">${st}</span><span class="ago">${x.sid && x.lastOut ? agoText(now - x.lastOut) : ''}</span></div>`;
+        <span class="stt ${cls}">${st}</span></div>`;
     }).join('');
     if (box.innerHTML !== html) box.innerHTML = html;
   }

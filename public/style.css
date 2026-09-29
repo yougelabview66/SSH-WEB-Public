@@ -248,14 +248,15 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 #deskSpace { flex-shrink: 0; background: var(--panel); overflow-y: auto; padding: 6px 12px 10px; }
 /* 留白里的信息面板 */
 .dp-h { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); margin: 6px 0 6px; }
-.dp-tabs { display: flex; flex-direction: column; gap: 2px; }
-.dp-tab { display: flex; align-items: center; gap: 10px; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 13px; }
-.dp-tab:hover { background: var(--panel2); }
-.dp-tab.cur { background: var(--panel2); box-shadow: inset 3px 0 0 var(--accent); }
+.dp-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.dp-tab { display: flex; align-items: center; gap: 8px; padding: 5px 8px 5px 10px; border-radius: 8px; cursor: pointer;
+  font-size: 13px; border: 1px solid var(--border); background: var(--bg); }
+.dp-tab:hover { border-color: var(--muted); }
+.dp-tab.cur { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .dp-tab .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); flex-shrink: 0; }
 .dp-tab .dot.ok { background: var(--accent); }
 .dp-tab .dot.bad { background: var(--danger); }
-.dp-tab .nm { font-weight: 600; min-width: 64px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+.dp-tab .nm { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 160px; }
 .dp-tab .stt { font-size: 12px; padding: 1px 8px; border-radius: 10px; white-space: nowrap; }
 .dp-tab .stt.run { background: var(--warn); color: #000; font-weight: 600; animation: dp-blink 1s ease-in-out infinite; }
 .dp-tab .stt.done { background: var(--accent2); color: #fff; font-weight: 600; }
@@ -264,7 +265,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 .dp-tab .stt.off { color: var(--muted); border: 1px dashed var(--muted); }
 @keyframes dp-blink { 50% { opacity: .35; } }
 @media (prefers-reduced-motion: reduce) { .dp-tab .stt.run { animation: none; } }
-.dp-tab .ago { margin-left: auto; font-size: 12px; color: var(--muted); white-space: nowrap; }
 #deskBar.float { position: absolute; left: 8px; right: 8px; z-index: 4; border: 1px solid var(--border);
   border-radius: 8px; box-shadow: 0 6px 24px var(--shadow); }
 #dGrip { flex-shrink: 0; align-self: stretch; width: 12px; margin-right: -2px; cursor: ns-resize; touch-action: none;
