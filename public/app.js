@@ -565,6 +565,7 @@
         else hideReconnect(s);
         updateSftpBtn();
         if (s === active) updateLat();
+        if (m.status === 'connected' && s === active) measureRtt(); // 连上就测，不等下一轮
         if (m.status === 'connected') {
           if (s.sftp && s.sftp.open) s.sftp.load(s.sftp.path);
           if (active === s) focusTerm(s);
@@ -1015,6 +1016,7 @@
     latPop.classList.remove('hidden');
     latEl.classList.add('on');
     renderLatPop();
+    measureRtt(); // 打开时马上测一次最新的
   });
   // 点别处 / Esc 关闭
   document.addEventListener('pointerdown', (e) => {
@@ -1025,11 +1027,19 @@
   }, true);
   window.addEventListener('resize', () => { if (!latPop.classList.contains('hidden')) renderLatPop(); });
 
+  // 平时 10 秒测一次 (手机流量下少唤醒网络，省电)，打开详情卡片时 2 秒一次；切换标签时马上测
+  let rttAt = -Infinity; // performance.now() 从页面打开时算起，初始值不能用 0
   function measureRtt() {
-    if (active && active.sid && !document.hidden) send(active, { type: 'ping', t: performance.now() });
+    if (active && active.sid && !document.hidden) {
+      send(active, { type: 'ping', t: performance.now() });
+      rttAt = performance.now();
+    }
     updateLat();
   }
-  setInterval(measureRtt, 3000);
+  setInterval(() => {
+    const gap = latPop.classList.contains('hidden') ? 10000 : 2000;
+    if (performance.now() - rttAt >= gap - 50) measureRtt();
+  }, 1000);
 
   function updateSftpBtn() {
     $('#btnHistory').classList.toggle('hidden', !active);

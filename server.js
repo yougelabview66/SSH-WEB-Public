@@ -910,9 +910,12 @@ class Session {
 
   // 测到目标主机的 SSH 往返延迟：和 ssh2 自己的 keepalive 一样发一个 keepalive@openssh.com 全局请求，
   // 等对方回复 (成功 / 失败都算)；回复按发出顺序对应 _callbacks，所以排在队尾即可
+  // 由浏览器测网页延迟时顺带触发 (平时 10 秒一次，打开延迟详情时 2 秒一次)，最快 1.5 秒一次
   measureLatency() {
     const ssh = this.ssh;
     if (!ssh || this.status !== 'connected' || !this.clients.size || this.latPending) return;
+    if (Date.now() - (this.latAt || 0) < 1500) return;
+    this.latAt = Date.now();
     if (!ssh._protocol || !Array.isArray(ssh._callbacks)) return;
     this.latPending = true;
     const t0 = performance.now();
@@ -1316,8 +1319,10 @@ wss.on('connection', (ws, req) => {
       case 'tmux-history':
         if (sess) sess.captureTmux(ws, msg.lines);
         break;
-      case 'ping': // 带时间戳的用来测网页 ↔ 服务端的往返延迟，原样带回
-        sendCtl(Number.isFinite(msg.t) ? { type: 'pong', t: msg.t } : { type: 'pong' });
+      case 'ping': // 带时间戳的用来测网页 ↔ 服务端的往返延迟，原样带回；顺便测一次到目标主机的 SSH 延迟
+        if (!Number.isFinite(msg.t)) { sendCtl({ type: 'pong' }); break; }
+        sendCtl({ type: 'pong', t: msg.t });
+        if (sess) sess.measureLatency();
         break;
       case 'events': // 页面的事件连接 (不挂载会话)
         if (!sess) eventSockets.add(ws);
@@ -1332,11 +1337,6 @@ wss.on('connection', (ws, req) => {
   ws.on('close', detach);
   ws.on('error', detach);
 });
-
-// 每 3 秒测一次有人在看的会话到目标主机的 SSH 往返延迟
-setInterval(() => {
-  for (const s of sessions.values()) s.measureLatency();
-}, 3000);
 
 // 清理长时间无人挂载的会话
 setInterval(() => {
