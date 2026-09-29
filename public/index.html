@@ -31,7 +31,10 @@
 
   <div id="app" class="hidden">
     <aside id="sidebar">
-      <div class="brand">&gt;_ SSH-WEB</div>
+      <div class="side-head">
+        <div class="brand">&gt;_ SSH-WEB</div>
+        <button id="btnSideClose" class="side-close" title="收起侧边栏 (左上角 ☰ 重新打开)">✕</button>
+      </div>
       <div id="weakPw" class="weak-pw hidden">⚠ 登录密码仍是默认占位密码或太短，请在 docker-compose.yml 修改 AUTH_PASSWORD 后重建容器</div>
       <button class="primary block" id="btnNew">+ 新建连接</button>
       <input id="search" placeholder="搜索主机…">

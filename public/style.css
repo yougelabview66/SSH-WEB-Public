@@ -102,6 +102,9 @@ label.check { margin: 6px 0 10px; }
 #app { display: flex; height: 100%; }
 #sidebar { width: 250px; background: var(--panel); border-right: 1px solid var(--border);
   display: flex; flex-direction: column; padding: 12px; gap: 10px; flex-shrink: 0; }
+.side-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.side-close { background: none; border: none; padding: 2px 8px; font-size: 16px; line-height: 1; color: var(--muted); }
+.side-close:hover { color: var(--text); background: var(--panel2); }
 .brand { font-family: ui-monospace, monospace; color: var(--accent); font-weight: bold; font-size: 16px; }
 #search { margin: 0; }
 #hostList { flex: 1; overflow-y: auto; margin: 0 -4px; }
