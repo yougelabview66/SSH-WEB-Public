@@ -1482,7 +1482,7 @@
   function applyDeskPos() {
     const shown = !deskBar.classList.contains('hidden');
     for (const m of Object.keys(DESK_MODES)) deskBar.classList.toggle(m, m === deskMode);
-    $('#dMode').innerHTML = `<span>模式</span><span class="m-cur">${DESK_MODES[deskMode]}</span>`;
+    $('#dMode').textContent = DESK_MODES[deskMode];
     deskBar.classList.toggle('float', deskMode === 'float');
     deskSpace.classList.toggle('hidden', !(shown && deskMode === 'lift'));
     if (!shown || deskMode === 'bottom') { deskBar.style.bottom = ''; return; }
@@ -2838,6 +2838,27 @@
     }
     if (target && target !== active) activate(target);
   }, true);
+
+  // ------------------------------------------------------------ 连按两下 Alt：光标在输入框和终端之间切换
+  // 只算单独按下又松开的 Alt (Alt+1 等组合键里的 Alt 不算)；输入框隐藏时顺便打开
+  let altClean = false, altLast = 0;
+  window.addEventListener('keydown', (e) => {
+    altClean = e.key === 'Alt' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.shiftKey;
+    if (e.key !== 'Alt') altLast = 0;
+  }, true);
+  window.addEventListener('keyup', (e) => {
+    if (e.key !== 'Alt' || !altClean) return;
+    altClean = false;
+    e.preventDefault(); // Windows 上单独按 Alt 会激活浏览器菜单
+    const now = Date.now();
+    if (now - altLast > 400) { altLast = now; return; }
+    altLast = 0;
+    if (isTouch || !active || document.querySelector('.overlay:not(.hidden)')) return;
+    if (document.activeElement === dInput) active.term.focus();
+    else if (!deskOn) setDeskOn(true);
+    else dInput.focus();
+  }, true);
+  window.addEventListener('blur', () => { altClean = false; altLast = 0; });
 
   // ------------------------------------------------------------ 侧边栏
   const mobile = () => window.innerWidth <= 760;

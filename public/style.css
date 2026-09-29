@@ -231,7 +231,7 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 
 /* 电脑输入栏 */
 /* 样式同手机输入栏 .mline */
-#deskBar { flex-shrink: 0; display: flex; align-items: flex-end; gap: 6px; padding: 6px;
+#deskBar { flex-shrink: 0; display: flex; align-items: flex-start; gap: 6px; padding: 6px;
   background: var(--panel); border-top: 1px solid var(--border); }
 /* 默认不显示滚动条，超过最大高度才出现 (autosizeDesk 里切换) */
 #dInput { margin: 0; flex: 1; resize: none; font: 15px/1.4 ui-monospace, Menlo, Consolas, monospace;
@@ -245,8 +245,7 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 #deskBar.cmd #dInput::placeholder { color: var(--accent); }
 #mobileBar.cmd #mInput { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
 #deskBar #dHide { width: 32px; color: var(--muted); }
-#deskBar #dMode { flex-direction: column; font-size: 12px; line-height: 1.3; }
-#dMode .m-cur { font-size: 13px; font-weight: 600; }
+#deskBar #dMode { font-size: 13px; }
 /* 抬高 / 浮动 (applyDeskPos 设置留白高度 / bottom) */
 #deskSpace { flex-shrink: 0; background: var(--panel); }
 #deskBar.float { position: absolute; left: 8px; right: 8px; z-index: 4; border: 1px solid var(--border);
