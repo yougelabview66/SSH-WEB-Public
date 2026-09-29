@@ -1145,10 +1145,14 @@
 
   // ------------------------------------------------------------ 手机输入栏
   const mInput = $('#mInput');
+  const dInput = $('#dInput');
+  let deskOn = (() => { try { return localStorage.getItem('sshweb.deskInput') !== '0'; } catch { return true; } })();
   const mods = { shift: false, ctrl: false, alt: false };
 
   function focusTerm(s) {
-    if (!isTouch) s.term.focus();
+    if (isTouch) return;
+    if (deskOn) dInput.focus({ preventScroll: true });
+    else s.term.focus();
   }
 
   function sendKeys(data) {
@@ -1181,17 +1185,17 @@
   }
 
   // xterm 修饰键参数: 1 + Shift(1) + Alt(2) + Ctrl(4)
-  const modParam = () => 1 + (mods.shift ? 1 : 0) + (mods.alt ? 2 : 0) + (mods.ctrl ? 4 : 0);
+  const modParam = (md) => 1 + (md.shift ? 1 : 0) + (md.alt ? 2 : 0) + (md.ctrl ? 4 : 0);
   const CURSOR = { up: 'A', down: 'B', right: 'C', left: 'D', home: 'H', end: 'F' };
-  const TILDE = { pgup: 5, pgdn: 6 };
+  const TILDE = { pgup: 5, pgdn: 6, del: 3 };
   const FKEYS = {
     f1: '\x1bOP', f2: '\x1bOQ', f3: '\x1bOR', f4: '\x1bOS', f5: '\x1b[15~', f6: '\x1b[17~',
     f7: '\x1b[18~', f8: '\x1b[19~', f9: '\x1b[20~', f10: '\x1b[21~', f11: '\x1b[23~', f12: '\x1b[24~',
   };
 
-  // 特殊键按下时生成要发送的字节 (含修饰键)
-  function keySeq(k) {
-    const m = modParam();
+  // 特殊键按下时生成要发送的字节 (含修饰键)；md 默认用手机按键栏的修饰键状态
+  function keySeq(k, md = mods) {
+    const m = modParam(md);
     let out;
     if (CURSOR[k]) {
       const c = CURSOR[k];
@@ -1201,14 +1205,14 @@
     } else if (TILDE[k]) {
       out = m > 1 ? `\x1b[${TILDE[k]};${m}~` : `\x1b[${TILDE[k]}~`;
     } else if (k === 'tab') {
-      out = mods.shift ? '\x1b[Z' : '\t'; // Shift+Tab (反向 Tab，Claude Code 切换模式)
-      if (mods.alt) out = '\x1b' + out;
+      out = md.shift ? '\x1b[Z' : '\t'; // Shift+Tab (反向 Tab，Claude Code 切换模式)
+      if (md.alt) out = '\x1b' + out;
     } else if (k === 'esc') {
       out = '\x1b';
     } else if (k === 'bs') {
-      out = mods.alt ? '\x1b\x7f' : mods.ctrl ? '\x08' : '\x7f';
+      out = md.alt ? '\x1b\x7f' : md.ctrl ? '\x08' : '\x7f';
     } else if (k === 'enter') {
-      out = (mods.alt ? '\x1b' : '') + '\r';
+      out = (md.alt ? '\x1b' : '') + '\r';
     } else if (k === 'escesc') {
       out = '\x1b\x1b'; // Claude Code: 连按两次 Esc 撤回 / 编辑上一条
     } else if (FKEYS[k]) {
@@ -1216,7 +1220,7 @@
     } else if (/^\^[a-z]$/.test(k)) {
       out = String.fromCharCode(k.charCodeAt(1) - 96); // ^A..^Z
     }
-    clearMods();
+    if (md === mods) clearMods();
     return out;
   }
 
@@ -1286,6 +1290,76 @@
     const seq = keySeq(k);
     if (seq) sendKeys(seq);
   });
+
+  // ------------------------------------------------------------ 电脑输入栏
+  // 打字先在本地输入框里编辑 (不走网络，没有回显延迟)，回车才整段发给终端；
+  // 输入框为空时方向键 / Tab / 退格 / Ctrl+字母等直接发给终端，方便翻历史、补全、中断
+
+  function autosizeDesk() {
+    dInput.style.height = 'auto';
+    dInput.style.height = dInput.scrollHeight + 2 + 'px';
+  }
+
+  function setDeskText(text) {
+    dInput.value = text;
+    if (active) active.draft = text;
+    autosizeDesk();
+  }
+
+  function deskSend() {
+    const s = active;
+    if (!s || !s.sid) return;
+    const text = dInput.value;
+    setDeskText('');
+    if (!text) { beginCapture(s); send(s, { type: 'data', data: '\r' }); return; }
+    let data = text.replace(/\r?\n/g, '\r');
+    // 多行内容按粘贴发送 (Claude Code 等支持括号粘贴的程序不会把中间的换行当回车)
+    if (data.includes('\r') && s.term.modes.bracketedPasteMode) data = '\x1b[200~' + data + '\x1b[201~';
+    send(s, { type: 'data', data });
+    // 文字和回车分开发，避免被当成一次粘贴而不提交；也等回显后再记历史
+    setTimeout(() => { if (s.sid) { beginCapture(s); send(s, { type: 'data', data: '\r' }); } }, 50);
+  }
+
+  const DESK_KEYS = {
+    ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', Home: 'home', End: 'end',
+    PageUp: 'pgup', PageDown: 'pgdn', Tab: 'tab', Backspace: 'bs', Delete: 'del',
+  };
+
+  dInput.addEventListener('keydown', (e) => {
+    if (e.isComposing || e.keyCode === 229) return; // 输入法选字中
+    if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      e.preventDefault();
+      return deskSend();
+    }
+    if (!active || e.metaKey) return;
+    const md = { shift: e.shiftKey, ctrl: e.ctrlKey, alt: e.altKey };
+    // Esc 随时发给终端 (如打断 Claude Code)，不影响正在编辑的文字
+    if (e.key === 'Escape') { e.preventDefault(); return sendKeys(md.alt ? '\x1b\x1b' : '\x1b'); }
+    if (dInput.value) {
+      if (e.key === 'Tab') e.preventDefault(); // 有文字时 Tab 不跳走焦点
+      return;
+    }
+    let seq;
+    if (DESK_KEYS[e.key]) seq = keySeq(DESK_KEYS[e.key], md);
+    else if (e.ctrlKey && !e.altKey && /^Key[A-Z]$/.test(e.code) && e.code !== 'KeyV') {
+      seq = String.fromCharCode(e.code.charCodeAt(3) - 64); // Ctrl+C / Ctrl+D / Ctrl+R …
+    }
+    if (seq) { e.preventDefault(); sendKeys(seq); }
+  });
+  dInput.addEventListener('input', () => {
+    if (active) active.draft = dInput.value;
+    autosizeDesk();
+  });
+  $('#dSend').addEventListener('click', () => { deskSend(); dInput.focus(); });
+  $('#dHide').addEventListener('click', () => setDeskOn(false));
+  $('#btnInput').addEventListener('click', () => setDeskOn(!deskOn));
+
+  function setDeskOn(on) {
+    deskOn = on;
+    try { localStorage.setItem('sshweb.deskInput', on ? '1' : '0'); } catch {}
+    updateMobileBar();
+    if (active) focusTerm(active);
+  }
 
   // ------------------------------------------------------------ 自定义按键栏
   const KEY_DEFS = {
@@ -1465,6 +1539,11 @@
 
   function updateMobileBar() {
     $('#mobileBar').classList.toggle('hidden', !(isTouch && active));
+    $('#deskBar').classList.toggle('hidden', !(!isTouch && active && deskOn));
+    $('#btnInput').classList.toggle('hidden', !(!isTouch && active));
+    $('#btnInput').classList.toggle('on', deskOn);
+    // 每个标签有自己的草稿
+    if (dInput.value !== (active?.draft || '')) { dInput.value = active?.draft || ''; autosizeDesk(); }
   }
 
   // iOS 键盘弹出时不会缩小页面，用 visualViewport 调整高度，让输入栏始终在键盘上方

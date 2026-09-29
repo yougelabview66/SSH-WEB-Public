@@ -225,6 +225,15 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 .mline input { margin: 0; font-size: 16px; padding: 8px 10px; }
 .mline button { flex-shrink: 0; width: 48px; font-size: 16px; touch-action: manipulation; }
 
+/* 电脑输入栏 */
+/* 样式同手机输入栏 .mline */
+#deskBar { flex-shrink: 0; display: flex; align-items: flex-end; gap: 6px; padding: 6px;
+  background: var(--panel); border-top: 1px solid var(--border); }
+#dInput { margin: 0; flex: 1; resize: none; font: 15px/1.4 ui-monospace, Menlo, Consolas, monospace;
+  padding: 8px 10px; max-height: 40vh; overflow-y: auto; }
+#deskBar button { flex-shrink: 0; width: 48px; height: 37px; font-size: 16px; }
+#deskBar #dHide { width: 32px; color: var(--muted); }
+
 /* 历史命令 */
 #btnHistory { border: none; border-left: 1px solid var(--border); border-radius: 0; background: none;
   white-space: nowrap; flex-shrink: 0; }
@@ -258,7 +267,7 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 }
 
 /* 标签栏右侧按钮 */
-#btnMon { border: none; border-left: 1px solid var(--border); border-radius: 0; background: none;
+#btnMon, #btnInput { border: none; border-left: 1px solid var(--border); border-radius: 0; background: none;
   white-space: nowrap; flex-shrink: 0; }
 .tbtn.on { background: var(--bg); color: var(--accent); }
 @media (max-width: 760px) { .tbtn .lbl { display: none; } .tbtn { padding: 6px 10px; } }
