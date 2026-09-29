@@ -73,6 +73,7 @@ docker run -d --name ssh-web --restart unless-stopped \
 | `TRUST_PROXY` | `loopback, linklocal, uniquelocal` | 信任哪些地址发来的 `X-Forwarded-For`（用于登录限流取真实 IP）。默认只信任内网地址（反向代理、cloudflared 容器），防止公网伪造 |
 | `SSH_READY_TIMEOUT` | `20000` | SSH 连接超时（毫秒） |
 | `SSH_KEEPALIVE` | `15000` | SSH keepalive 间隔（毫秒） |
+| `PUID` / `PGID` | 不设置 | 设置后用这个用户（不是 root）运行，启动时自动把 `/data` 交给它；不设置时和以前一样以 root 运行 |
 | `BG_TIMEOUT_HOURS` | `168` | 后台会话无人查看超过多少小时自动断开（默认 7 天；每个会话约占 3MB 内存），`0` 为永不（已断开的会话 24 小时后清理）。只断开 SSH-WEB 的这条连接，tmux 里的程序不受影响 |
 | `MAX_SESSIONS` | `30` | 最多同时保留的后台会话数 |
 | `SCROLLBACK` | `5000` | 滚动记录行数：后台会话保留多少行用于恢复画面，浏览器终端也保留同样的行数 |

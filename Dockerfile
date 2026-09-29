@@ -7,12 +7,15 @@ ENV NODE_ENV=production \
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --omit=optional && npm cache clean --force
+RUN npm ci --omit=dev --omit=optional && npm cache clean --force \
+ && apk add --no-cache su-exec
 
 COPY server.js ./
 COPY lib ./lib
 COPY public ./public
-RUN mkdir -p /data
+# 可选 PUID / PGID：用普通用户运行 (见 sshweb-entrypoint.sh)；官方 node 镜像已有 docker-entrypoint.sh，换个名字
+COPY docker-entrypoint.sh /usr/local/bin/sshweb-entrypoint.sh
+RUN chmod +x /usr/local/bin/sshweb-entrypoint.sh && mkdir -p /data
 
 
 VOLUME ["/data"]
@@ -21,4 +24,5 @@ EXPOSE 8888
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
   CMD wget -qO- http://127.0.0.1:${PORT}/healthz || exit 1
 
+ENTRYPOINT ["/usr/local/bin/sshweb-entrypoint.sh"]
 CMD ["node", "server.js"]
