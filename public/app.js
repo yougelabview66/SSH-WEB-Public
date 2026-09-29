@@ -1363,6 +1363,7 @@
     const h = dInput.scrollHeight + 2;
     dInput.style.height = h + 'px';
     dInput.style.overflowY = h > dInput.clientHeight + 4 ? 'auto' : 'hidden'; // 到达最大高度才显示滚动条
+    if (deskMode !== 'bottom') applyDeskPos(); // 输入栏变高后重新限制位置，不超出终端区域
   }
   // 窗口宽度变化后文字折行数会变，重新算高度
   window.addEventListener('resize', () => { if (deskOn) autosizeDesk(); });
@@ -1462,6 +1463,87 @@
   $('#dSend').addEventListener('click', () => { if (cmdMode) cmdEnter(); else deskSend(); dInput.focus(); });
   $('#dHide').addEventListener('click', () => setDeskOn(false));
   $('#btnInput').addEventListener('click', () => setDeskOn(!deskOn));
+
+  // 输入栏位置：底部 / 抬高 (终端变矮，下方留白) / 浮动 (盖在终端上)；
+  // 高度 = 距 main 底部占 main 高度的比例，两种模式共用，每台电脑各自记住
+  const DESK_MODES = { bottom: '底部', lift: '抬高', float: '浮动' };
+  let deskMode = (() => { try { return DESK_MODES[localStorage.getItem('sshweb.deskMode')] ? localStorage.getItem('sshweb.deskMode') : 'bottom'; } catch { return 'bottom'; } })();
+  let deskLift = (() => { try { const v = parseFloat(localStorage.getItem('sshweb.deskLift')); return v >= 0 && v < 1 ? v : 1 / 3; } catch { return 1 / 3; } })();
+  const deskBar = $('#deskBar'), deskSpace = $('#deskSpace');
+  const MIN_TERM = 120; // 抬高模式下上方终端至少保留的高度 (px)
+
+  // 按比例算出像素值，并限制在允许范围内 (窗口变小时自动收回)
+  function deskLiftPx() {
+    const mainH = deskBar.parentElement.clientHeight;
+    const max = mainH - $('#tabbar').offsetHeight - deskBar.offsetHeight - (deskMode === 'lift' ? MIN_TERM : 0);
+    return Math.round(Math.max(0, Math.min(deskLift * mainH, max)));
+  }
+
+  function applyDeskPos() {
+    const shown = !deskBar.classList.contains('hidden');
+    for (const m of Object.keys(DESK_MODES)) deskBar.classList.toggle(m, m === deskMode);
+    $('#dMode').textContent = DESK_MODES[deskMode];
+    deskBar.classList.toggle('float', deskMode === 'float');
+    deskSpace.classList.toggle('hidden', !(shown && deskMode === 'lift'));
+    if (!shown || deskMode === 'bottom') { deskBar.style.bottom = ''; return; }
+    const px = deskLiftPx();
+    if (deskMode === 'lift') { deskSpace.style.height = px + 'px'; deskBar.style.bottom = ''; }
+    else deskBar.style.bottom = px + 'px';
+  }
+
+  // main 的高度变了 (窗口大小、手机键盘调整的 #app 高度) 就重新按比例算位置；
+  // 不用 window resize：那时 visualViewport 还没把 #app 调到新高度
+  new ResizeObserver(() => applyDeskPos()).observe(deskBar.parentElement);
+
+  function saveDeskPos() {
+    try { localStorage.setItem('sshweb.deskMode', deskMode); localStorage.setItem('sshweb.deskLift', String(deskLift)); } catch {}
+  }
+
+  $('#dMode').addEventListener('click', () => {
+    const order = Object.keys(DESK_MODES);
+    deskMode = order[(order.indexOf(deskMode) + 1) % order.length];
+    saveDeskPos();
+    applyDeskPos();
+    dInput.focus();
+  });
+
+  // 拖左边的把手上下调整位置
+  $('#dGrip').addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || deskMode === 'bottom') return;
+    e.preventDefault();
+    const grip = e.currentTarget;
+    grip.setPointerCapture(e.pointerId);
+    const main = deskBar.parentElement;
+    // 按下时鼠标到输入栏底边的距离，拖动时保持不变
+    const grab = deskBar.getBoundingClientRect().bottom - e.clientY;
+    deskBar.classList.add('dragging');
+    document.body.classList.add('no-select');
+    let y = e.clientY, raf = 0;
+    const update = () => {
+      raf = 0;
+      const r = main.getBoundingClientRect();
+      deskLift = Math.max(0, (r.bottom - (y + grab)) / r.height);
+      applyDeskPos();
+      deskLift = deskLiftPx() / r.height; // 超出范围时停在边界，不记住超出的值
+    };
+    const move = (ev) => {
+      y = ev.clientY;
+      if (!raf) raf = requestAnimationFrame(update);
+    };
+    const up = () => {
+      if (raf) { cancelAnimationFrame(raf); update(); }
+      grip.removeEventListener('pointermove', move);
+      grip.removeEventListener('pointerup', up);
+      grip.removeEventListener('pointercancel', up);
+      deskBar.classList.remove('dragging');
+      document.body.classList.remove('no-select');
+      saveDeskPos();
+      dInput.focus();
+    };
+    grip.addEventListener('pointermove', move);
+    grip.addEventListener('pointerup', up);
+    grip.addEventListener('pointercancel', up);
+  });
 
   function setDeskOn(on) {
     deskOn = on;
@@ -1652,6 +1734,7 @@
     $('#deskBar').classList.toggle('hidden', !(!isTouch && active && deskOn));
     $('#btnInput').classList.toggle('hidden', !(!isTouch && active));
     $('#btnInput').classList.toggle('on', deskOn);
+    applyDeskPos();
     if (cmdMode && cmdMode.s !== active) setCmdMode(false);
     // 每个标签有自己的草稿
     const draft = active?.draft || '';

@@ -120,7 +120,7 @@ label.check { margin: 6px 0 10px; }
 .host .ops button:hover { color: var(--text); }
 .badge { font-size: 10px; padding: 0 5px; border-radius: 4px; background: var(--cf); color: #fff; flex-shrink: 0; }
 
-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
 #tabbar { display: flex; align-items: stretch; background: var(--panel); border-bottom: 1px solid var(--border);
   height: 38px; flex-shrink: 0; }
 #btnToggle { border: none; border-radius: 0; background: none; padding: 0 12px; }
@@ -244,6 +244,16 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 #deskBar.cmd #dInput::placeholder { color: var(--accent); }
 #mobileBar.cmd #mInput { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
 #deskBar #dHide { width: 32px; color: var(--muted); }
+#deskBar #dMode { font-size: 13px; }
+/* 抬高 / 浮动 (applyDeskPos 设置留白高度 / bottom) */
+#deskSpace { flex-shrink: 0; background: var(--panel); }
+#deskBar.float { position: absolute; left: 8px; right: 8px; z-index: 4; border: 1px solid var(--border);
+  border-radius: 8px; box-shadow: 0 6px 24px var(--shadow); }
+#dGrip { flex-shrink: 0; align-self: stretch; width: 12px; margin-right: -2px; cursor: ns-resize; touch-action: none;
+  border-radius: 4px; background: radial-gradient(circle, var(--muted) 1.2px, transparent 1.6px) center / 6px 6px repeat-y; opacity: .7; }
+#dGrip:hover, #deskBar.dragging #dGrip { opacity: 1; background-color: var(--panel2); }
+#deskBar.bottom #dGrip { display: none; }
+body.no-select { user-select: none; -webkit-user-select: none; }
 
 /* 历史命令 */
 #btnHistory { border: none; border-left: 1px solid var(--border); border-radius: 0; background: none;
