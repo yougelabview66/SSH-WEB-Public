@@ -444,6 +444,12 @@ body.no-select { user-select: none; -webkit-user-select: none; }
     padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
 }
 /* 字体大小 */
+/* tmux 本地快速滚动的历史视图 */
+.lscroll { position: absolute; inset: 0; z-index: 20; display: flex; }
+.ls-body { flex: 1; margin: 0; padding: 4px 0 0 6px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;
+  overscroll-behavior: contain; -webkit-overflow-scrolling: touch; user-select: text; -webkit-user-select: text; }
+.ls-close { position: absolute; top: 8px; right: 18px; z-index: 1; font-size: 12px; padding: 4px 10px; opacity: .92;
+  box-shadow: 0 2px 10px var(--shadow); }
 .font-toast { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); z-index: 6; pointer-events: none;
   background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 10px;
   padding: 8px 16px; font-size: 16px; box-shadow: 0 6px 20px var(--shadow); }

@@ -929,6 +929,41 @@ class Session {
     }
   }
 
+  // 本地快速滚动：在目标主机上抓 tmux 当前 pane 的历史 (带颜色，折行合并)，浏览器在本地滚动查看，不用每滚一格等一个来回。
+  // 当前 pane：优先选终端大小和这个会话一样的 tmux 客户端，其次最近有操作的；没有 tmux 时 exit 3，
+  // pane 里是全屏程序或复制模式时 exit 4 (浏览器照旧把滚轮发给程序)
+  captureTmux(ws, lines) {
+    const reply = (obj) => this.sendTo(ws, { type: 'tmux-history', ...obj });
+    const ssh = this.ssh;
+    if (!ssh || this.status !== 'connected') return reply({ ok: false, reason: 'offline' });
+    const n = Math.min(Math.max(parseInt(lines, 10) || 3000, 100), 10000);
+    const script = [
+      'PATH="$PATH:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"',
+      'command -v tmux >/dev/null 2>&1 || exit 3',
+      `p=$(tmux list-clients -F '#{client_width}x#{client_height} #{client_activity} #{pane_id}' 2>/dev/null | awk '{ print ($1 == "${this.cols}x${this.rows}") ? 1 : 0, $2, $3 }' | sort -k1,1nr -k2,2nr | head -n 1 | cut -d' ' -f3)`,
+      '[ -n "$p" ] || exit 3',
+      // pane 里是 vim / less 等全屏程序 (备用屏幕) 或已在 tmux 复制模式：滚轮交给它们，不抓历史
+      `[ "$(tmux display -p -t "$p" '#{alternate_on}#{pane_in_mode}')" = 00 ] || exit 4`,
+      `exec tmux capture-pane -p -e -J -S -${n} -t "$p"`,
+    ].join('\n');
+    const MAX = 4 * 1024 * 1024;
+    ssh.exec(`sh -c '${script.replace(/'/g, "'\\''")}'`, (err, ch) => {
+      if (err) return reply({ ok: false, reason: err.message });
+      const chunks = [];
+      let len = 0;
+      const timer = setTimeout(() => { try { ch.close(); } catch {} }, 3000); // 抓不到就尽快让浏览器回退
+      ch.on('data', (d) => { len += d.length; if (len <= MAX) chunks.push(d); });
+      ch.stderr.resume();
+      ch.on('close', (code) => {
+        clearTimeout(timer);
+        if (code !== 0 || !len || len > MAX) {
+          return reply({ ok: false, reason: code === 3 ? 'no-tmux' : code === 4 ? 'busy' : 'failed' });
+        }
+        reply({ ok: true, data: Buffer.concat(chunks).toString('utf8') });
+      });
+    });
+  }
+
   closeConn() {
     clearTimeout(this.timer);
     this.latPending = false;
@@ -1277,6 +1312,9 @@ wss.on('connection', (ws, req) => {
       case 'prompt-response':
       case 'hostkey-response':
         if (sess) sess.answer(msg);
+        break;
+      case 'tmux-history':
+        if (sess) sess.captureTmux(ws, msg.lines);
         break;
       case 'ping': // 带时间戳的用来测网页 ↔ 服务端的往返延迟，原样带回
         sendCtl(Number.isFinite(msg.t) ? { type: 'pong', t: msg.t } : { type: 'pong' });
