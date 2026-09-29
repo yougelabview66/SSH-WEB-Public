@@ -1324,6 +1324,32 @@
     setTimeout(() => { if (s.sid) { beginCapture(s); send(s, { type: 'data', data: '\r' }); } }, 50);
   }
 
+  // 命令模式：空输入框里打 / 后，输入逐字直接发给终端，Claude Code 的 / 命令候选列表会在终端里弹出，
+  // ↑ ↓ 选择、Tab 补全、Enter 执行；Enter / Esc / Ctrl+C 或退格删光后回到本地编辑
+  let cmdMode = null; // { s: 所在标签, n: 已发出的字数 (退格删光时退出) }
+  const DESK_PH = dInput.placeholder;
+
+  function setCmdMode(on) {
+    cmdMode = on ? { s: active, n: 0 } : null;
+    $('#deskBar').classList.toggle('cmd', on);
+    dInput.placeholder = on ? '命令模式：直接输入到终端，Enter 执行，Esc 退出' : DESK_PH;
+  }
+
+  function flushCmd() {
+    const text = dInput.value;
+    if (!cmdMode || !text) return;
+    setDeskText('');
+    cmdMode.n += [...text].length;
+    sendKeys(text);
+  }
+
+  function cmdEnter() {
+    flushCmd();
+    setCmdMode(false);
+    if (active) beginCapture(active);
+    sendKeys('\r');
+  }
+
   const DESK_KEYS = {
     ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', Home: 'home', End: 'end',
     PageUp: 'pgup', PageDown: 'pgdn', Tab: 'tab', Backspace: 'bs', Delete: 'del',
@@ -1331,6 +1357,11 @@
 
   dInput.addEventListener('keydown', (e) => {
     if (e.isComposing || e.keyCode === 229) return; // 输入法选字中
+    if (cmdMode) {
+      if (e.key === 'Enter') { e.preventDefault(); return cmdEnter(); }
+      if (e.key === 'Escape' || (e.ctrlKey && e.code === 'KeyC')) setCmdMode(false); // 照常发给终端
+      else if (e.key === 'Backspace' && --cmdMode.n <= 0) setCmdMode(false);
+    }
     if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
       e.preventDefault();
       return deskSend();
@@ -1350,16 +1381,22 @@
     }
     if (seq) { e.preventDefault(); sendKeys(seq); }
   });
-  dInput.addEventListener('input', () => {
+  dInput.addEventListener('input', (e) => {
+    if (!e.isComposing && active?.sid) {
+      if (cmdMode) return flushCmd();
+      if (dInput.value === '/') { setCmdMode(true); return flushCmd(); }
+    }
     if (active) active.draft = dInput.value;
     autosizeDesk();
   });
-  $('#dSend').addEventListener('click', () => { deskSend(); dInput.focus(); });
+  dInput.addEventListener('compositionend', () => flushCmd()); // 命令参数里的中文上屏后发送
+  $('#dSend').addEventListener('click', () => { if (cmdMode) cmdEnter(); else deskSend(); dInput.focus(); });
   $('#dHide').addEventListener('click', () => setDeskOn(false));
   $('#btnInput').addEventListener('click', () => setDeskOn(!deskOn));
 
   function setDeskOn(on) {
     deskOn = on;
+    if (!on && cmdMode) setCmdMode(false);
     try { localStorage.setItem('sshweb.deskInput', on ? '1' : '0'); } catch {}
     updateMobileBar();
     if (active) focusTerm(active);
@@ -1546,6 +1583,7 @@
     $('#deskBar').classList.toggle('hidden', !(!isTouch && active && deskOn));
     $('#btnInput').classList.toggle('hidden', !(!isTouch && active));
     $('#btnInput').classList.toggle('on', deskOn);
+    if (cmdMode && cmdMode.s !== active) setCmdMode(false);
     // 每个标签有自己的草稿
     if (dInput.value !== (active?.draft || '')) { dInput.value = active?.draft || ''; autosizeDesk(); }
   }
