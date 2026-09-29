@@ -255,6 +255,8 @@ npm install
 AUTH_PASSWORD=test npm start
 ```
 
+前端代码按功能拆在 `public/app/*.js`（文件名带编号），服务端启动时按顺序拼成一个 `app.js`：各部分共用同一个函数作用域，所以新增的部分要按依赖顺序编号；改前端代码后重启服务生效。
+
 自动化测试（浏览器 + 模拟 SSH 服务器，不会连接真实主机）：
 ```bash
 npm install                   # 含开发依赖 playwright-core

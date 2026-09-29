@@ -1,0 +1,375 @@
+  // ------------------------------------------------------------ 终端会话
+  // ------------------------------------------------------------ 主题 (跟随系统 / 浅色 / 深色)
+  const TERM_THEMES = {
+    dark: {
+      background: '#000000', foreground: '#e5e7eb', cursor: '#22c55e', cursorAccent: '#000000',
+      selectionBackground: 'rgba(148,163,184,.35)',
+    },
+    // 浅色终端用 GitHub Light 的 ANSI 色板，白底上黄色 / 白色也能看清
+    light: {
+      background: '#ffffff', foreground: '#1f2328', cursor: '#16a34a', cursorAccent: '#ffffff',
+      selectionBackground: 'rgba(9,105,218,.2)',
+      black: '#24292f', red: '#cf222e', green: '#116329', yellow: '#9a6700', blue: '#0969da',
+      magenta: '#8250df', cyan: '#1b7c83', white: '#6e7781',
+      brightBlack: '#57606a', brightRed: '#a40e26', brightGreen: '#1a7f37', brightYellow: '#633c01',
+      brightBlue: '#218bff', brightMagenta: '#a475f9', brightCyan: '#3192aa', brightWhite: '#8c959f',
+    },
+  };
+  const systemLight = window.matchMedia('(prefers-color-scheme: light)');
+  const themeMode = () => { try { return localStorage.getItem('sshweb.theme') || 'auto'; } catch { return 'auto'; } };
+  const effectiveTheme = () => {
+    const m = themeMode();
+    return m === 'auto' ? (systemLight.matches ? 'light' : 'dark') : m;
+  };
+  const termTheme = () => TERM_THEMES[effectiveTheme()];
+
+  function applyTheme() {
+    const m = themeMode();
+    if (m === 'auto') delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = m;
+    const eff = effectiveTheme();
+    document.querySelector('meta[name=theme-color]').content = eff === 'light' ? '#ffffff' : '#111827';
+    $('#themeSeg').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.mode === m));
+    for (const s of sessions) s.term.options.theme = termTheme();
+    for (const s of sessions) if (s.mon && s.mon.redraw) s.mon.redraw();
+    syncPipTheme();
+  }
+
+  $('#themeSeg').addEventListener('click', (e) => {
+    const mode = e.target.dataset.mode;
+    if (!mode) return;
+    try { localStorage.setItem('sshweb.theme', mode); } catch {}
+    applyTheme();
+  });
+  systemLight.addEventListener('change', () => { if (themeMode() === 'auto') applyTheme(); });
+
+  // restore: 服务端已有的后台会话信息 (刷新 / 重新打开浏览器时恢复)
+  function openSession(params, title, connType, restore) {
+    $('#empty').classList.add('hidden');
+    const s = { id: Math.random().toString(36).slice(2), params, title, connType };
+    if (restore) {
+      s.remoteId = restore.id;
+      s.histHost = restore.histHost;
+    } else {
+      const h = params.hostId ? hosts.find((x) => x.id === params.hostId) : params;
+      s.histHost = h ? histHostLabel(h) : title;
+    }
+
+    s.el = document.createElement('div');
+    s.el.className = 'term';
+    s.box = document.createElement('div');
+    s.box.className = 'term-box';
+    s.el.appendChild(s.box);
+    $('#terms').appendChild(s.el);
+
+    s.term = new Terminal({
+      cursorBlink: true,
+      fontSize,
+      fontFamily: 'ui-monospace, "Cascadia Code", Menlo, Consolas, "DejaVu Sans Mono", monospace',
+      theme: termTheme(),
+      scrollback,
+      allowProposedApi: true,
+    });
+    s.fit = new FitAddon.FitAddon();
+    s.term.loadAddon(s.fit);
+    s.term.loadAddon(new WebLinksAddon.WebLinksAddon());
+    s.term.open(s.box);
+    // 远端程序通过 OSC 52 设置剪贴板：tmux 开鼠标后拖动选中、松开即复制，vim 等插件的复制也走这里。
+    // 只允许写入，不响应读取请求 (同 Windows Terminal)，避免剪贴板内容被远端读走
+    s.term.parser.registerOscHandler(52, (data) => {
+      const b64 = data.slice(data.indexOf(';') + 1);
+      if (!b64 || b64 === '?' || s.muteOsc52 || b64.length > 4 * 1024 * 1024) return true;
+      try {
+        const text = new TextDecoder().decode(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)));
+        const had = document.activeElement;
+        copyText(text); // HTTP 下借用临时文本框复制，会抢走焦点，复制完还回去
+        if (had && had !== document.activeElement) had.focus({ preventScroll: true });
+      } catch {}
+      return true;
+    });
+    enableTouchScroll(s);
+    // tmux 里往上滚：拦下来改成本地快速滚动 (见 openLocalScroll)；手机滑动也会变成滚轮事件走到这里
+    s.term.attachCustomWheelEventHandler((e) => localScrollWheel(s, e));
+    if (isTouch) {
+      // 触屏：xterm 的隐藏输入框在手机输入法下会丢字 / 重复，改用底部输入栏
+      s.term.textarea.setAttribute('readonly', 'readonly');
+      s.term.textarea.addEventListener('focus', () => mInput.focus());
+      s.box.addEventListener('click', () => { if (s.longPressed) { s.longPressed = false; return; } mInput.focus(); });
+    }
+    s.ro = new ResizeObserver(() => { if (active === s) s.fit.fit(); });
+    s.ro.observe(s.box);
+    s.term.onData((data) => {
+      if (data === '\r') beginCapture(s);
+      send(s, { type: 'data', data });
+    });
+    s.term.onResize(({ cols, rows }) => send(s, { type: 'resize', cols, rows }));
+    // 旧式鼠标编码 (X10 等) 的上报走 onBinary，需要按原始字节发送
+    s.term.onBinary((data) => {
+      if (s.ws && s.ws.readyState === WebSocket.OPEN) s.ws.send(Uint8Array.from(data, (c) => c.charCodeAt(0) & 255));
+    });
+    // 复制粘贴快捷键
+    s.term.attachCustomKeyEventHandler((e) => {
+      // 复制: Ctrl+Shift+C；Windows / Linux 上有选中内容时 Ctrl+C 也复制 (同 Windows Terminal)，没选中仍发送 ^C 中断
+      if (e.type === 'keydown' && e.ctrlKey && !e.altKey && !e.metaKey && e.code === 'KeyC'
+          && (e.shiftKey || (!isMac && s.term.hasSelection()))) {
+        e.preventDefault();
+        const text = s.term.getSelection();
+        if (text) {
+          copyText(text); // HTTP 下没有剪贴板接口时会借用临时文本框，复制完把焦点还给终端
+          s.term.focus();
+          if (!e.shiftKey) s.term.clearSelection();
+        }
+        return false;
+      }
+      // Windows / Linux 上 Ctrl+V 也粘贴 (同 Windows Terminal、VS Code)；xterm 默认会把它当 ^V 发给终端。
+      // 返回 false 让浏览器执行默认的粘贴，由 xterm 的粘贴处理发送 (支持括号粘贴)。vim 列选择可用 Ctrl+Q
+      if (!isMac && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.code === 'KeyV') return false;
+      return true;
+    });
+
+    s.tab = document.createElement('div');
+    s.tab.className = 'tab';
+    s.tab.innerHTML = '<span class="dot"></span><span class="title"></span><button class="x" title="关闭">×</button>';
+    // 标签显示「主机名-序号」: 家里 NAS-1、家里 NAS-2…，新开的标签接着同一主机当前最大的序号往后排
+    // (有 1 和 3 时新开的是 4，不补空出的 2)；该主机没有打开的标签时从 1 开始
+    if (restore && restore.n) {
+      s.baseTitle = title;
+      s.n = restore.n;
+    } else if (restore) {
+      const m = /^(.*) \((\d+)\)$/.exec(title); // 兼容旧版本的「名称 (2)」
+      s.baseTitle = m ? m[1] : title;
+      s.n = m ? +m[2] : 1;
+    } else {
+      const max = Math.max(0, ...sessions.filter((x) => x.baseTitle === title).map((x) => x.n));
+      s.baseTitle = title;
+      s.n = max + 1;
+    }
+    s.title = title = `${s.baseTitle}-${s.n}`;
+    $('.title', s.tab).textContent = title;
+    s.tab.title = title;
+    s.tab.addEventListener('click', (e) => {
+      if (e.target.classList.contains('x')) closeSession(s);
+      else activate(s);
+    });
+    s.tab.addEventListener('auxclick', (e) => { if (e.button === 1) closeSession(s); });
+    $('#tabs').appendChild(s.tab);
+
+    if (restore) {
+      s.restoring = document.createElement('div');
+      s.restoring.className = 'restoring';
+      s.restoring.innerHTML = '<div class="spinner"></div>正在恢复会话…';
+      s.box.appendChild(s.restoring);
+    }
+    sessions.push(s);
+    if (!restore) activate(s);
+    connect(s);
+    return s;
+  }
+
+  function setStatus(s, st) {
+    const dot = $('.dot', s.tab);
+    dot.className = 'dot' + (st === 'ok' ? ' ok' : st === 'bad' ? ' bad' : '');
+  }
+
+  function send(s, obj) {
+    if (!s.ws || s.ws.readyState !== WebSocket.OPEN) return;
+    if (obj.type === 'data' && s.scrollView) closeLocalScroll(s); // 打字 / 按键 = 回到实时画面
+    // 大段粘贴分块发送，避免单条消息超过服务端 1MB 上限导致连接被断开
+    if (obj.type === 'data' && typeof obj.data === 'string' && obj.data.length > 32768) {
+      for (let i = 0; i < obj.data.length; i += 32768) s.ws.send(JSON.stringify({ type: 'data', data: obj.data.slice(i, i + 32768) }));
+      return;
+    }
+    s.ws.send(JSON.stringify(obj));
+  }
+
+  // 打开 WebSocket 并挂载到后台会话：已有会话用 attach，新连接用 connect
+  function connect(s) {
+    clearTimeout(s.retryTimer);
+    hideReconnect(s);
+    setStatus(s, 'wait');
+    if (s.box.clientWidth) s.fit.fit();
+
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    const ws = new WebSocket(`${proto}://${location.host}/ws`);
+    ws.binaryType = 'arraybuffer';
+    s.ws = ws;
+    const size = s.box.clientWidth ? { cols: s.term.cols, rows: s.term.rows } : {};
+
+    ws.onopen = () => {
+      s.retries = 0;
+      if (s.remoteId) {
+        // offset: 已收到的输出字节数，断线重连时服务端只补发缺的部分
+        ws.send(JSON.stringify({ type: 'attach', id: s.remoteId, offset: s.offset, ...size }));
+      } else {
+        ws.send(JSON.stringify({ type: 'connect', ...s.params, title: s.baseTitle, n: s.n, histHost: s.histHost, pageId, ...size }));
+      }
+      // 应用层心跳，避免 Cloudflare / 反向代理 100 秒空闲断开
+      clearInterval(s.ping);
+      s.ping = setInterval(() => send(s, { type: 'ping' }), 25000);
+    };
+    ws.onmessage = (ev) => {
+      if (s.ws !== ws) return;
+      if (ev.data instanceof ArrayBuffer) {
+        if (s.offset !== undefined) s.offset += ev.data.byteLength;
+        s.lastOut = Date.now();
+        if (pipWin && s.lastOut - (lastStatusPaint || 0) > 300) { lastStatusPaint = s.lastOut; renderDeskTabs(); }
+        const replay = s.muteOsc52;
+        s.term.write(new Uint8Array(ev.data), () => {
+          if (replay) s.muteOsc52 = false;
+          checkCapture(s);
+        });
+        return;
+      }
+      let m;
+      try { m = JSON.parse(ev.data); } catch { return; }
+      if (m.type === 'attached') {
+        const isNew = !s.remoteId;
+        s.remoteId = m.session.id;
+        s.params = m.session.params || s.params;
+        if (m.session.n && m.session.n !== s.n) setTabNumber(s, m.session.n); // 其他设备可能已用了这个序号
+        if (isNew) saveTabOrder();
+        if (active === s) saveActive();
+        reportWatching();
+      } else if (m.type === 'snapshot') {
+        // 还原服务端保存的画面和滚动记录
+        s.term.reset();
+        s.term.write(m.data);
+        s.offset = m.offset;
+        doneRestoring(s);
+        if (active === s) syncSize(s);
+      } else if (m.type === 'resume') {
+        // 接下来的一帧是断开期间的输出补发，其中的复制序列是以前的，不再写剪贴板
+        if (m.bytes) s.muteOsc52 = true;
+        // 画面还在，服务端接着补发断开期间的输出
+        doneRestoring(s);
+        if (active === s) syncSize(s);
+      } else if (m.type === 'status') {
+        s.sid = m.status === 'connected' ? m.sid : null;
+        setStatus(s, m.status === 'connected' ? 'ok' : m.status === 'connecting' ? 'wait' : 'bad');
+        if (m.status === 'closed') showReconnect(s, '重新连接');
+        else hideReconnect(s);
+        updateSftpBtn();
+        if (s === active) updateLat();
+        if (m.status === 'connected' && s === active) measureRtt(); // 连上就测，不等下一轮
+        if (m.status === 'connected') {
+          if (s.sftp && s.sftp.open) s.sftp.load(s.sftp.path);
+          if (active === s) focusTerm(s);
+        }
+      } else if (m.type === 'hostkey') {
+        activate(s);
+        hostkeyDialog(m, s.id).then((accept) => { if (accept != null) send(s, { type: 'hostkey-response', accept }); });
+      } else if (m.type === 'prompt') {
+        activate(s);
+        promptDialog(m, s.id).then((answers) => {
+          if (answers === undefined) return; // 已在其他设备上回答
+          send(s, answers ? { type: 'prompt-response', answers } : { type: 'prompt-response', cancel: true });
+        });
+      } else if (m.type === 'tmux-history') {
+        onTmuxHistory(s, m);
+      } else if (m.type === 'state') {
+        s.srvState = { label: m.label, cls: m.cls };
+        renderDeskTabs();
+      } else if (m.type === 'pong') {
+        if (Number.isFinite(m.t)) { s.rtt = latSample(s, 'web', Math.round(performance.now() - m.t)); if (s === active) updateLat(); }
+      } else if (m.type === 'lat') {
+        s.sshRtt = latSample(s, 'ssh', m.ssh);
+        if (s === active) updateLat();
+      } else if (m.type === 'bell') {
+        if (s !== active || document.hidden) s.tab.classList.add('ring');
+      } else if (m.type === 'prompt-done') {
+        dismissDialog(s.id);
+      } else if (m.type === 'error') {
+        setStatus(s, 'bad');
+        // 会话创建前的错误 (参数无效 / 数量上限) 服务端不会写入终端
+        if (!s.remoteId) {
+          s.term.write(`\r\n\x1b[31m✖ ${m.message}\x1b[0m\r\n`);
+          showReconnect(s, '重试');
+        }
+      } else if (m.type === 'terminated') {
+        // 在其他设备上关闭了这个标签
+        closeSession(s, true);
+      } else if (m.type === 'gone') {
+        doneRestoring(s);
+        // 服务端没有这个会话了 (服务重启过)
+        s.remoteId = null;
+        s.offset = undefined;
+        s.sid = null;
+        setStatus(s, 'bad');
+        updateSftpBtn();
+        s.term.write('\r\n\x1b[33m后台会话已不存在 (服务可能重启过)\x1b[0m\r\n');
+        showReconnect(s, '重新连接');
+      }
+    };
+    ws.onclose = () => {
+      clearInterval(s.ping);
+      if (s.closed || s.ws !== ws) return;
+      s.sid = null;
+      updateSftpBtn();
+      setStatus(s, 'wait');
+      if (!s.remoteId) { showReconnect(s, '重试'); return; }
+      // 网络断开：后台会话仍在，自动重新挂载
+      const delay = Math.min(1000 * 2 ** (s.retries || 0), 10000);
+      s.retries = (s.retries || 0) + 1;
+      if (s.retries > 3) showReconnect(s, '正在重新连接… 点击立即重试');
+      s.retryTimer = setTimeout(() => connect(s), delay);
+    };
+  }
+
+  function doneRestoring(s) {
+    s.restoring?.remove();
+    s.restoring = null;
+  }
+
+  // 让服务端终端尺寸与当前显示一致 (其他设备可能改过尺寸)
+  function syncSize(s) {
+    if (!s.box.clientWidth) return;
+    s.fit.fit();
+    send(s, { type: 'resize', cols: s.term.cols, rows: s.term.rows });
+  }
+
+  function showReconnect(s, text) {
+    if (!s.reconnectBtn) {
+      const b = document.createElement('button');
+      b.className = 'primary reconnect';
+      b.onclick = () => {
+        if (s.remoteId && s.ws && s.ws.readyState === WebSocket.OPEN) send(s, { type: 'reconnect' });
+        else connect(s);
+      };
+      s.box.appendChild(b);
+      s.reconnectBtn = b;
+    }
+    s.reconnectBtn.textContent = text;
+  }
+
+  function hideReconnect(s) {
+    s.reconnectBtn?.remove();
+    s.reconnectBtn = null;
+  }
+
+  // 标签顺序与当前标签保存起来，重新打开时恢复
+  function saveTabOrder() {
+    const ids = sessions.map((x) => x.remoteId).filter(Boolean);
+    if (ids.length) api('PUT', '/api/sessions/order', { ids, pageId }).catch(() => {});
+  }
+
+  function saveActive() {
+    try { if (active && active.remoteId) localStorage.setItem('sshweb.active', active.remoteId); } catch {}
+  }
+
+  async function fetchSessions() {
+    try { return await api('GET', '/api/sessions'); } catch { return []; }
+  }
+
+  function restoreSessions(list) {
+    let want = null;
+    try { want = localStorage.getItem('sshweb.active'); } catch {}
+    // 点击通知打开网页时 (?session=xxx) 直接切到对应标签
+    const fromNotify = new URLSearchParams(location.search).get('session');
+    if (fromNotify) {
+      want = fromNotify;
+      history.replaceState(null, '', '/');
+    }
+    const opened = list.map((info) => openSession(info.params || {}, info.title, info.connType, info));
+    activate(opened.find((x) => x.remoteId === want) || opened[opened.length - 1]);
+  }
+

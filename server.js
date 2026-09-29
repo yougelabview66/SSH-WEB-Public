@@ -354,6 +354,16 @@ const sendIndex = (req, res) => {
   res.type('html').send(INDEX_HTML);
 };
 app.get(['/', '/index.html'], sendIndex);
+// 前端代码按功能拆在 public/app/*.js (文件名带编号，按顺序)，这里拼成一个 app.js：
+// 各部分在同一个函数作用域里共用变量，所以只拆文件、不拆作用域，浏览器拿到的和拆之前完全一样
+const APP_DIR = path.join(__dirname, 'public', 'app');
+const APP_JS = "'use strict';\n\n(() => {\n"
+  + fs.readdirSync(APP_DIR).filter((f) => f.endsWith('.js')).sort().map((f) => fs.readFileSync(path.join(APP_DIR, f), 'utf8')).join('')
+  + '})();\n';
+app.get('/app.js', (req, res) => {
+  if (req.query.v !== undefined) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  res.type('js').send(APP_JS);
+});
 // Service Worker 必须每次检查更新
 app.get('/sw.js', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
