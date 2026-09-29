@@ -983,13 +983,14 @@
   const latEl = $('#lat'), latPop = $('#latPop');
   const latOk = (s, ms) => s.sid && Number.isFinite(ms);
 
-  // 标签栏只显示信号图标：两段里较慢的那段决定颜色 (三格绿 / 两格黄 / 一格红，还没测到是灰色)
+  // 标签栏两个信号图标：左网页、右 SSH，各按自己的延迟着色 (三格绿 / 两格黄 / 一格红，还没测到是灰色)
   function updateLat() {
     const s = active;
     latEl.classList.toggle('hidden', !s);
     if (!s) return closeLatPop();
-    const vals = [s.rtt, s.sshRtt].filter((ms) => latOk(s, ms));
-    latEl.dataset.q = vals.length ? latCls(Math.max(...vals)) : 'na';
+    const q = (ms) => (latOk(s, ms) ? latCls(ms) : 'na');
+    latEl.querySelector('[data-k=web]').dataset.q = q(s.rtt);
+    latEl.querySelector('[data-k=ssh]').dataset.q = q(s.sshRtt);
     if (!latPop.classList.contains('hidden')) renderLatPop();
   }
 

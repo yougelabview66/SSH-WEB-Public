@@ -333,18 +333,20 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 }
 
 /* 标签栏右侧按钮 */
-/* 延迟：标签栏里只显示信号图标 (两段里较慢的那段决定颜色)，点击弹出详情 */
-#tabbar .lat { display: flex; align-items: center; padding: 0 12px; flex-shrink: 0; border: none; border-radius: 0;
+/* 延迟：标签栏里两个信号图标 (左网页、右 SSH，各按自己的延迟着色)，点击弹出详情 */
+#tabbar .lat { display: flex; align-items: center; gap: 8px; padding: 0 10px; flex-shrink: 0; border: none; border-radius: 0;
   border-left: 1px solid var(--border); background: none; }
 #tabbar .lat.on { background: var(--bg); }
+.lat .sig { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+.lat .sig-l { font-size: 9px; line-height: 1; color: var(--muted); }
 .lat .bars { display: flex; align-items: flex-end; gap: 2px; height: 12px; }
 .lat .bars i { width: 3px; border-radius: 1px; background: var(--border); }
 .lat .bars i:nth-child(1) { height: 4px; }
 .lat .bars i:nth-child(2) { height: 8px; }
 .lat .bars i:nth-child(3) { height: 12px; }
-.lat[data-q=g] .bars i { background: var(--accent); }
-.lat[data-q=y] .bars i:nth-child(-n+2) { background: var(--warn); }
-.lat[data-q=r] .bars i:nth-child(1) { background: var(--danger); }
+.lat .sig[data-q=g] .bars i { background: var(--accent); }
+.lat .sig[data-q=y] .bars i:nth-child(-n+2) { background: var(--warn); }
+.lat .sig[data-q=r] .bars i:nth-child(1) { background: var(--danger); }
 #latPop { position: fixed; z-index: 60; min-width: 230px; max-width: calc(100vw - 16px); padding: 10px 12px;
   background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 24px var(--shadow); font-size: 13px; }
 .lp-row { display: flex; justify-content: space-between; gap: 16px; font-weight: 600; }
