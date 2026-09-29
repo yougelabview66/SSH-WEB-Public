@@ -477,6 +477,9 @@
 
   function send(s, obj) {
     if (!s.ws || s.ws.readyState !== WebSocket.OPEN) return;
+    // 主机状态：输入 / 调整大小后的回显、重绘不算「运行中」；发了输入 = 已经看到了，「完成」清掉
+    if (obj.type === 'data' || obj.type === 'resize') s.inputAt = Date.now();
+    if (obj.type === 'data') s.alertAt = s.doneAt = 0;
     // 大段粘贴分块发送，避免单条消息超过服务端 1MB 上限导致连接被断开
     if (obj.type === 'data' && typeof obj.data === 'string' && obj.data.length > 32768) {
       for (let i = 0; i < obj.data.length; i += 32768) s.ws.send(JSON.stringify({ type: 'data', data: obj.data.slice(i, i + 32768) }));
@@ -515,9 +518,11 @@
       if (ev.data instanceof ArrayBuffer) {
         if (s.offset !== undefined) s.offset += ev.data.byteLength;
         s.lastOut = Date.now();
-        (s.outTimes ||= []).push(s.lastOut);
-        if (s.outTimes.length > 30) s.outTimes.splice(0, s.outTimes.length - 30);
-        if (s.alertAt && isRunning(s, s.lastOut)) s.alertAt = 0; // 又开始干活了，之前的「完成」作废
+        if (s.lastOut - (s.inputAt || 0) > 400) { // 输入后 0.4 秒内的是回显
+          (s.outTimes ||= []).push(s.lastOut);
+          if (s.outTimes.length > 30) s.outTimes.splice(0, s.outTimes.length - 30);
+          if (isRunning(s, s.lastOut)) { s.running = true; s.alertAt = s.doneAt = 0; } // 又开始干活了，之前的「完成」作废
+        }
         const replay = s.muteOsc52;
         s.term.write(new Uint8Array(ev.data), () => {
           if (replay) s.muteOsc52 = false;
@@ -1558,14 +1563,17 @@
     return t.length >= 3 && t[t.length - 1] - t[0] > 600;
   }
 
-  // 运行中 (黄色闪烁) / 待选择、报错 (红色) / 完成 (绿色，收到提示音后没再运行) / 空闲 (灰色)
+  // 运行中 (黄色闪烁) / 待选择、报错 (红色) / 完成 (绿色) / 空闲 (灰色)
+  // 完成 = 运行中停下来了，或收到提示音 (Claude Code 的「等你输入」提示音默认要闲置 60 秒才发)；
+  // 之后往这个标签发了输入就回到空闲
   function tabState(x, now) {
     if (!x.sid) return ['未连接', 'off'];
-    if (isRunning(x, now)) return ['运行中', 'run'];
+    if (isRunning(x, now)) { x.running = true; return ['运行中', 'run']; }
+    if (x.running) { x.running = false; x.doneAt = now; }
     const tail = screenTail(x);
     if (CHOICE_RE.test(tail)) return ['待选择', 'bad'];
     if (ERROR_RE.test(tail)) return ['报错', 'bad'];
-    if (x.alertAt) return ['完成', 'done'];
+    if (x.alertAt || x.doneAt) return ['完成', 'done'];
     return ['空闲', 'idle'];
   }
 
