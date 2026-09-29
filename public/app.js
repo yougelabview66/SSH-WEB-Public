@@ -1534,18 +1534,21 @@
     return `${Math.floor(sec / 3600)} 小时前有输出`;
   };
 
-  // 屏幕上最新的 20 行 (到最后一行有字的地方为止)：选择题 / 报错都出现在最新的内容里；
-  // 只看这一段，避免对话里早先的内容一直算数。tmux 里屏幕是满的，普通 shell 内容可能只在上半部分
+  // 屏幕上最后 12 行有字的内容：Claude Code 的选择框、API 报错都在最底部；
+  // 只看这一段，避免对话里早先的内容一直算数 (tmux 里屏幕是满的，普通 shell 内容可能只在上半部分)
   function screenTail(x) {
-    const b = x.term.buffer.active, top = b.viewportY;
-    let end = top + x.term.rows - 1;
-    while (end > top && !b.getLine(end)?.translateToString(true).trim()) end--;
-    const out = [];
-    for (let y = Math.max(top, end - 19); y <= end; y++) out.push(b.getLine(y)?.translateToString(true) || '');
+    const b = x.term.buffer.active, top = b.viewportY, out = [];
+    for (let y = top + x.term.rows - 1; y >= top && out.length < 12; y--) {
+      const line = b.getLine(y)?.translateToString(true) || '';
+      if (line.trim()) out.unshift(line);
+    }
     return out.join('\n');
   }
-  const CHOICE_RE = /Do you want to|Would you like to|❯\s*1\.\s|\[Y\/n\]|\[y\/N\]|\(yes\/no\)/;
-  const ERROR_RE = /API Error|⎿\s+Error|Request timed out|Overloaded/i;
+  // 只认整行的格式，不认句子中间提到的字样 (对话内容里常会出现这些词)：
+  // 待选择 = 选择框里当前选中的「❯ 1. xxx」、「Do you want to …」开头的行、行尾 [Y/n]
+  // 报错 = 以 API Error 开头的行；普通的「⎿ Error: …」是工具调用失败，Claude 会自己处理，不算
+  const CHOICE_RE = /^[\s│]*❯\s*\d+\.\s|^[\s│]*Do you want to |\[[Yy]\/[Nn]\]\s*$/m;
+  const ERROR_RE = /^[\s│]*(⎿\s*)?API Error\b/m;
 
   // 运行中：最近 3 秒内持续有输出 (跨度超过 0.6 秒)；Claude Code 工作时的转圈动画会不停输出，
   // tmux 状态栏时钟之类的一次性刷新不算；只算提示音 0.5 秒之后的输出 (之前的是完成前的转圈)
