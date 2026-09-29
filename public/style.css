@@ -149,7 +149,8 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: r
 .tab .x { background: none; border: none; padding: 0 4px; color: var(--muted); }
 .tab .x:hover { color: var(--danger); }
 
-#terms { flex: 1; position: relative; background: var(--term-bg); min-height: 0; }
+/* isolation：xterm 内部图层的 z-index 只在终端区域内生效，不会盖住输入栏上边缘的拖动条 */
+#terms { flex: 1; position: relative; background: var(--term-bg); min-height: 0; isolation: isolate; }
 .term { position: absolute; inset: 0; display: none; }
 .term.active { display: flex; }
 .reconnect { position: absolute; right: 16px; bottom: 16px; z-index: 5; }
@@ -244,7 +245,8 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 #deskBar.cmd #dInput::placeholder { color: var(--accent); }
 #mobileBar.cmd #mInput { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
 #deskBar #dHide { width: 32px; color: var(--muted); }
-#deskBar #dMode { font-size: 13px; }
+#deskBar #dMode { flex-direction: column; font-size: 12px; line-height: 1.3; }
+#dMode .m-cur { font-size: 13px; font-weight: 600; }
 /* 抬高 / 浮动 (applyDeskPos 设置留白高度 / bottom) */
 #deskSpace { flex-shrink: 0; background: var(--panel); }
 #deskBar.float { position: absolute; left: 8px; right: 8px; z-index: 4; border: 1px solid var(--border);
@@ -253,6 +255,12 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
   border-radius: 4px; background: radial-gradient(circle, var(--muted) 1.2px, transparent 1.6px) center / 6px 6px repeat-y; opacity: .7; }
 #dGrip:hover, #deskBar.dragging #dGrip { opacity: 1; background-color: var(--panel2); }
 #deskBar.bottom #dGrip { display: none; }
+/* 上边缘：拖动调整输入框高度 */
+#deskBar { position: relative; z-index: 3; }
+#dResize { position: absolute; left: 0; right: 0; top: -4px; height: 9px; z-index: 1; cursor: ns-resize; touch-action: none; }
+#dResize::after { content: ''; position: absolute; left: 50%; top: 3px; width: 40px; height: 3px; margin-left: -20px;
+  border-radius: 2px; background: var(--muted); opacity: 0; transition: opacity .15s; }
+#dResize:hover::after, #deskBar.dragging #dResize::after { opacity: .8; }
 body.no-select { user-select: none; -webkit-user-select: none; }
 
 /* 历史命令 */

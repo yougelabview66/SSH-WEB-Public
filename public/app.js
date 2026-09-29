@@ -1482,7 +1482,7 @@
   function applyDeskPos() {
     const shown = !deskBar.classList.contains('hidden');
     for (const m of Object.keys(DESK_MODES)) deskBar.classList.toggle(m, m === deskMode);
-    $('#dMode').textContent = DESK_MODES[deskMode];
+    $('#dMode').innerHTML = `<span>模式</span><span class="m-cur">${DESK_MODES[deskMode]}</span>`;
     deskBar.classList.toggle('float', deskMode === 'float');
     deskSpace.classList.toggle('hidden', !(shown && deskMode === 'lift'));
     if (!shown || deskMode === 'bottom') { deskBar.style.bottom = ''; return; }
@@ -1496,7 +1496,11 @@
   new ResizeObserver(() => applyDeskPos()).observe(deskBar.parentElement);
 
   function saveDeskPos() {
-    try { localStorage.setItem('sshweb.deskMode', deskMode); localStorage.setItem('sshweb.deskLift', String(deskLift)); } catch {}
+    try {
+      localStorage.setItem('sshweb.deskMode', deskMode);
+      localStorage.setItem('sshweb.deskLift', String(deskLift));
+      localStorage.setItem('sshweb.deskMinH', String(deskMinH));
+    } catch {}
   }
 
   $('#dMode').addEventListener('click', () => {
@@ -1507,42 +1511,81 @@
     dInput.focus();
   });
 
-  // 拖左边的把手上下调整位置
-  $('#dGrip').addEventListener('pointerdown', (e) => {
-    if (e.button !== 0 || deskMode === 'bottom') return;
+  // 按住上下拖动的通用处理：onMove(鼠标相对按下时的位移 dy)，requestAnimationFrame 节流，松开后保存
+  function dragY(e, onMove) {
     e.preventDefault();
-    const grip = e.currentTarget;
-    grip.setPointerCapture(e.pointerId);
-    const main = deskBar.parentElement;
-    // 按下时鼠标到输入栏底边的距离，拖动时保持不变
-    const grab = deskBar.getBoundingClientRect().bottom - e.clientY;
+    const el = e.currentTarget;
+    el.setPointerCapture(e.pointerId);
     deskBar.classList.add('dragging');
     document.body.classList.add('no-select');
-    let y = e.clientY, raf = 0;
-    const update = () => {
-      raf = 0;
-      const r = main.getBoundingClientRect();
-      deskLift = Math.max(0, (r.bottom - (y + grab)) / r.height);
-      applyDeskPos();
-      deskLift = deskLiftPx() / r.height; // 超出范围时停在边界，不记住超出的值
-    };
+    const y0 = e.clientY;
+    let y = y0, raf = 0;
+    const update = () => { raf = 0; onMove(y - y0); };
     const move = (ev) => {
       y = ev.clientY;
       if (!raf) raf = requestAnimationFrame(update);
     };
     const up = () => {
       if (raf) { cancelAnimationFrame(raf); update(); }
-      grip.removeEventListener('pointermove', move);
-      grip.removeEventListener('pointerup', up);
-      grip.removeEventListener('pointercancel', up);
+      el.removeEventListener('pointermove', move);
+      el.removeEventListener('pointerup', up);
+      el.removeEventListener('pointercancel', up);
       deskBar.classList.remove('dragging');
       document.body.classList.remove('no-select');
       saveDeskPos();
       dInput.focus();
     };
-    grip.addEventListener('pointermove', move);
-    grip.addEventListener('pointerup', up);
-    grip.addEventListener('pointercancel', up);
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+  }
+
+  // 按比例设置抬高位置 (像素)，超出范围时停在边界，不记住超出的值
+  function setLiftPx(px) {
+    const h = deskBar.parentElement.clientHeight;
+    deskLift = Math.max(0, px) / h;
+    applyDeskPos();
+    deskLift = deskLiftPx() / h;
+  }
+
+  // 拖左边的把手上下调整位置
+  $('#dGrip').addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || deskMode === 'bottom') return;
+    const lift0 = deskLiftPx();
+    dragY(e, (dy) => setLiftPx(lift0 - dy));
+  });
+
+  // 拖上边缘调整输入框高度 (最低高度，字多了照样自动变高)，往上拖变高，下边缘 / 抬高位置不动；双击恢复默认
+  const DESK_MIN_H = 60;
+  let deskMinH = (() => { try { return Math.max(DESK_MIN_H, parseInt(localStorage.getItem('sshweb.deskMinH'), 10) || DESK_MIN_H); } catch { return DESK_MIN_H; } })();
+
+  function applyMinH() {
+    dInput.style.minHeight = deskMinH + 'px';
+    dInput.style.maxHeight = `max(40vh, ${deskMinH}px)`;
+    autosizeDesk();
+  }
+  dInput.style.minHeight = deskMinH + 'px';
+  dInput.style.maxHeight = `max(40vh, ${deskMinH}px)`;
+
+  function setMinH(h) {
+    // 最高到 main 的一半，抬高模式下还要给上方终端留出位置
+    const main = deskBar.parentElement.clientHeight;
+    let max = Math.round(main * 0.5);
+    if (deskMode === 'lift') max = Math.min(max, main - $('#tabbar').offsetHeight - MIN_TERM - (deskBar.offsetHeight - dInput.offsetHeight));
+    deskMinH = Math.round(Math.max(DESK_MIN_H, Math.min(h, max)));
+    applyMinH();
+  }
+
+  $('#dResize').addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    const h0 = dInput.offsetHeight;
+    dragY(e, (dy) => setMinH(h0 - dy));
+  });
+  $('#dResize').addEventListener('dblclick', () => {
+    deskMinH = DESK_MIN_H;
+    applyMinH();
+    saveDeskPos();
+    dInput.focus();
   });
 
   function setDeskOn(on) {
