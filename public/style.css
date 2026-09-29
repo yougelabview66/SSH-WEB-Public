@@ -273,6 +273,8 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 .hf-head .hf-title { font-weight: 600; white-space: nowrap; }
 .hf-head button { border: none; background: none; padding: 2px 6px; font-size: 13px; line-height: 1; color: var(--muted); cursor: pointer; }
 .hf-head button:hover { color: var(--text); background: var(--panel2); }
+.hf-head .hf-auto { font-size: 11px; padding: 2px 6px; border-radius: 8px; }
+.hf-head .hf-auto.on { color: #fff; background: var(--accent2); }
 .hf-head .hf-sum { display: none; gap: 4px; margin-left: 4px; flex: 1; }
 #hostFloat .dp-tabs { padding: 8px; }
 #hostFloat.min .dp-tabs { display: none; }
@@ -285,6 +287,9 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 .hf-d.off { background: none; border: 1px dashed var(--muted); }
 /* 置顶到桌面的小窗口 */
 .pip-body { margin: 0; padding: 8px; background: var(--panel); color: var(--text); font: 13px system-ui, sans-serif; }
+.pip-head { display: flex; justify-content: flex-end; margin: -4px -4px 6px; }
+.pip-head button { font-size: 12px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel2);
+  color: var(--text); cursor: pointer; }
 @media (prefers-reduced-motion: reduce) { .dp-tab .stt.run { animation: none; } }
 #deskBar.float { position: absolute; left: 8px; right: 8px; z-index: 4; border: 1px solid var(--border);
   border-radius: 8px; box-shadow: 0 6px 24px var(--shadow); }

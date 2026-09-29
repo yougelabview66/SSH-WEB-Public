@@ -1718,7 +1718,19 @@
   const hfPos = (() => { try { return JSON.parse(localStorage.getItem('sshweb.hostFloat')) || {}; } catch { return {}; } })();
   const saveHf = () => { try { localStorage.setItem('sshweb.hostFloat', JSON.stringify(hfPos)); } catch {} };
   if (hfPos.min) hostFloat.classList.add('min');
-  if (!('documentPictureInPicture' in window)) hostFloat.querySelector('[data-a=pip]').remove();
+  const pipOk = 'documentPictureInPicture' in window;
+  if (!pipOk) { hostFloat.querySelector('[data-a=pip]').remove(); hostFloat.querySelector('[data-a=auto]').remove(); }
+  // 自动钉住：浏览器规定置顶窗口只能在用户点击 / 按键时打开，所以在打开网页后的第一次操作时顺手打开；
+  // 这次手动关掉了就不再自动打开，下次打开网页再说
+  let autoPin = (() => { try { return localStorage.getItem('sshweb.autoPin') === '1'; } catch { return false; } })();
+  let pipClosedByUser = false;
+  const autoBtn = hostFloat.querySelector('[data-a=auto]');
+  autoBtn?.classList.toggle('on', autoPin);
+  const tryAutoPin = () => {
+    if (autoPin && pipOk && !pipWin && !pipClosedByUser && !isTouch && active) openStatusPip();
+  };
+  window.addEventListener('pointerdown', tryAutoPin, true);
+  window.addEventListener('keydown', tryAutoPin, true);
 
   // 位置用「离 main 右边 / 上边的距离」保存，窗口大小变了也贴着右上角；超出范围时收回来
   function placeHostFloat() {
@@ -1782,16 +1794,28 @@
       renderDeskTabs();
       placeHostFloat();
     } else if (b.dataset.a === 'pip') openStatusPip();
+    else if (b.dataset.a === 'auto') {
+      autoPin = !autoPin;
+      try { localStorage.setItem('sshweb.autoPin', autoPin ? '1' : '0'); } catch {}
+      autoBtn.classList.toggle('on', autoPin);
+      if (autoPin) { pipClosedByUser = false; openStatusPip(); }
+    }
   });
 
   // 置顶到桌面：内容和网页里的一样，样式直接引用同一个 style.css
+  let pipOpening = false;
   async function openStatusPip() {
     if (pipWin) return pipWin.focus();
+    if (pipOpening) return;
+    pipOpening = true;
     let w;
     try {
-      w = await window.documentPictureInPicture.requestWindow({ width: 300, height: 150 });
+      // disallowReturnToOpener：不显示 Chrome 自带的「返回标签页」按钮 (点了会关掉小窗口)，用自己的「↩ 网页」代替
+      w = await window.documentPictureInPicture.requestWindow({ width: 300, height: 170, disallowReturnToOpener: true });
     } catch (e) {
       return alert('无法打开置顶窗口：' + e.message);
+    } finally {
+      pipOpening = false;
     }
     pipWin = w;
     const d = w.document;
@@ -1802,10 +1826,14 @@
     d.head.appendChild(link);
     syncPipTheme();
     d.body.className = 'pip-body';
-    d.body.innerHTML = '<div class="dp-tabs"></div>';
-    d.addEventListener('mousedown', onStatusDown);
+    d.body.innerHTML = '<div class="pip-head"><button data-a="back" title="切回网页，小窗口继续留着">↩ 网页</button></div><div class="dp-tabs"></div>';
+    // 点卡片：切到那个标签并把网页切到前面；小窗口不关
+    d.addEventListener('mousedown', (e) => {
+      if (e.target.closest('[data-a=back]') || e.target.closest('.dp-tab')) { onStatusDown(e); window.focus(); }
+    });
     w.addEventListener('pagehide', () => {
       pipWin = null;
+      pipClosedByUser = true; // 小窗口被关掉 (点了 ✕)：这次不再自动打开
       updateHostFloat();
     });
     updateHostFloat();
