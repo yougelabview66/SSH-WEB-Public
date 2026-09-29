@@ -1,8 +1,8 @@
 'use strict';
-const { BASE, ok, wait, shot, launch, post, addHost, devices } = require('./helpers');
+const { BASE, ok, wait, shot, launch, post, addHost, devices, hostKey } = require('./helpers');
 const { Server, utils } = require('ssh2');
 let got = '', rows = 0;
-new Server({ hostKeys: [utils.generateKeyPairSync('ed25519').private] }, (c) => {
+new Server({ hostKeys: [hostKey()] }, (c) => {
   c.on('authentication', (ctx) => ctx.accept());
   c.on('ready', () => c.on('session', (acc) => { const s = acc(); s.on('pty', (a, r, i) => { rows = i.rows; a(); }); s.on('window-change', (a, r, i) => { rows = i.rows; a && a(); });
     s.on('shell', (a) => { const st = a(); st.write('$ '); st.on('data', (d) => { got += d; }); }); }));

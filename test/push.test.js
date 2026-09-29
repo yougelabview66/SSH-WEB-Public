@@ -10,7 +10,7 @@ const { execFileSync } = require('child_process');
 const ece = require('http_ece');
 const { WebSocket } = require('ws');
 const { Server, utils } = require('ssh2');
-const { BASE, ok, wait, run } = require('./helpers');
+const { BASE, ok, wait, run, hostKey } = require('./helpers');
 
 // 模拟推送服务 (HTTPS，自签名证书)
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sshweb-push-'));
@@ -30,7 +30,7 @@ const pushSrv = https.createServer({ key: fs.readFileSync(path.join(dir, 'k.pem'
 fs.rmSync(dir, { recursive: true, force: true });
 
 const streams = [];
-new Server({ hostKeys: [utils.generateKeyPairSync('ed25519').private] }, (c) => {
+new Server({ hostKeys: [hostKey()] }, (c) => {
   c.on('authentication', (ctx) => ctx.accept());
   c.on('ready', () => c.on('session', (acc) => {
     const s = acc(); s.on('pty', (a) => a()); s.on('window-change', (a) => a && a());

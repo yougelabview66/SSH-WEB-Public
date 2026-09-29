@@ -1,8 +1,8 @@
 'use strict';
-const { BASE, ok, wait, shot, launch, post, addHost, devices } = require('./helpers');
+const { BASE, ok, wait, shot, launch, post, addHost, devices, hostKey } = require('./helpers');
 const { Server, utils } = require('ssh2');
 let got = ''; let chunks = [];
-new Server({ hostKeys: [utils.generateKeyPairSync('ed25519').private] }, (c) => {
+new Server({ hostKeys: [hostKey()] }, (c) => {
   c.on('authentication', (ctx) => ctx.accept());
   c.on('ready', () => c.on('session', (acc) => { const s = acc(); s.on('pty', (a) => a()); s.on('window-change', (a) => a && a());
     s.on('shell', (a) => { const st = a(); st.write('$ '); st.on('data', (d) => { got += d; chunks.push(String(d)); st.write(String(d).replace(/\r/g, '\r\n')); }); }); }));
@@ -28,6 +28,25 @@ new Server({ hostKeys: [utils.generateKeyPairSync('ed25519').private] }, (c) => 
   ok(await txt() === '', '发送后清空');
   got = ''; await m.keyboard.type('pwd'); await m.keyboard.press('Enter'); await wait(300);
   ok(got === 'pwd\r', '键盘上的「发送」(Enter) 也整段发送');
+  // 多行：文字满一行自动换行、输入框变高
+  const mh = () => m.evaluate(() => { const t = document.getElementById('mInput'); return { h: t.offsetHeight, ov: getComputedStyle(t).overflowY, tag: t.tagName }; });
+  const h1 = await mh();
+  ok(h1.tag === 'TEXTAREA' && h1.h <= 44, `一开始一行高 (${h1.h}px)`);
+  got = ''; await m.keyboard.type('这是一段很长的中文说明文字，用来测试手机输入框在文字满了之后会不会自动换行变高'); await wait(200);
+  const h2 = await mh();
+  ok(h2.h > h1.h + 15 && h2.ov === 'hidden' && got === '', `文字满一行后自动换行、输入框变高 ${h1.h} → ${h2.h}px，没有滚动条，也没发送`);
+  await m.screenshot({ path: shot('mob-multiline.png') });
+  await m.keyboard.type('再多一些文字'.repeat(40)); await wait(200);
+  const h3 = await mh();
+  ok(h3.ov === 'auto' && h3.h < 915 * 0.32, `超过最大高度 (30vh) 才出现滚动条，高 ${h3.h}px`);
+  await m.keyboard.press('Enter'); await wait(400);
+  ok(got.startsWith('这是一段很长') && got.endsWith('\r') && !got.slice(0, -1).includes('\n'), '按发送：整段发出去，没有插入换行');
+  ok((await mh()).h <= 44, '发送后恢复一行高');
+  // 有的手机输入法的「发送」是 beforeinput insertLineBreak
+  got = ''; await m.keyboard.type('echo hi'); await wait(100);
+  await m.evaluate(() => document.getElementById('mInput').dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertLineBreak', bubbles: true, cancelable: true })));
+  await wait(400);
+  ok(got === 'echo hi\r', '输入法的「发送」(insertLineBreak) 也是发送: ' + JSON.stringify(got));
   // 中文输入法 (CDP 模拟组字)
   got = '';
   await cdp.send('Input.imeSetComposition', { text: 'ni', selectionStart: 2, selectionEnd: 2 });

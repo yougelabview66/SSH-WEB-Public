@@ -1,5 +1,5 @@
 'use strict';
-const { BASE, ok, wait, shot, launch, post, addHost, devices } = require('./helpers');
+const { BASE, ok, wait, shot, launch, post, addHost, devices, hostKey } = require('./helpers');
 const { Server, utils } = require('ssh2');
 
 // 模拟 tmux 的历史：3000 行，每 10 行一行红色
@@ -11,7 +11,7 @@ const OTHER = Array.from({ length: 200 }, (_, i) => `完全不相干的另一个
 // mode: ok | none (没有 tmux) | busy (全屏程序) | other (抓到别的 pane) | plain (普通 shell，不开鼠标)
 let got = ''; const execs = []; const envs = [];
 function mockServer(port, mode) {
-  new Server({ hostKeys: [utils.generateKeyPairSync('ed25519').private] }, (c) => {
+  new Server({ hostKeys: [hostKey()] }, (c) => {
     c.on('authentication', (ctx) => ctx.accept());
     c.on('ready', () => c.on('session', (acc) => {
       const s = acc();

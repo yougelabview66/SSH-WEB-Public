@@ -94,8 +94,9 @@
         <!-- 按键由 app.js 按设置生成 (默认顺序见 DEFAULT_KEYS) -->
         <div class="mkeys"></div>
         <form id="mForm" class="mline" autocomplete="off">
-          <input id="mInput" type="text" placeholder="输入后点 ↵ 发送，打 / 显示命令列表" autocomplete="off" autocorrect="off"
-                 autocapitalize="off" spellcheck="false" enterkeyhint="send">
+          <!-- 多行：文字满一行自动换行、输入框变高；键盘上的「发送」照样是发送 -->
+          <textarea id="mInput" rows="1" placeholder="输入后点 ↵ 发送，打 / 显示命令列表" autocomplete="off" autocorrect="off"
+                    autocapitalize="off" spellcheck="false" enterkeyhint="send"></textarea>
           <button type="submit" class="primary">↵</button>
         </form>
       </div>

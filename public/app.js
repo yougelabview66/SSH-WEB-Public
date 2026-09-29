@@ -1339,7 +1339,17 @@
     mInput.value = SENTINEL + text;
     try { mInput.setSelectionRange(caret + 1, caret + 1); } catch {}
     if (active) active.draft = text;
+    autosizeMobile();
   }
+
+  // 文字满一行自动换行、输入框变高 (最高 30vh，再多在框里滚动)
+  function autosizeMobile() {
+    mInput.style.height = 'auto';
+    const h = mInput.scrollHeight + 2;
+    mInput.style.height = h + 'px';
+    mInput.style.overflowY = h > mInput.clientHeight + 4 ? 'auto' : 'hidden';
+  }
+  window.addEventListener('resize', () => { if (isTouch) autosizeMobile(); });
   const resetInput = () => setMobileText('');
 
   // 把输入框里的文字立即发给终端并清空 (命令模式、修饰键，或按特殊键前保持先后顺序)
@@ -1380,8 +1390,25 @@
     composing = false;
     onMobileText();
   });
+  // 键盘上的「发送」(textarea 里默认是换行) 和实体键盘的回车 = 发送；Shift+回车才换行
+  mInput.addEventListener('beforeinput', (e) => {
+    if ((e.inputType === 'insertLineBreak' || e.inputType === 'insertParagraph') && !composing) {
+      e.preventDefault();
+      mobileEnter();
+    }
+  });
+  mInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); mobileEnter(); }
+  });
   mInput.addEventListener('input', (e) => {
     if (composing || e.isComposing) return;
+    // 个别输入法的「发送」没有先经过 beforeinput：换行已经插进去了，删掉再发送
+    if ((e.inputType === 'insertLineBreak' || e.inputType === 'insertParagraph')) {
+      const at = mInput.selectionStart;
+      if (mInput.value[at - 1] === '\n') mInput.value = mInput.value.slice(0, at - 1) + mInput.value.slice(at);
+      return mobileEnter();
+    }
+    autosizeMobile();
     if (!mInput.value.startsWith(SENTINEL)) {
       // 哨兵被删掉 = 在输入框最前面按了退格：空输入框就发 ⌫ 给终端，有文字就什么都不删
       const rest = mText();

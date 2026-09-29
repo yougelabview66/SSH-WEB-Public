@@ -22,6 +22,15 @@ const post = (p, body) => fetch(BASE + p, {
 }).then((r) => r.json());
 const addHost = (name, port, extra = {}) => post('/api/hosts', { name, host: '127.0.0.1', port, username: 'u', password: 'x', ...extra });
 // 未捕获的错误算失败并退出 (模拟服务器会一直监听，不主动退出进程会挂住)
+// 模拟 SSH 服务器的主机密钥：ssh2 生成的 ed25519 密钥偶尔自己都解析不了 (Malformed OpenSSH private key)，解析失败就重新生成
+function hostKey() {
+  const { utils } = require('ssh2');
+  for (let i = 0; i < 20; i++) {
+    const k = utils.generateKeyPairSync('ed25519').private;
+    if (!(utils.parseKey(k) instanceof Error)) return k;
+  }
+  throw new Error('生成主机密钥失败');
+}
 const run = (fn) => fn().then(() => process.exit()).catch((e) => { console.error('✘ 测试出错: ' + (e.stack || e)); process.exit(1); });
 
-module.exports = { BASE, ok, wait, shot, launch, post, addHost, run, chromium, devices };
+module.exports = { BASE, ok, wait, shot, launch, post, addHost, run, hostKey, chromium, devices };

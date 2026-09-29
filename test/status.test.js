@@ -1,10 +1,10 @@
 'use strict';
 // 主机状态由服务端判断 (lib/status.js)：网页关着时也在判断；多台设备看到的一致
-const { BASE, ok, wait, shot, launch, addHost, run } = require('./helpers');
+const { BASE, ok, wait, shot, launch, addHost, run, hostKey } = require('./helpers');
 const { Server, utils } = require('ssh2');
 
 const streams = [];
-new Server({ hostKeys: [utils.generateKeyPairSync('ed25519').private] }, (c) => {
+new Server({ hostKeys: [hostKey()] }, (c) => {
   c.on('authentication', (ctx) => ctx.accept());
   c.on('ready', () => c.on('session', (acc) => {
     const s = acc(); s.on('pty', (a) => a()); s.on('window-change', (a) => a && a());
