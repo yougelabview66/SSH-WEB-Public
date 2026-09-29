@@ -257,3 +257,4 @@ AUTH_PASSWORD=test npm start
 - tmux 开了鼠标时：直接拖动选中，**松开鼠标就自动复制**到电脑剪贴板（tmux 通过 OSC 52 把内容交给网页，不用再按 `Ctrl+C`，按了会变成中断）。如果没有复制，在目标主机执行 `tmux set -g set-clipboard on`
 - 其他开了鼠标的程序（vim、Claude Code 等）：按住 `Shift` 拖动由网页选中，再按 `Ctrl+C` 复制
 - 鼠标中键关闭标签
+- 切换标签：`Alt+1` ~ `Alt+9` 跳到第 N 个标签，`Alt+←` / `Alt+→` 切换到上一个 / 下一个（循环）
