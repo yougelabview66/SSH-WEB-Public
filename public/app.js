@@ -483,6 +483,7 @@
     if (obj.type === 'data' || obj.type === 'resize') s.inputAt = Date.now();
     if (obj.type === 'data') {
       s.alertAt = s.doneAt = 0;
+      s.dataAt = Date.now();
       if (s.scrollView) closeLocalScroll(s); // 打字 / 按键 = 回到实时画面
     }
     // 大段粘贴分块发送，避免单条消息超过服务端 1MB 上限导致连接被断开
@@ -1613,11 +1614,12 @@
     renderDeskTabs();
   }
 
-  // 屏幕上最后 12 行有字的内容：Claude Code 的选择框、API 报错都在最底部；
+  // 屏幕上最后 20 行有字的内容：Claude Code 的转圈状态行、选择框、API 报错都在最底部
+  // (下面还有输入框、自定义状态栏、tmux 状态栏，所以要看 20 行)；
   // 只看这一段，避免对话里早先的内容一直算数 (tmux 里屏幕是满的，普通 shell 内容可能只在上半部分)
   function screenTail(x) {
     const b = x.term.buffer.active, top = b.viewportY, out = [];
-    for (let y = top + x.term.rows - 1; y >= top && out.length < 12; y--) {
+    for (let y = top + x.term.rows - 1; y >= top && out.length < 20; y--) {
       const line = b.getLine(y)?.translateToString(true) || '';
       if (line.trim()) out.unshift(line);
     }
@@ -1628,6 +1630,10 @@
   // 报错 = 以 API Error 开头的行；普通的「⎿ Error: …」是工具调用失败，Claude 会自己处理，不算
   const CHOICE_RE = /^[\s│]*❯\s*\d+\.\s|^[\s│]*Do you want to |\[[Yy]\/[Nn]\]\s*$/m;
   const ERROR_RE = /^[\s│]*(⎿\s*)?API Error\b/m;
+  // Claude Code 自己的状态行：干活时「✻ Frosting… (13m 58s · ↓ 37k tokens)」(转圈符号 + 随机动词 + …)，
+  // 做完是「✻ Worked for 1m 2s」(固定的几个过去式动词)
+  const CLAUDE_RUN_RE = /^\s*[·✢✳✶✻✽*]\s+[A-Z][A-Za-z\u00c0-\u024f-]+…/m;
+  const CLAUDE_DONE_RE = /^\s*[·✢✳✶✻✽*]\s+(Baked|Brewed|Churned|Cogitated|Cooked|Crunched|Sautéed|Worked) for \d/m;
 
   // 运行中：最近 3 秒内持续有输出 (跨度超过 0.6 秒)；Claude Code 工作时的转圈动画会不停输出，
   // tmux 状态栏时钟之类的一次性刷新不算；只算提示音 0.5 秒之后的输出 (之前的是完成前的转圈)
@@ -1640,13 +1646,22 @@
   // 运行中 (黄色闪烁) / 待选择、报错 (红色) / 完成 (绿色) / 空闲 (灰色)
   // 完成 = 运行中停下来了，或收到提示音 (Claude Code 的「等你输入」提示音默认要闲置 60 秒才发)；
   // 之后往这个标签发了输入就回到空闲
+  // 先看 Claude Code 界面上的字 (最准)，不是 Claude Code 时再按输出节奏判断
   function tabState(x, now) {
     if (!x.sid) return ['未连接', 'off'];
+    const tail = screenTail(x);
+    if (CLAUDE_RUN_RE.test(tail)) { x.running = true; return ['运行中', 'run']; }
+    if (CHOICE_RE.test(tail)) { x.running = false; return ['待选择', 'bad']; }
+    if (ERROR_RE.test(tail)) { x.running = false; return ['报错', 'bad']; }
+    // 「Worked for …」出现后你还没往这个标签发过内容 = 完成；发过 = 已经看到了，算空闲
+    if (CLAUDE_DONE_RE.test(tail)) {
+      x.running = false;
+      if (!x.doneLineAt) x.doneLineAt = now;
+      return (x.dataAt || 0) > x.doneLineAt ? ['空闲', 'idle'] : ['完成', 'done'];
+    }
+    x.doneLineAt = 0;
     if (isRunning(x, now)) { x.running = true; return ['运行中', 'run']; }
     if (x.running) { x.running = false; x.doneAt = now; }
-    const tail = screenTail(x);
-    if (CHOICE_RE.test(tail)) return ['待选择', 'bad'];
-    if (ERROR_RE.test(tail)) return ['报错', 'bad'];
     if (x.alertAt || x.doneAt) return ['完成', 'done'];
     return ['空闲', 'idle'];
   }
