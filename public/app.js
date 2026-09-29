@@ -514,6 +514,7 @@
       if (s.ws !== ws) return;
       if (ev.data instanceof ArrayBuffer) {
         if (s.offset !== undefined) s.offset += ev.data.byteLength;
+        s.lastOut = Date.now();
         const replay = s.muteOsc52;
         s.term.write(new Uint8Array(ev.data), () => {
           if (replay) s.muteOsc52 = false;
@@ -565,6 +566,7 @@
         });
       } else if (m.type === 'bell') {
         if (s !== active || document.hidden) s.tab.classList.add('ring');
+        renderDeskTabs();
       } else if (m.type === 'prompt-done') {
         dismissDialog(s.id);
       } else if (m.type === 'error') {
@@ -1487,7 +1489,7 @@
     deskSpace.classList.toggle('hidden', !(shown && deskMode === 'lift'));
     if (!shown || deskMode === 'bottom') { deskBar.style.bottom = ''; return; }
     const px = deskLiftPx();
-    if (deskMode === 'lift') { deskSpace.style.height = px + 'px'; deskBar.style.bottom = ''; }
+    if (deskMode === 'lift') { deskSpace.style.height = px + 'px'; deskBar.style.bottom = ''; renderDeskPanel(); }
     else deskBar.style.bottom = px + 'px';
   }
 
@@ -1510,6 +1512,93 @@
     applyDeskPos();
     dInput.focus();
   });
+
+  // ------------------------------------------------------------ 抬高模式下方留白里的信息面板：收藏命令 + 各标签状态
+  let favLoaded = false, deskFavList = [], deskTabList = [];
+  const panelShown = () => !deskSpace.classList.contains('hidden');
+
+  async function loadDeskFavs() {
+    try { favItems = await api('GET', '/api/favorites'); favLoaded = true; renderDeskFavs(); } catch {}
+  }
+
+  function renderDeskPanel() {
+    if (!deskSpace.firstChild) {
+      deskSpace.innerHTML = `
+        <div class="dp-h">收藏命令 <span class="dp-tip">点一下执行</span><button class="link" data-a="favs">管理</button></div>
+        <div class="dp-favs"></div>
+        <div class="dp-h">标签状态</div>
+        <div class="dp-tabs"></div>`;
+    }
+    if (!favLoaded) loadDeskFavs();
+    renderDeskFavs();
+    renderDeskTabs();
+  }
+
+  // 收藏：所有主机通用的 + 当前主机专用的 (同历史面板)
+  function renderDeskFavs() {
+    const box = deskSpace.querySelector('.dp-favs');
+    if (!box || !panelShown()) return;
+    deskFavList = favItems.filter((f) => !f.host || (active && f.host === active.histHost));
+    box.innerHTML = deskFavList.length
+      ? deskFavList.map((f, i) => `<button data-i="${i}" title="${esc(f.cmd)}">${esc(f.cmd.split('\n')[0])}</button>`).join('')
+      : '<span class="dp-empty">还没有收藏的命令，点右上角「管理」添加</span>';
+  }
+
+  const agoText = (ms) => {
+    const sec = Math.floor(ms / 1000);
+    if (sec < 5) return '刚刚有输出';
+    if (sec < 60) return `${sec} 秒前有输出`;
+    if (sec < 3600) return `${Math.floor(sec / 60)} 分钟前有输出`;
+    return `${Math.floor(sec / 3600)} 小时前有输出`;
+  };
+
+  // 状态：后台收到提示音 = 等你处理 (Claude Code 要确认 / 做完了)；3 秒内有输出 = 运行中
+  function renderDeskTabs() {
+    const box = deskSpace.querySelector('.dp-tabs');
+    if (!box || !panelShown()) return;
+    deskTabList = tabOrder();
+    const now = Date.now();
+    const html = deskTabList.map((x, i) => {
+      let st, cls;
+      if (!x.sid) { st = '未连接'; cls = 'off'; }
+      else if (x.tab.classList.contains('ring')) { st = '🔔 等你处理'; cls = 'wait'; }
+      else if (now - (x.lastOut || 0) < 3000) { st = '运行中'; cls = 'run'; }
+      else { st = '空闲'; cls = 'idle'; }
+      return `<div class="dp-tab${x === active ? ' cur' : ''}" data-k="${i}">
+        <span class="${$('.dot', x.tab).className}"></span><span class="nm">${esc($('.title', x.tab).textContent)}</span>
+        <span class="stt ${cls}">${st}</span><span class="ago">${x.sid && x.lastOut ? agoText(now - x.lastOut) : ''}</span></div>`;
+    }).join('');
+    if (box.innerHTML !== html) box.innerHTML = html;
+  }
+  setInterval(renderDeskTabs, 1000);
+
+  // 点按钮不抢走输入框焦点；按下就切标签 (每秒会重画，不等 click)
+  deskSpace.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    const row = e.target.closest('.dp-tab');
+    if (e.target.closest('button') || row) e.preventDefault();
+    if (row) {
+      const x = deskTabList[+row.dataset.k];
+      if (x && x !== active) activate(x);
+    }
+  });
+  deskSpace.addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.a === 'favs') {
+      histTab = 'fav';
+      try { localStorage.setItem('sshweb.histTab', histTab); } catch {}
+      return openHistory();
+    }
+    const f = deskFavList[+b.dataset.i];
+    if (f && active?.sid) {
+      if (cmdMode) setCmdMode(false);
+      submitText(active, f.cmd);
+    }
+    dInput.focus();
+  });
+  // 其他设备可能改了收藏
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && panelShown()) loadDeskFavs(); });
 
   // 按住上下拖动的通用处理：onMove(鼠标相对按下时的位移 dy)，requestAnimationFrame 节流，松开后保存
   function dragY(e, onMove) {
@@ -1899,6 +1988,7 @@
 
   function closeHistory() {
     histPanel.classList.add('hidden');
+    renderDeskFavs(); // 收藏可能改过
     if (active) focusTerm(active);
   }
 
@@ -2818,6 +2908,9 @@
   tabsEl.addEventListener('touchmove', (e) => { if (drag && drag.started) e.preventDefault(); }, { passive: false });
   tabsEl.addEventListener('contextmenu', (e) => { if (e.target.closest('.tab')) e.preventDefault(); });
 
+  // 按界面上的顺序排列的标签
+  const tabOrder = () => [...tabsEl.querySelectorAll('.tab')].map((el) => sessions.find((x) => x.tab === el)).filter(Boolean);
+
   // ------------------------------------------------------------ 标签切换快捷键
   // Alt+1~9 跳到第 N 个标签，Alt+← / Alt+→ 上一个 / 下一个 (循环)；按界面上的标签顺序。
   // 捕获阶段处理，不再发给终端 / 输入框；Ctrl+Tab、Ctrl+数字会被浏览器占用，所以用 Alt
@@ -2826,7 +2919,7 @@
     const n = /^Digit([1-9])$/.exec(e.code);
     if (!n && e.code !== 'ArrowLeft' && e.code !== 'ArrowRight') return;
     if (document.querySelector('.overlay:not(.hidden)')) return; // 弹窗打开时不切换
-    const list = [...tabsEl.querySelectorAll('.tab')].map((el) => sessions.find((x) => x.tab === el)).filter(Boolean);
+    const list = tabOrder();
     if (!list.length) return;
     e.preventDefault();
     e.stopPropagation();
