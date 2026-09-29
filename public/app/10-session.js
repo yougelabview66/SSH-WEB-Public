@@ -266,7 +266,8 @@
         if (m.status === 'connected' && s === active) measureRtt(); // 连上就测，不等下一轮
         if (m.status === 'connected') {
           if (s.sftp && s.sftp.open) s.sftp.load(s.sftp.path);
-          if (active === s) focusTerm(s);
+          // 重新连接 SSH 时，服务端用它记着的最后一次尺寸开新 shell (可能是别的设备设的)：按这台设备的屏幕同步一次
+          if (active === s) { syncSize(s); focusTerm(s); }
         }
       } else if (m.type === 'hostkey') {
         activate(s);
