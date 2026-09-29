@@ -1,5 +1,5 @@
 'use strict';
-const { BASE, ok, wait, shot, launch, post, addHost, devices, hostKey } = require('./helpers');
+const { BASE, ok, wait, shot, launch, post, addHost, devices, hostKey, waitFor } = require('./helpers');
 const { Server, utils } = require('ssh2');
 let got = ''; let lastCols = 0;
 new Server({ hostKeys: [hostKey()] }, (c) => {
@@ -50,7 +50,7 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   ok(got === '\x1b[1;5C', '删掉 Shift 后 Ctrl 组合键仍正常');
   // 重新打开 (换设备) 仍保持
   const m2 = await (await browser.newContext({ ...devices['Pixel 7'] })).newPage(); m2.on('pageerror', (e) => errors.push(e.message));
-  await m2.goto(BASE + '/'); await m2.waitForFunction(() => document.querySelectorAll('.tab').length === 1);
+  await m2.goto(BASE + '/'); await waitFor(m2, () => document.querySelectorAll('.tab').length === 1);
   await wait(500);
   ok(JSON.stringify(await m2.locator('#mobileBar .mkeys button').allTextContents()) === JSON.stringify(now), '设置保存在服务端，另一台设备打开也一样');
   await m2.context().close();
@@ -79,7 +79,7 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   ok(await m.evaluate(() => parseInt(localStorage.getItem('sshweb.fontSize'), 10)) === 8, '最小限制 8');
   got = '';
   ok(got === '' && await m.isHidden('#copyPanel'), '捏合不会误触发长按复制 / 发送按键');
-  await m.reload(); await m.waitForFunction(() => document.querySelectorAll('.tab').length === 1); await wait(800);
+  await m.reload(); await waitFor(m, () => document.querySelectorAll('.tab').length === 1); await wait(800);
   ok((await m.textContent('#fontLabel')) === '8', '刷新后保持字体大小');
   await m.tap('#btnToggle'); await m.tap('#fontInc'); await m.tap('#fontInc');
   ok((await m.textContent('#fontLabel')) === '10', '侧边栏 A+ 调大字体');

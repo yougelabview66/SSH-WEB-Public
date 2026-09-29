@@ -206,7 +206,8 @@
     vv.addEventListener('resize', onVV);
     // 从后台回来 / 旋转屏幕：键盘可能在后台收起了，浏览器却没通知 (或报的是过时的高度)，
     // 主动重新算几次 (有的浏览器回到前台后过一会儿才更新可视区域)
-    const resync = () => { onVV(); setTimeout(onVV, 150); setTimeout(onVV, 500); };
+    // 最后按这台设备的尺寸同步一次：你回到这台设备上用了，排版就按它的
+    const resync = () => { onVV(); setTimeout(onVV, 150); setTimeout(() => { onVV(); if (active) syncSize(active); }, 500); };
     document.addEventListener('visibilitychange', () => { if (!document.hidden) resync(); });
     window.addEventListener('pageshow', resync);
     window.addEventListener('focus', resync);

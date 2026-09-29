@@ -31,6 +31,15 @@ function hostKey() {
   }
   throw new Error('生成主机密钥失败');
 }
+// 等页面满足某个条件：从测试这边反复读取 (page.waitForFunction 反复检查时要在页面里执行字符串代码，会被安全策略 CSP 拦住)
+async function waitFor(page, fn, arg, ms = 15000) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    if (await page.evaluate(fn, arg).catch(() => false)) return;
+    await wait(100);
+  }
+  throw new Error('等待超时: ' + fn.toString().slice(0, 80));
+}
 const run = (fn) => fn().then(() => process.exit()).catch((e) => { console.error('✘ 测试出错: ' + (e.stack || e)); process.exit(1); });
 
-module.exports = { BASE, ok, wait, shot, launch, post, addHost, run, hostKey, chromium, devices };
+module.exports = { BASE, ok, wait, shot, launch, post, addHost, run, hostKey, waitFor, chromium, devices };

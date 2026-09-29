@@ -107,7 +107,7 @@
     s.term.onResize(({ cols, rows }) => {
       predClear(s, false);
       if (s.pred) { s.pred.sure = false; s.pred.next = null; }
-      send(s, { type: 'resize', cols, rows });
+      send(s, { type: 'resize', cols, rows, claim: userHere() });
     });
     // 旧式鼠标编码 (X10 等) 的上报走 onBinary，需要按原始字节发送
     s.term.onBinary((data) => {
@@ -181,6 +181,10 @@
   // OSC 颜色查询的回答 (10/11/12/4 …)、DCS 回答 (XTGETTCAP 等)
   const TERM_REPLY_RE = /^(?:\x1b\[[?>]?[\d;]*c|\x1b\[\??[\d;]*[Rn]|\x1b\[\??[\d;]*\$y|\x1b\[[IO]|\x1b\][\d;]+[^\x07\x1b]*(?:\x07|\x1b\\)|\x1bP[^\x1b]*\x1b\\)+$/;
 
+  // 用户是不是正在这台设备上：页面在前台而且有焦点。只有这样发出的尺寸才会改变终端排版
+  // (别的设备正在用时，后台设备自动重连 / 恢复画面发出的尺寸服务端只记下来不生效)
+  const userHere = () => !document.hidden && document.hasFocus();
+
   function send(s, obj) {
     if (!s.ws || s.ws.readyState !== WebSocket.OPEN) return;
     if (obj.type === 'data' && s.scrollView) closeLocalScroll(s); // 打字 / 按键 = 回到实时画面
@@ -205,6 +209,7 @@
     ws.binaryType = 'arraybuffer';
     s.ws = ws;
     const size = s.box.clientWidth ? { cols: s.term.cols, rows: s.term.rows } : {};
+    size.claim = userHere();
 
     ws.onopen = () => {
       s.retries = 0;
@@ -338,7 +343,7 @@
   function syncSize(s) {
     if (!s.box.clientWidth) return;
     s.fit.fit();
-    send(s, { type: 'resize', cols: s.term.cols, rows: s.term.rows });
+    send(s, { type: 'resize', cols: s.term.cols, rows: s.term.rows, claim: userHere() });
   }
 
   function showReconnect(s, text) {

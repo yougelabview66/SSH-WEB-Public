@@ -936,6 +936,12 @@ class Session {
   detach(ws) {
     if (!this.clients.delete(ws)) return;
     if (!this.clients.size) this.detachedAt = Date.now();
+    // 使用者关掉了页面：换成还开着的设备 (优先正在看的) 的尺寸
+    if (this.owner === ws) {
+      const rest = [...this.clients].reverse();
+      this.owner = rest.find((c) => c.size && c.watching) || rest.find((c) => c.size) || null;
+      if (this.owner) this.applySize(this.owner.size.cols, this.owner.size.rows);
+    }
   }
 
   setStatus(status) {
@@ -946,8 +952,13 @@ class Session {
 
   // autoFrom：终端自动应答来自哪个浏览器 (不是用户打的字)。几台设备同时开着时每台都会回答同一个询问，
   // 0.5 秒内来自不同设备的相同应答只转发一次；自动应答不算输入，不影响主机状态
-  write(data, autoFrom) {
+  write(data, autoFrom, fromWs) {
     if (!this.stream) return;
+    // 有人在这台设备上打字：它就是使用者，按它的尺寸
+    if (fromWs && !autoFrom && this.owner !== fromWs && fromWs.size) {
+      this.owner = fromWs;
+      this.applySize(fromWs.size.cols, fromWs.size.rows);
+    }
     if (autoFrom) {
       const now = Date.now(), last = this.lastAuto;
       if (last && last.data === data && last.ws !== autoFrom && now - last.t < 500) return;
@@ -960,10 +971,23 @@ class Session {
     this.scheduleState();
   }
 
-  resize(cols, rows) {
+  // 终端尺寸听「正在用的设备」的：ws 是发来尺寸的浏览器，claim = 用户正在这台设备上 (页面在前台且有焦点)。
+  // 别的设备正在用时，后台设备自动发来的尺寸 (断线重连、恢复画面等) 只记下来不生效，免得把正在用的设备的排版改掉；
+  // 在一台设备上打字 (write) 也会让它成为使用者
+  resize(cols, rows, ws, claim = true) {
     cols = clampSize(cols, 0);
     rows = clampSize(rows, 0);
-    if (!cols || !rows || (cols === this.cols && rows === this.rows)) return;
+    if (!cols || !rows) return;
+    if (ws) {
+      ws.size = { cols, rows };
+      if (!claim && this.owner && this.owner !== ws && this.clients.has(this.owner)) return;
+      this.owner = ws;
+    }
+    this.applySize(cols, rows);
+  }
+
+  applySize(cols, rows) {
+    if (cols === this.cols && rows === this.rows) return;
     this.cols = cols;
     this.rows = rows;
     this.tracker.onInput(Date.now(), false); // 调整大小引起的重绘不算运行中
@@ -1382,6 +1406,8 @@ wss.on('connection', (ws, req) => {
         s.n = Math.min(maxN + 1, 999);
         sessions.set(s.id, s);
         s.attach(ws);
+        s.owner = ws; // 新建会话的设备就是使用者
+        if (s.cols && s.rows) ws.size = { cols: s.cols, rows: s.rows };
         s.connect();
         broadcastEvent({ type: 'session-created', session: s.info(), pageId: str(msg.pageId) });
         break;
@@ -1390,15 +1416,15 @@ wss.on('connection', (ws, req) => {
         if (sess) return;
         const s = sessions.get(String(msg.id));
         if (!s) return sendCtl({ type: 'gone' });
-        s.resize(msg.cols, msg.rows);
+        s.resize(msg.cols, msg.rows, ws, msg.claim !== false);
         s.attach(ws, msg.offset);
         break;
       }
       case 'data':
-        if (sess && typeof msg.data === 'string') sess.write(msg.data, msg.auto === true ? ws : null);
+        if (sess && typeof msg.data === 'string') sess.write(msg.data, msg.auto === true ? ws : null, ws);
         break;
       case 'resize':
-        if (sess) sess.resize(msg.cols, msg.rows);
+        if (sess) sess.resize(msg.cols, msg.rows, ws, msg.claim !== false);
         break;
       case 'reconnect':
         if (sess) sess.connect();
