@@ -312,6 +312,15 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 }
 
 /* 标签栏右侧按钮 */
+/* 延迟显示 */
+.lat { display: flex; align-items: center; gap: 4px; padding: 0 10px; flex-shrink: 0; white-space: nowrap; cursor: help;
+  font: 12px ui-monospace, Menlo, Consolas, monospace; color: var(--muted); border-left: 1px solid var(--border); }
+.lat b { font-weight: 600; }
+.lat b.g { color: var(--accent); }
+.lat b.y { color: var(--warn); }
+.lat b.r { color: var(--danger); }
+.lat .lat-s { display: none; }
+@media (max-width: 760px) { .lat .lat-l { display: none; } .lat .lat-s { display: inline; } .lat { padding: 0 6px; } }
 #btnMon, #btnInput { border: none; border-left: 1px solid var(--border); border-radius: 0; background: none;
   white-space: nowrap; flex-shrink: 0; }
 .tbtn.on { background: var(--bg); color: var(--accent); }

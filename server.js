@@ -842,6 +842,7 @@ class Session {
       ws.syncBuf = null;
       for (const b of buf) if (ws.readyState === ws.OPEN) ws.send(b, { binary: true });
       this.sendTo(ws, { type: 'status', status: this.status, sid: this.status === 'connected' ? this.id : null });
+      if (this.sshRtt !== undefined) this.sendTo(ws, { type: 'lat', ssh: this.sshRtt });
       if (this.pending) this.sendTo(ws, { type: this.pending.type, ...this.pending.payload });
     });
   }
@@ -907,8 +908,31 @@ class Session {
     }
   }
 
+  // 测到目标主机的 SSH 往返延迟：和 ssh2 自己的 keepalive 一样发一个 keepalive@openssh.com 全局请求，
+  // 等对方回复 (成功 / 失败都算)；回复按发出顺序对应 _callbacks，所以排在队尾即可
+  measureLatency() {
+    const ssh = this.ssh;
+    if (!ssh || this.status !== 'connected' || !this.clients.size || this.latPending) return;
+    if (!ssh._protocol || !Array.isArray(ssh._callbacks)) return;
+    this.latPending = true;
+    const t0 = performance.now();
+    try {
+      ssh._callbacks.push(() => {
+        if (this.ssh !== ssh) return;
+        this.latPending = false;
+        this.sshRtt = Math.round(performance.now() - t0);
+        this.broadcast({ type: 'lat', ssh: this.sshRtt });
+      });
+      ssh._protocol.ping();
+    } catch {
+      this.latPending = false;
+    }
+  }
+
   closeConn() {
     clearTimeout(this.timer);
+    this.latPending = false;
+    this.sshRtt = undefined;
     clearInterval(this.flowTimer);
     this.flowTimer = null;
     this.pending = null;
@@ -1254,8 +1278,8 @@ wss.on('connection', (ws, req) => {
       case 'hostkey-response':
         if (sess) sess.answer(msg);
         break;
-      case 'ping':
-        sendCtl({ type: 'pong' });
+      case 'ping': // 带时间戳的用来测网页 ↔ 服务端的往返延迟，原样带回
+        sendCtl(Number.isFinite(msg.t) ? { type: 'pong', t: msg.t } : { type: 'pong' });
         break;
       case 'events': // 页面的事件连接 (不挂载会话)
         if (!sess) eventSockets.add(ws);
@@ -1270,6 +1294,11 @@ wss.on('connection', (ws, req) => {
   ws.on('close', detach);
   ws.on('error', detach);
 });
+
+// 每 3 秒测一次有人在看的会话到目标主机的 SSH 往返延迟
+setInterval(() => {
+  for (const s of sessions.values()) s.measureLatency();
+}, 3000);
 
 // 清理长时间无人挂载的会话
 setInterval(() => {

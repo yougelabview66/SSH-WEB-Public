@@ -559,6 +559,7 @@
         if (m.status === 'closed') showReconnect(s, '重新连接');
         else hideReconnect(s);
         updateSftpBtn();
+        if (s === active) updateLat();
         if (m.status === 'connected') {
           if (s.sftp && s.sftp.open) s.sftp.load(s.sftp.path);
           if (active === s) focusTerm(s);
@@ -572,6 +573,11 @@
           if (answers === undefined) return; // 已在其他设备上回答
           send(s, answers ? { type: 'prompt-response', answers } : { type: 'prompt-response', cancel: true });
         });
+      } else if (m.type === 'pong') {
+        if (Number.isFinite(m.t)) { s.rtt = Math.round(performance.now() - m.t); if (s === active) updateLat(); }
+      } else if (m.type === 'lat') {
+        s.sshRtt = m.ssh;
+        if (s === active) updateLat();
       } else if (m.type === 'bell') {
         if (s !== active || document.hidden) s.tab.classList.add('ring');
         s.alertAt = Date.now();
@@ -786,6 +792,7 @@
     s.tab.classList.remove('ring');
     updateSftpBtn();
     updateMobileBar();
+    measureRtt();
     saveActive();
     reportWatching();
     document.title = active ? `${active.title} - SSH-WEB` : 'SSH-WEB';
@@ -958,6 +965,23 @@
   const joinPath = (dir, name) => (dir.endsWith('/') ? dir : dir + '/') + name;
   const parentPath = (p) => p.replace(/\/[^/]+\/?$/, '') || '/';
   const shellQuote = (x) => `'${x.replace(/'/g, `'\\''`)}'`;
+
+  // ------------------------------------------------------------ 延迟显示：网页 ↔ SSH-WEB、SSH-WEB ↔ 目标主机
+  // 打字、方向键、tmux 滚动都要等一个来回，看这两个数字就知道慢在哪一段
+  const latCls = (ms) => (ms < 80 ? 'g' : ms < 200 ? 'y' : 'r');
+  function updateLat() {
+    const el = $('#lat');
+    const s = active;
+    el.classList.toggle('hidden', !s);
+    if (!s) return;
+    const num = (ms) => (Number.isFinite(ms) && s.sid ? `<b class="${latCls(ms)}">${ms}</b>` : '<b>–</b>');
+    el.innerHTML = `<span class="lat-l">网页</span>${num(s.rtt)}<span class="lat-l"> · SSH</span><span class="lat-s">·</span>${num(s.sshRtt)}<span> ms</span>`;
+  }
+  function measureRtt() {
+    if (active && active.sid && !document.hidden) send(active, { type: 'ping', t: performance.now() });
+    updateLat();
+  }
+  setInterval(measureRtt, 3000);
 
   function updateSftpBtn() {
     $('#btnHistory').classList.toggle('hidden', !active);
