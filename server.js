@@ -933,7 +933,7 @@ class Session {
   }
 
   // 本地快速滚动：在目标主机上抓 tmux 当前 pane 的历史 (带颜色，折行合并)，浏览器在本地滚动查看，不用每滚一格等一个来回。
-  // 当前 pane：优先选终端大小和这个会话一样的 tmux 客户端，其次最近有操作的；没有 tmux 时 exit 3，
+  // 当前 pane：优先用 LC_SSHWEB 标记找到这个会话里的 tmux 客户端，找不到再选终端大小一样、最近有操作的；没有 tmux 时 exit 3，
   // pane 里是全屏程序时 exit 4、已在复制模式时 exit 5 (浏览器照旧把滚轮发给程序)
   captureTmux(ws, lines) {
     const reply = (obj) => this.sendTo(ws, { type: 'tmux-history', ...obj });
@@ -943,7 +943,13 @@ class Session {
     const script = [
       'PATH="$PATH:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"',
       'command -v tmux >/dev/null 2>&1 || exit 3',
-      `p=$(tmux list-clients -F '#{client_width}x#{client_height} #{client_activity} #{pane_id}' 2>/dev/null | awk '{ print ($1 == "${this.cols}x${this.rows}") ? 1 : 0, $2, $3 }' | sort -k1,1nr -k2,2nr | head -n 1 | cut -d' ' -f3)`,
+      // 先找环境变量里带 LC_SSHWEB=<这个会话> 的 tmux 客户端 (就是这个标签里启动的那个；Linux 读 /proc/<pid>/environ)
+      'p=',
+      `for c in $(tmux list-clients -F '#{client_pid}:#{pane_id}' 2>/dev/null); do`,
+      `  if tr '\\0' '\\n' < "/proc/\${c%%:*}/environ" 2>/dev/null | grep -qx 'LC_SSHWEB=${this.id}'; then p="\${c#*:}"; break; fi`,
+      'done',
+      // 找不到 (sshd 不接受 LC_* 环境变量、不是 Linux)：按终端大小一样、最近有操作的客户端猜
+      `[ -n "$p" ] || p=$(tmux list-clients -F '#{client_width}x#{client_height} #{client_activity} #{pane_id}' 2>/dev/null | awk '{ print ($1 == "${this.cols}x${this.rows}") ? 1 : 0, $2, $3 }' | sort -k1,1nr -k2,2nr | head -n 1 | cut -d' ' -f3)`,
       '[ -n "$p" ] || exit 3',
       // 已在 tmux 复制模式 (exit 5)、pane 里是 vim / less 等全屏程序 (exit 4)：滚轮交给它们，不抓历史
       `m=$(tmux display -p -t "$p" '#{alternate_on}#{pane_in_mode}')`,
@@ -1111,7 +1117,9 @@ class Session {
       if (!alive()) return;
       clearTimeout(this.timer);
       console.log(`[${new Date().toISOString()}] ${this.clientIp} -> ${cfg.username}@${target} 已连接`);
-      ssh.shell({ term: 'xterm-256color', cols: this.cols, rows: this.rows }, (err, stream) => {
+      // LC_SSHWEB：给这个会话的 shell 做个标记，在里面启动的 tmux 客户端会继承，本地快速滚动靠它精确找到对应的 pane
+      // (sshd 默认 AcceptEnv LANG LC_*；不接受时忽略，退回按终端大小猜)
+      ssh.shell({ term: 'xterm-256color', cols: this.cols, rows: this.rows }, { env: { LC_SSHWEB: this.id } }, (err, stream) => {
         if (!alive()) return;
         if (err) return this.fail('打开 Shell 失败: ' + err.message);
         this.stream = stream;
