@@ -585,9 +585,9 @@
       } else if (m.type === 'tmux-history') {
         onTmuxHistory(s, m);
       } else if (m.type === 'pong') {
-        if (Number.isFinite(m.t)) { s.rtt = Math.round(performance.now() - m.t); if (s === active) updateLat(); }
+        if (Number.isFinite(m.t)) { s.rtt = latSample(s, 'web', Math.round(performance.now() - m.t)); if (s === active) updateLat(); }
       } else if (m.type === 'lat') {
-        s.sshRtt = m.ssh;
+        s.sshRtt = latSample(s, 'ssh', m.ssh);
         if (s === active) updateLat();
       } else if (m.type === 'bell') {
         if (s !== active || document.hidden) s.tab.classList.add('ring');
@@ -981,16 +981,29 @@
   // 打字、方向键、tmux 滚动都要等一个来回，看这两个数字就知道慢在哪一段
   const latCls = (ms) => (ms < 80 ? 'g' : ms < 200 ? 'y' : 'r');
   const latEl = $('#lat'), latPop = $('#latPop');
+  // 每段保留最近 3 次测量，显示中间值：刚打开页面时浏览器忙、偶尔一次网络抖动造成的尖峰不会显示出来
+  function latSample(s, k, ms) {
+    const a = ((s.latN ||= {})[k] ||= []);
+    a.push(ms);
+    if (a.length > 3) a.shift();
+    const sorted = [...a].sort((x, y) => x - y);
+    return sorted[Math.floor((sorted.length - 1) / 2)];
+  }
   const latOk = (s, ms) => s.sid && Number.isFinite(ms);
 
-  // 标签栏两个信号图标：左网页、右 SSH，各按自己的延迟着色 (三格绿 / 两格黄 / 一格红，还没测到是灰色)
+  // 标签栏的信号：像苹果双卡一样上下两排，上排网页、下排 SSH
   function updateLat() {
     const s = active;
     latEl.classList.toggle('hidden', !s);
     if (!s) return closeLatPop();
-    const q = (ms) => (latOk(s, ms) ? latCls(ms) : 'na');
-    latEl.querySelector('[data-k=web]').dataset.q = q(s.rtt);
-    latEl.querySelector('[data-k=ssh]').dataset.q = q(s.sshRtt);
+    // 4 格：< 80ms 四格绿、< 140ms 三格黄、< 200ms 两格黄、更慢一格红；没测到全灰
+    const set = (k, ms) => {
+      const el = latEl.querySelector(`[data-k=${k}]`), okv = latOk(s, ms);
+      el.dataset.q = okv ? latCls(ms) : 'na';
+      el.dataset.n = !okv ? 0 : ms < 80 ? 4 : ms < 140 ? 3 : ms < 200 ? 2 : 1;
+    };
+    set('web', s.rtt);
+    set('ssh', s.sshRtt);
     if (!latPop.classList.contains('hidden')) renderLatPop();
   }
 
@@ -1003,7 +1016,7 @@
       <div class="lp-sub">浏览器 ↔ SSH-WEB（经过 Cloudflare 隧道 / 你的网络）</div>
       <div class="lp-row"><span>SSH</span>${num(s.sshRtt)}</div>
       <div class="lp-sub">SSH-WEB ↔ 目标主机</div>
-      <div class="lp-tip">打字、方向键都要等一个来回。<br>绿 &lt; 80ms，黄 &lt; 200ms，红更慢</div>`;
+      <div class="lp-tip">显示最近 3 次测量的中间值。打字、方向键都要等一个来回。<br>绿 &lt; 80ms，黄 &lt; 200ms，红更慢</div>`;
     const r = latEl.getBoundingClientRect();
     latPop.style.top = r.bottom + 6 + 'px';
     latPop.style.right = Math.max(8, window.innerWidth - r.right) + 'px';
@@ -1041,8 +1054,8 @@
     updateLat();
   }
   setInterval(() => {
-    // 打开详情卡片、或者还有一段没测到 (刚连上) 时 2 秒一次，其余 10 秒一次
-    const pending = active && active.sid && !(Number.isFinite(active.rtt) && Number.isFinite(active.sshRtt));
+    // 打开详情卡片、或者刚连上还没攒够 3 次测量时 2 秒一次，其余 10 秒一次
+    const pending = active && active.sid && !((active.latN?.web || []).length >= 3 && (active.latN?.ssh || []).length >= 3);
     const gap = latPop.classList.contains('hidden') && !pending ? 10000 : 2000;
     if (performance.now() - rttAt >= gap - 50) measureRtt();
   }, 1000);
