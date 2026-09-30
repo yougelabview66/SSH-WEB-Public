@@ -66,12 +66,25 @@ const B = BASE;
   ok(Math.abs(b4.right - saved.right) <= 2 && Math.abs(b4.top - saved.top) <= 2 && await p.evaluate(() => document.getElementById('hostFloat').classList.contains('min')), '刷新后位置和收起状态都保持');
   await p.click('#hostFloat [data-a=min]'); await wait(500);
   ok(await p.isVisible('#hostFloat .dp-tabs'), '再点一次展开');
-  // 抬高模式：悬浮窗隐藏，状态显示在留白里；浮动模式：悬浮窗显示
+  // 标题栏按钮靠右，「–」和第一行最右边的卡片对齐
+  const al0 = await p.evaluate(() => { const f = document.getElementById('hostFloat'), cs = [...f.querySelectorAll('.dp-tab')];
+    const top = cs[0].offsetTop, right = Math.max(...cs.filter((c) => c.offsetTop === top).map((c) => c.getBoundingClientRect().right));
+    return { min: f.querySelector('[data-a=min]').getBoundingClientRect().right, right }; });
+  ok(Math.abs(al0.min - al0.right) <= 1, '悬浮窗「–」的右边和第一行最右边的卡片对齐: ' + JSON.stringify(al0));
+  // 悬浮窗和输入框模式无关：抬高 / 浮动模式都显示
   await p.click('#dMode'); await wait(500);
-  ok(await p.isHidden('#hostFloat') && await p.isVisible('#deskSpace .dp-tabs'), '抬高模式：悬浮窗隐藏，主机状态在下方留白里');
+  ok(await p.isVisible('#hostFloat') && await p.isVisible('#deskSpace .dp-tabs'), '抬高模式：悬浮窗照样显示');
   await p.click('#dMode'); await wait(500);
   ok(await p.isVisible('#hostFloat'), '浮动模式：悬浮窗显示');
   await p.click('#dMode'); await wait(300);
+  // 顶部「🗔 状态」开关
+  ok(await p.isVisible('#btnFloat') && await p.evaluate(() => document.getElementById('btnFloat').classList.contains('on')), '顶部有「🗔 状态」按钮，默认打开 (高亮)');
+  await p.click('#btnFloat'); await wait(300);
+  ok(await p.isHidden('#hostFloat') && !await p.evaluate(() => document.getElementById('btnFloat').classList.contains('on')), '点「🗔 状态」关掉悬浮窗');
+  await p.reload(); await p.waitForSelector('.tab'); await wait(1500);
+  ok(await p.isHidden('#hostFloat'), '刷新后保持关闭');
+  await p.click('#btnFloat'); await wait(300);
+  ok(await p.isVisible('#hostFloat'), '再点一次打开');
   // 置顶到桌面 (文档画中画)
   const hasPip = await p.evaluate(() => 'documentPictureInPicture' in window);
   if (hasPip) {
@@ -91,6 +104,10 @@ const B = BASE;
     ok(await p.evaluate(() => !!window.documentPictureInPicture.window) && await p.evaluate(() => document.querySelector('.tab.active .title').textContent) === 'HF-1', '点小窗口里的卡片切到那个标签，小窗口继续留着');
     await p.evaluate(() => window.documentPictureInPicture.window?.close()); await wait(800);
     ok(await p.isVisible('#hostFloat'), '关掉置顶窗口后，网页里的悬浮窗重新出现');
+    await p.click('#hostFloat [data-a=pip]'); await wait(1200);
+    await p.click('#btnFloat'); await wait(800);
+    ok(await p.evaluate(() => !window.documentPictureInPicture.window) && await p.isHidden('#hostFloat'), '置顶窗口开着时点「🗔 状态」：小窗口也一起关掉');
+    await p.click('#btnFloat'); await wait(300);
     // 自动钉住
     await p.click('#hostFloat [data-a=auto]'); await wait(1200);
     ok(await p.evaluate(() => document.querySelector('#hostFloat [data-a=auto]').classList.contains('on')) && await p.evaluate(() => !!window.documentPictureInPicture.window), '打开「自动」：按钮高亮，并马上钉住');

@@ -31,6 +31,7 @@
     }).join('');
     for (const box of boxes) if (box.innerHTML !== html) box.innerHTML = html;
     alignPipBack();
+    alignHfHead();
     // 悬浮窗收起时，标题栏上用小圆点显示每个标签的状态
     const sum = states.map(([st, cls], i) => `<i class="hf-d ${cls}" title="${esc($('.title', deskTabList[i].tab).textContent)}：${st}"></i>`).join('');
     if (hfSum.innerHTML !== sum) hfSum.innerHTML = sum;
@@ -49,13 +50,21 @@
   deskSpace.addEventListener('mousedown', onStatusDown);
 
   // ------------------------------------------------------------ 电脑：主机状态悬浮窗
-  // 输入框不是「抬高」模式时显示在终端上，按住标题栏拖动，位置 / 收起状态每台电脑各自记住；
+  // 顶部「🗔 状态」开关，显示在终端上 (和输入框模式无关)，按住标题栏拖动，开关 / 位置 / 收起状态每台电脑各自记住；
   // 📌 置顶到桌面：浏览器的文档画中画 (Chrome / Edge 116+)，浏览器最小化后也浮在最上面
   const hostFloat = $('#hostFloat'), hfTabs = $('#hostFloat .dp-tabs'), hfSum = $('#hostFloat .hf-sum');
   let pipWin = null;
   const hfPos = (() => { try { return JSON.parse(localStorage.getItem('sshweb.hostFloat')) || {}; } catch { return {}; } })();
   const saveHf = () => { try { localStorage.setItem('sshweb.hostFloat', JSON.stringify(hfPos)); } catch {} };
   if (hfPos.min) hostFloat.classList.add('min');
+  let hfOn = (() => { try { return localStorage.getItem('sshweb.hfOn') !== '0'; } catch { return true; } })();
+  const btnFloat = $('#btnFloat');
+  btnFloat.addEventListener('click', () => {
+    hfOn = !hfOn;
+    try { localStorage.setItem('sshweb.hfOn', hfOn ? '1' : '0'); } catch {}
+    if (!hfOn && pipWin) pipWin.close(); // 关掉时置顶小窗口也一起关
+    updateHostFloat();
+  });
   const pipOk = 'documentPictureInPicture' in window;
   if (!pipOk) { hostFloat.querySelector('[data-a=pip]').remove(); hostFloat.querySelector('[data-a=auto]').remove(); }
   // 自动钉住：浏览器规定置顶窗口只能在用户点击 / 按键时打开，所以在打开网页后的第一次操作时顺手打开；
@@ -66,7 +75,7 @@
   autoBtn?.classList.toggle('on', autoPin);
   const tryAutoPin = (e) => {
     if (e.type === 'keydown' && (e.key === 'Escape' || e.repeat)) return; // 浏览器不把 Esc 算作用户操作，打不开
-    if (autoPin && pipOk && !pipWin && !pipClosedByUser && !isTouch && active) openStatusPip(true);
+    if (autoPin && hfOn && pipOk && !pipWin && !pipClosedByUser && !isTouch && active) openStatusPip(true);
   };
   window.addEventListener('pointerdown', tryAutoPin, true);
   window.addEventListener('keydown', tryAutoPin, true);
@@ -84,7 +93,9 @@
   }
 
   function updateHostFloat() {
-    const show = !isTouch && !!active && deskMode !== 'lift' && !pipWin;
+    btnFloat.classList.toggle('hidden', !(!isTouch && active));
+    btnFloat.classList.toggle('on', hfOn);
+    const show = !isTouch && !!active && hfOn && !pipWin;
     const was = !hostFloat.classList.contains('hidden');
     hostFloat.classList.toggle('hidden', !show);
     if (show) {
@@ -92,7 +103,7 @@
       placeHostFloat();
     }
   }
-  new ResizeObserver(() => { if (!hostFloat.classList.contains('hidden')) placeHostFloat(); }).observe(hostFloat.parentElement);
+  new ResizeObserver(() => { if (!hostFloat.classList.contains('hidden')) { alignHfHead(); placeHostFloat(); } }).observe(hostFloat.parentElement);
 
   hostFloat.addEventListener('mousedown', onStatusDown);
   hostFloat.querySelector('.hf-head').addEventListener('pointerdown', (e) => {
@@ -182,17 +193,34 @@
     updateHostFloat();
     renderDeskTabs();
   }
-  // 「↩ 网页」的右边和第一行最右边的卡片对齐 (卡片自动换行，第一行通常到不了窗口右边)
-  function alignPipBack() {
-    if (!pipWin) return;
-    const d = pipWin.document, head = d.querySelector('.pip-head'), box = d.querySelector('.dp-tabs');
-    const cards = box && box.children;
-    if (!head || !cards || !cards.length) return;
+  // 标题栏最右边的按钮和第一行最右边的卡片右边对齐 (卡片自动换行，第一行通常到不了最右边)：
+  // 置顶小窗口的「↩ 网页」、网页里悬浮窗的「–」
+  function firstRowGap(box) {
+    const cards = box.children;
+    if (!cards.length) return 0;
     const top = cards[0].offsetTop;
     let right = 0;
     for (const c of cards) if (c.offsetTop === top) right = Math.max(right, c.getBoundingClientRect().right);
-    const pad = Math.max(0, Math.round(box.getBoundingClientRect().right - right)) + 'px';
+    return Math.max(0, Math.round(box.getBoundingClientRect().right - right));
+  }
+  function alignPipBack() {
+    if (!pipWin) return;
+    const d = pipWin.document, head = d.querySelector('.pip-head'), box = d.querySelector('.dp-tabs');
+    if (!head || !box) return;
+    const pad = firstRowGap(box) + 'px';
     if (head.style.paddingRight !== pad) head.style.paddingRight = pad;
+  }
+  function alignHfHead() {
+    const head = hostFloat.querySelector('.hf-head');
+    head.style.paddingRight = '';
+    if (hostFloat.classList.contains('hidden') || hostFloat.classList.contains('min')) return;
+    // 悬浮窗宽度按内容撑开：卡片撑的宽度才对齐；只有一两张卡片时宽度由标题栏撑，加宽标题栏只会把整个窗口撑宽，保持原样
+    const w0 = hostFloat.offsetWidth;
+    const base = parseFloat(getComputedStyle(head).paddingRight);
+    const pad = firstRowGap(hfTabs);
+    if (pad <= base) return;
+    head.style.paddingRight = pad + 'px';
+    if (hostFloat.offsetWidth > w0) head.style.paddingRight = '';
   }
   function syncPipTheme() {
     if (!pipWin) return;

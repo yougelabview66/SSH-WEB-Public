@@ -272,6 +272,7 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 .hf-head { display: flex; align-items: center; gap: 6px; padding: 4px 4px 4px 10px; cursor: move; user-select: none;
   -webkit-user-select: none; touch-action: none; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--border); }
 .hf-head .hf-title { font-weight: 600; white-space: nowrap; }
+.hf-head button:first-of-type { margin-left: auto; }
 .hf-head button { border: none; background: none; padding: 2px 6px; font-size: 13px; line-height: 1; color: var(--muted); cursor: pointer; }
 .hf-head button:hover { color: var(--text); background: var(--panel2); }
 .hf-head .hf-auto { font-size: 11px; padding: 2px 6px; border-radius: 8px; }
@@ -370,7 +371,7 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 .lp-row b.r { color: var(--danger); }
 .lp-sub { margin: 2px 0 8px; font-size: 12px; color: var(--muted); }
 .lp-tip { padding-top: 6px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); line-height: 1.5; }
-#btnMon, #btnInput { border: none; border-left: 1px solid var(--border); border-radius: 0; background: none;
+#btnMon, #btnInput, #btnFloat { border: none; border-left: 1px solid var(--border); border-radius: 0; background: none;
   white-space: nowrap; flex-shrink: 0; }
 .tbtn.on { background: var(--bg); color: var(--accent); }
 @media (max-width: 760px) { .tbtn .lbl { display: none; } .tbtn { padding: 6px 10px; } }
