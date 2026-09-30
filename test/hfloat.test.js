@@ -77,10 +77,10 @@ const B = BASE;
   await p.click('#dMode'); await wait(500);
   ok(await p.isVisible('#hostFloat'), '浮动模式：悬浮窗显示');
   await p.click('#dMode'); await wait(300);
-  // 顶部「🗔 状态」开关
-  ok(await p.isVisible('#btnFloat') && await p.evaluate(() => document.getElementById('btnFloat').classList.contains('on')), '顶部有「🗔 状态」按钮，默认打开 (高亮)');
+  // 顶部「🚦 状态」开关
+  ok(await p.isVisible('#btnFloat') && await p.evaluate(() => document.getElementById('btnFloat').classList.contains('on')), '顶部有「🚦 状态」按钮，默认打开 (高亮)');
   await p.click('#btnFloat'); await wait(300);
-  ok(await p.isHidden('#hostFloat') && !await p.evaluate(() => document.getElementById('btnFloat').classList.contains('on')), '点「🗔 状态」关掉悬浮窗');
+  ok(await p.isHidden('#hostFloat') && !await p.evaluate(() => document.getElementById('btnFloat').classList.contains('on')), '点「🚦 状态」关掉悬浮窗');
   await p.reload(); await p.waitForSelector('.tab'); await wait(1500);
   ok(await p.isHidden('#hostFloat'), '刷新后保持关闭');
   await p.click('#btnFloat'); await wait(300);
@@ -106,7 +106,7 @@ const B = BASE;
     ok(await p.isVisible('#hostFloat'), '关掉置顶窗口后，网页里的悬浮窗重新出现');
     await p.click('#hostFloat [data-a=pip]'); await wait(1200);
     await p.click('#btnFloat'); await wait(800);
-    ok(await p.evaluate(() => !window.documentPictureInPicture.window) && await p.isHidden('#hostFloat'), '置顶窗口开着时点「🗔 状态」：小窗口也一起关掉');
+    ok(await p.evaluate(() => !window.documentPictureInPicture.window) && await p.isHidden('#hostFloat'), '置顶窗口开着时点「🚦 状态」：小窗口也一起关掉');
     await p.click('#btnFloat'); await wait(300);
     // 自动钉住
     await p.click('#hostFloat [data-a=auto]'); await wait(1200);

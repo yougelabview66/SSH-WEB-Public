@@ -50,7 +50,7 @@
   deskSpace.addEventListener('mousedown', onStatusDown);
 
   // ------------------------------------------------------------ 电脑：主机状态悬浮窗
-  // 顶部「🗔 状态」开关，显示在终端上 (和输入框模式无关)，按住标题栏拖动，开关 / 位置 / 收起状态每台电脑各自记住；
+  // 顶部「🚦 状态」开关，显示在终端上 (和输入框模式无关)，按住标题栏拖动，开关 / 位置 / 收起状态每台电脑各自记住；
   // 📌 置顶到桌面：浏览器的文档画中画 (Chrome / Edge 116+)，浏览器最小化后也浮在最上面
   const hostFloat = $('#hostFloat'), hfTabs = $('#hostFloat .dp-tabs'), hfSum = $('#hostFloat .hf-sum');
   let pipWin = null;
