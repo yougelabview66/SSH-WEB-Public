@@ -112,14 +112,20 @@
 
   // ------------------------------------------------------------ 完成通知 (Web Push)
   // 告诉服务端哪个标签正被看着：正在看的标签响铃时不推送
-  // watching：正在看这个标签 (终端按正在用的设备排版)；front：网页在前台 (没最小化、浏览器是当前窗口)，
-  // 这时哪个标签都不推送通知 (右上角悬浮窗看得到状态)，最小化 / 切到别的窗口才推送
+  // watching：正在看这个标签 (终端按正在用的设备排版)；front：网页在前台 (没最小化、浏览器是当前窗口、
+  // 5 分钟内动过鼠标 / 键盘)，这时哪个标签都不推送通知 (右上角悬浮窗看得到状态)；
+  // 最小化 / 切到别的窗口 / 人离开了 (5 分钟没操作) 才推送
+  const IDLE_MS = 5 * 60 * 1000;
+  let lastAct = Date.now(), idle = false;
   function reportWatching() {
-    const front = !document.hidden && document.hasFocus();
+    const front = !document.hidden && document.hasFocus() && !idle;
     for (const x of sessions) send(x, { type: 'watching', watching: !document.hidden && x === active, front });
   }
   window.addEventListener('focus', reportWatching);
   window.addEventListener('blur', reportWatching);
+  const onAct = () => { lastAct = Date.now(); if (idle) { idle = false; reportWatching(); } };
+  for (const ev of ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart']) window.addEventListener(ev, onAct, { capture: true, passive: true });
+  setInterval(() => { if (!idle && Date.now() - lastAct > IDLE_MS) { idle = true; reportWatching(); } }, 15000);
   document.addEventListener('visibilitychange', () => {
     reportWatching();
     sessions.forEach(syncMonitor); // 页面不可见时暂停性能监控采集
