@@ -17,7 +17,7 @@ function claudeServer(port, plain, mouse) {
         const st = a();
         if (!plain && !mouse) ccStream = st;
         if (plain) { st.write('$ ls\r\nfile1  file2\r\n$ '); st.on('data', (d) => { got += d; }); return; }
-        let cur = '', pastes = 0;
+        let cur = '', pastes = 0; const hist = [];
         const wrap = (t) => {
           const lines = [];
           for (const para of t.split('\n')) {
@@ -31,19 +31,24 @@ function claudeServer(port, plain, mouse) {
         };
         const draw = () => {
           const rule = '─'.repeat(W);
-          const body = cur ? wrap(cur).map((l, i) => (i ? '  ' : '❯ ') + l) : ['❯ \x1b[7mT\x1b[27m\x1b[2mry "fix lint errors"\x1b[22m'];
-          st.write('\x1b[3;1H\x1b[J' + rule + '\r\n' + body.join('\r\n') + '\r\n' + rule + '\r\n  ⏵⏵ auto mode on (shift+tab to cycle)');
+          // 和真实界面一样：上面的横线右边带会话名称；空输入框显示暗灰色的推荐文字
+          const body = cur ? wrap(cur).map((l, i) => (i ? '  ' : '❯ ') + l) : ['\x1b[1m❯\x1b[22m \x1b[2m用第二个办法，你自己开一个观察\x1b[22m'];
+          st.write('\x1b[3;1H\x1b[J' + rule + ' 会话名称 ─\r\n' + body.join('\r\n') + '\r\n' + rule + '\r\n  ⏵⏵ auto mode on (shift+tab to cycle)');
         };
         // mouse：像开了鼠标的 tmux，点终端会收到鼠标报告 (sgr = ESC[<0;x;yM，x10 = 老式 ESC[M + 3 字节)
         st.write('\x1b[?1049h\x1b[?2004h' + (mouse ? '\x1b[?1000h' + (mouse === 'sgr' ? '\x1b[?1006h' : '') : '') + '\x1b[H\x1b[2J● 之前的回答内容\r\n');
         draw();
         st.on('data', (d) => {
           const k = String(d); got += k;
-          if (k === '\x0c') cur = '';
+          if (k === '\r') { if (cur) hist.push(cur); cur = ''; }
+          else if (k === '\x1b[A' || k === '\x1bOA') cur = hist.at(-1) || cur; // ↑ 翻出上一条
+          else if (k === '\x0c' || k === '\x15' || k === '\x03') cur = '';
+          else if (k === '\x7f') cur = cur.slice(0, -1);
+          else if (k === '\x17') cur = cur.replace(/\S+\s*$/, ''); // Ctrl+W 删一个词
           else if (k.startsWith('\x1b[200~')) {
             const t = k.slice(6, -6);
             cur += t.includes('\r') ? `[Pasted text #${++pastes} +${t.split('\r').length} lines]` : t;
-          } else if (!k.startsWith('\x1b') && k >= ' ') cur += k;
+          } else if (!k.startsWith('\x1b') && k >= ' ' && k !== '\x7f') cur += k;
           else return;
           draw();
         });
@@ -99,6 +104,13 @@ claudeServer(2253); claudeServer(2254, true); claudeServer(2256, false, 'sgr'); 
   ok(await inTerm(), '按 ↑ 翻出历史 (输入框里有了字)：点终端留在终端');
   await typeInTerm(['Control+c']); await clickRow(3);
   ok(await inDesk(), 'Ctrl+C 后：点终端回到下方输入框');
+  // 打了字再用 Ctrl+W 删光 (记忆数不准，还以为有字)：屏幕上输入框只剩暗灰色的推荐文字 → 回到下方输入框
+  await typeInTerm(['h', 'e', 'l', 'l', 'o', ' ', 'y', 'o', 'u']); await clickRow(3);
+  ok(await inTerm(), '打了 hello you：点输入框留在终端');
+  await typeInTerm(['Control+w', 'Control+w']); await clickRow(3);
+  ok(await inDesk(), 'Ctrl+W 删光后输入框出现暗灰色推荐文字：点它回到下方输入框 (推荐文字不当成字)');
+  await clickRow(3); await clickRow(0);
+  ok(await inDesk(), '之后再点也回到下方输入框 (记忆已作废)');
   // Claude Code 自己在输入框里显示推荐提示词 (正常颜色)，你没打过字：点它回到下方输入框
   ccStream.write('\x1b[4;1H\x1b[K❯ 帮我运行一下测试  → to accept');
   await wait(300); await clickRow(3);

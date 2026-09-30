@@ -97,9 +97,15 @@
       s.box.addEventListener('click', () => { if (s.longPressed) { s.longPressed = false; return; } mInput.focus(); });
     } else {
       // 电脑：下方输入框开着时，点终端后光标回到下方输入框；点击本身照常交给 tmux / Claude Code。
-      // 不抢的情况：选中了文字 (方便复制)、连按两下 Alt 进终端直接打字、在终端的输入框里打过字还没发送 (想改里面的内容，见 trackCliInput)
+      // 不抢的情况：选中了文字 (方便复制)、连按两下 Alt 进终端直接打字、
+      // 在终端的输入框里打过字还没发送 (见 trackCliInput) 而且屏幕上 Claude Code 的输入框里确实还有字 (想改里面的内容)
       s.box.addEventListener('click', (e) => {
-        if (e.button !== 0 || !deskOn || termDirect || s.cliChars > 0 || s.term.hasSelection() || e.target.closest('button, .lscroll')) return;
+        if (e.button !== 0 || !deskOn || termDirect || s.term.hasSelection() || e.target.closest('button, .lscroll')) return;
+        if (s.cliChars > 0) {
+          const box = claudeInputBox(s);
+          if (!box || box.hasText) return; // 认不出 Claude Code 输入框 (普通命令行) 就只看记忆
+          s.cliChars = 0; // 屏幕上输入框已经空了 (删光了，只剩暗灰色的推荐 / 提示文字)：记忆作废
+        }
         dInput.focus({ preventScroll: true });
       });
     }
