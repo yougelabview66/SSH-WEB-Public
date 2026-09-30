@@ -2,6 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
+  <meta name="sshweb-version" content="{{VERSION}}">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, interactive-widget=resizes-content">
   <title>SSH-WEB</title>
   <meta name="theme-color" content="#111827">
@@ -71,7 +72,7 @@
           <button id="btnKnown" class="link">已信任的主机指纹</button>
           <button id="btnLogout" class="link hidden">退出登录</button>
         </div>
-        <span class="ver">SSH-WEB v{{VERSION}}</span>
+        <span class="ver" title="网页的版本">SSH-WEB v{{VERSION}}</span>
       </div>
     </aside>
 
@@ -138,6 +139,8 @@
 
   <!-- 延迟详情 (点标签栏的信号图标) -->
   <div id="latPop" class="hidden"></div>
+  <!-- 服务器版本和这个网页不一样 (服务器更新了，网页还没刷新) -->
+  <div id="verBar" class="hidden" role="status"><span class="vb-text"></span><button class="primary vb-reload">刷新页面</button><button class="vb-close" title="这个版本不再提醒">×</button></div>
   <!-- 全部标签 (标签多到放不下时，点标签栏的 ▾) -->
   <div id="tabListPop" class="hidden"></div>
 

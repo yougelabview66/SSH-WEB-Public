@@ -22,7 +22,8 @@
       let m;
       try { m = JSON.parse(ev.data); } catch { return; }
       if (m.pageId === pageId) return;
-      if (m.type === 'session-created') addRemoteTab(m.session);
+      if (m.type === 'version') checkVersion(m.version);
+      else if (m.type === 'session-created') addRemoteTab(m.session);
       else if (m.type === 'order') applyTabOrder(m.ids);
     };
     ws.onclose = () => {
@@ -31,6 +32,25 @@
       eventsTimer = setTimeout(startEvents, Math.min(1000 * 2 ** eventsRetry++, 10000));
     };
   }
+
+  // 服务器版本和这个网页不一样 (服务器更新重启了，网页还是旧的)：顶部提醒刷新，侧边栏的版本号变红；
+  // 不自动刷新 (可能正在打字)；点 × 后同一个新版本不再提醒
+  const PAGE_VERSION = document.querySelector('meta[name=sshweb-version]')?.content || '';
+  const verBar = $('#verBar'), verEl = $('.sidebar-foot .ver');
+  let verDismissed = '';
+  function checkVersion(v) {
+    if (!v || !PAGE_VERSION) return;
+    const old = v !== PAGE_VERSION;
+    verEl.classList.toggle('old', old);
+    verEl.textContent = old ? `SSH-WEB v${PAGE_VERSION} → v${v}` : `SSH-WEB v${PAGE_VERSION}`;
+    verEl.title = old ? `服务器已经是 v${v}，点击刷新页面` : '网页的版本';
+    $('.vb-text', verBar).textContent = `服务器已更新到 v${v}（这个页面还是 v${PAGE_VERSION}），刷新后生效`;
+    verBar.dataset.v = v;
+    verBar.classList.toggle('hidden', !old || verDismissed === v);
+  }
+  $('.vb-reload', verBar).addEventListener('click', () => location.reload());
+  $('.vb-close', verBar).addEventListener('click', () => { verDismissed = verBar.dataset.v; verBar.classList.add('hidden'); });
+  verEl.addEventListener('click', () => { if (verEl.classList.contains('old')) location.reload(); });
 
   // 页面回到前台时立即重连 (手机锁屏期间连接可能已断)
   document.addEventListener('visibilitychange', () => {

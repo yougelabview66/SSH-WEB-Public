@@ -1447,8 +1447,9 @@ wss.on('connection', (ws, req) => {
         sendCtl({ type: 'pong', t: msg.t });
         if (sess) sess.measureLatency();
         break;
-      case 'events': // 页面的事件连接 (不挂载会话)
+      case 'events': // 页面的事件连接 (不挂载会话)；告诉页面服务器现在的版本 (服务器更新重启后页面重连就知道了)
         if (!sess) eventSockets.add(ws);
+        sendCtl({ type: 'version', version: VERSION });
         break;
     }
   });

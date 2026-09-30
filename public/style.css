@@ -551,6 +551,15 @@ body.no-select { user-select: none; -webkit-user-select: none; }
   padding-top: 6px; }
 .foot-links .link { font-size: 12px; padding: 2px; }
 .sidebar-foot .ver { color: var(--muted); font-size: 11px; opacity: .7; padding: 0 2px; }
+.sidebar-foot .ver.old { color: var(--danger); opacity: 1; font-weight: 600; cursor: pointer; }
+/* 服务器更新了，网页还是旧版本 */
+#verBar { position: fixed; z-index: 70; top: 46px; left: 8px; right: 8px; width: fit-content; margin: 0 auto;
+  display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 12px; font-size: 13px; background: var(--panel);
+  border: 1px solid var(--warn); border-radius: 8px; box-shadow: 0 6px 24px var(--shadow); }
+#verBar.hidden { display: none; }
+#verBar .vb-text { flex: 1; min-width: 0; }
+#verBar button { flex-shrink: 0; padding: 4px 10px; font-size: 13px; }
+#verBar .vb-close { border: none; background: none; color: var(--muted); padding: 4px 6px; }
 
 /* 侧边栏主机拖动排序 */
 .host { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
