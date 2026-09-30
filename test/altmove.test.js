@@ -108,6 +108,15 @@ claudeServer(2253); claudeServer(2254, true); claudeServer(2256, false, 'sgr'); 
   await clickRow(3);
   ok(await inTerm(), '下方输入框空着按 Tab (Claude Code 填入推荐文字)：点 Claude Code 的输入框锁定在终端');
   await typeInTerm(['Control+c']);
+  // Claude Code 正在运行时按 Esc 打断 (可能把刚发的话放回输入框)：锁定
+  for (let i = 0; i < 12; i++) { ccStream.write(`\x1b[2;1H\x1b[K✻ Frosting… (${i}s · ↓ 1.2k tokens · esc to interrupt)`); await wait(150); }
+  await wait(600);
+  await p.fill('#dInput', ''); await p.click('#dInput'); await p.keyboard.press('Escape'); await wait(400);
+  ccStream.write('\x1b[2;1H\x1b[K');
+  await clickRow(3);
+  ok(await inTerm(), 'Claude Code 运行中按 Esc 打断：点 Claude Code 的输入框锁定在终端');
+  await typeInTerm(['Control+u']); await clickRow(3);
+  ok(await inDesk(), '打断后按 Ctrl+U：解锁，点输入框回到下方输入框');
   // 打了字再用 Ctrl+W 删光 (记忆数不准，还以为有字)：屏幕上输入框只剩暗灰色的推荐文字 → 回到下方输入框
   await typeInTerm(['h', 'e', 'l', 'l', 'o', ' ', 'y', 'o', 'u']); await clickRow(3);
   ok(await inTerm(), '打了 hello you：点输入框留在终端');

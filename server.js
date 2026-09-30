@@ -976,7 +976,7 @@ class Session {
       return;
     }
     this.stream.write(data);
-    if (this.cli.feed(data)) this.broadcast({ type: 'cli', ...this.cli.get() });
+    if (this.cli.feed(data, { running: this.state.cls === 'run' })) this.broadcast({ type: 'cli', ...this.cli.get() });
     this.tracker.onInput(Date.now(), true); // 有人往这个标签发了内容：回显不算运行中，「完成」算已经看到了
     this.scheduleState();
   }

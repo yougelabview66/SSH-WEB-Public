@@ -200,7 +200,7 @@
     if (obj.type === 'data' && s.scrollView) closeLocalScroll(s); // 打字 / 按键 = 回到实时画面
     if (obj.type === 'data' && typeof obj.data === 'string' && !obj.auto) {
       predictInput(s, obj.data); // 打字预测回显
-      s.cli.feed(obj.data); // 终端输入框里的内容先在本地算一遍 (服务器算好后会同步过来，以服务器的为准)
+      s.cli.feed(obj.data, { running: s.srvState?.cls === 'run' }); // 终端输入框里的内容先在本地算一遍 (服务器算好后会同步过来，以服务器的为准)
     }
     // 大段粘贴分块发送，避免单条消息超过服务端 1MB 上限导致连接被断开
     if (obj.type === 'data' && typeof obj.data === 'string' && obj.data.length > 32768) {
