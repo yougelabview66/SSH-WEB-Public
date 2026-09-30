@@ -177,8 +177,13 @@
     w.addEventListener('resize', alignPipBack);
     d.fonts?.ready.then(alignPipBack);
     link.addEventListener('load', alignPipBack);
+    // 焦点在小窗口上也算网页在前台 (不推送)，在小窗口上操作也算有人在
+    w.addEventListener('focus', reportWatching);
+    w.addEventListener('blur', reportWatching);
+    for (const ev of ['pointerdown', 'pointermove', 'keydown', 'wheel']) w.addEventListener(ev, onAct, { capture: true, passive: true });
     w.addEventListener('pagehide', () => {
       pipWin = null;
+      setTimeout(reportWatching);
       pipClosedByUser = true; // 小窗口被关掉 (点了 ✕)：这次不再自动打开
       updateHostFloat();
     });

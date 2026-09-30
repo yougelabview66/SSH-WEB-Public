@@ -204,7 +204,9 @@
     if (now - altLast > 400) { altLast = now; return; }
     altLast = 0;
     if (isTouch || !active || document.querySelector('.overlay:not(.hidden)')) return;
-    if (document.activeElement === dInput) { active.term.focus(); termDirect = true; }
+    const inDesk = document.activeElement === dInput;
+    if (active.scrollView) closeLocalScroll(active); // 历史视图打开时下方输入框是藏起来的：先回到实时画面，再放回输入框
+    if (inDesk) { active.term.focus(); termDirect = true; }
     else if (!deskOn) setDeskOn(true);
     else dInput.focus();
   }, true);

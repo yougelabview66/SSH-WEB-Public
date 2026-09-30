@@ -111,6 +111,10 @@ const WHEEL_UP = '\x1b[<64;';
   await overTerm(); await p.mouse.wheel(0, -100); await wait(1000);
   got = ''; await p.keyboard.type('ls'); await p.keyboard.press('Enter'); await wait(400);
   ok(!(await view()) && got.includes('ls') && await p.isVisible('#deskBar'), '输入框藏着时直接打字 → 回到实时画面，打的字一个不少照常发出: ' + JSON.stringify(got));
+  // 连按两下 Alt：历史视图打开时下方输入框是藏起来的 → 先回到实时画面，光标放回输入框
+  await overTerm(); await p.mouse.wheel(0, -100); await wait(1000);
+  await p.keyboard.press('Alt'); await p.keyboard.press('Alt'); await wait(300);
+  ok(!(await view()) && await p.isVisible('#deskBar') && await p.evaluate(() => document.activeElement.id) === 'dInput', '历史视图打开时连按两下 Alt：回到实时画面，光标在下方输入框');
   // 按钮 → 返回
   await overTerm(); await p.mouse.wheel(0, -100); await wait(1000);
   await p.click('.term.active .ls-close'); await wait(300);

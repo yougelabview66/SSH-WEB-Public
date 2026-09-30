@@ -93,4 +93,18 @@ run(async () => {
   streams[0].write(claudeScreen('✻ Worked for 5s')); await wait(1800);
   ok(pushes.length === before + 1 && pushes.at(-1).title === 'M-1 · 完成', '网页最小化 / 不在前台：推送 ' + JSON.stringify(pushes.at(-1)));
   ws.close();
+
+  // 开了通知的设备列表：不返回推送地址 / 密钥；标出是不是这台；能按设备删掉
+  const post = (u, b, ua) => fetch(BASE + u, { method: 'POST', headers: { 'content-type': 'application/json', ...(ua && { 'user-agent': ua }) }, body: JSON.stringify(b) }).then((r) => r.json());
+  const sub2 = { ...sub, endpoint: sub.endpoint.replace('/dev1', '/dev2') };
+  await post('/api/push/subscribe', { subscription: sub2 }, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36 Edg/140.0');
+  let list = await post('/api/push/subs', { endpoint: sub.endpoint });
+  const other = list.find((x) => !x.self);
+  ok(list.length === 2 && list.filter((x) => x.self).length === 1 && other && other.device === 'Windows · Edge' && !JSON.stringify(list).includes('dev2') && !JSON.stringify(list).includes('p256dh'),
+    '列出开了通知的设备 (浏览器 + 系统)，标出这台，不泄露推送地址和密钥: ' + JSON.stringify(list.map((x) => [x.device, x.self])));
+  await post('/api/push/unsubscribe', { id: other.id });
+  list = await post('/api/push/subs', { endpoint: sub.endpoint });
+  ok(list.length === 1 && list[0].self, '按设备删掉另一台，这台还在');
+  await post('/api/push/unsubscribe', { id: 'nope' });
+  ok((await post('/api/push/subs', {})).length === 1, '删不存在的 id 不影响别的订阅');
 });

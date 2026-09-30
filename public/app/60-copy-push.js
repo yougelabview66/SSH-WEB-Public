@@ -118,7 +118,8 @@
   const IDLE_MS = 5 * 60 * 1000;
   let lastAct = Date.now(), idle = false;
   function reportWatching() {
-    const front = !document.hidden && document.hasFocus() && !idle;
+    const focused = document.hasFocus() || !!pipWin?.document.hasFocus(); // 焦点在置顶小窗口上也算
+    const front = (!document.hidden || !!pipWin) && focused && !idle;
     for (const x of sessions) send(x, { type: 'watching', watching: !document.hidden && x === active, front });
   }
   window.addEventListener('focus', reportWatching);
@@ -158,10 +159,18 @@
     try { return swReg ? await swReg.pushManager.getSubscription() : null; } catch { return null; }
   }
 
+  // 服务器上所有开了通知的设备 (self = 这台)
+  async function pushSubs() {
+    const sub = await currentSub();
+    try { return await api('POST', '/api/push/subs', { endpoint: sub?.endpoint || '' }); } catch { return []; }
+  }
+
   async function updateNotifyBtn() {
     const b = $('#btnNotify');
     const on = pushSupported() && (await currentSub()) && Notification.permission === 'granted';
-    b.textContent = !pushSupported() ? '不可用' : on ? '已开启' : '未开启';
+    // 这台没开、别的设备开着：写出来 (不然会奇怪「没开通知怎么还有通知」)
+    const others = on ? 0 : (await pushSubs()).filter((x) => !x.self).length;
+    b.textContent = !pushSupported() ? '不可用' : on ? '已开启' : others ? `未开启 · 其他 ${others} 台已开` : '未开启';
     b.classList.toggle('on', !!on);
     b.classList.toggle('na', !pushSupported());
     b.title = pushSupported() ? '终端有提示音时推送通知' : '需要通过 HTTPS 访问 (iPhone 需先添加到主屏幕)';
@@ -192,10 +201,26 @@
         : '当前浏览器不支持推送通知。');
     }
     const sub = await currentSub();
+    // 开了通知的设备列表，每台都能单独删掉 (比如以前开过的浏览器、别的电脑)
+    const subs = await pushSubs();
+    const day = (t) => t ? new Date(t).toLocaleDateString() : '';
+    const listHtml = subs.length ? `<p>开了通知的设备（都会收到推送）：</p><div class="sub-list">${subs.map((x) => `<div class="sub-row">
+        <span>${esc(x.device)}${x.self ? ' <b>（这台）</b>' : ''} <small>${day(x.created)} 开启</small></span>
+        <button type="button" class="danger" data-del="${esc(x.id)}" data-self="${x.self ? 1 : ''}">删除</button></div>`).join('')}</div>` : '';
+    const onDel = async (e) => {
+      const btn = e.target.closest('[data-del]');
+      if (!btn) return;
+      btn.disabled = true;
+      await api('POST', '/api/push/unsubscribe', { id: btn.dataset.del }).catch(() => {});
+      if (btn.dataset.self && sub) await sub.unsubscribe().catch(() => {});
+      btn.closest('.sub-row').remove();
+      updateNotifyBtn();
+    };
+    $('#dialogBody').addEventListener('click', onDel);
+    const rules = '网页开在前台时不推送，最小化、切到别的窗口或 5 分钟没操作才推送';
     try {
       if (sub && Notification.permission === 'granted') {
-        const r = await dialog('完成通知', `<p>已开启。终端出现提示音（如 Claude Code 完成任务、<code>printf '\\a'</code>）时推送到这台设备；
-          正在看的标签不会推送。</p>`, [
+        const r = await dialog('完成通知', `<p>这台设备已开启。Claude Code 完成、需要选择、出错或终端有提示音时推送；${rules}。</p>${listHtml}`, [
           { label: '关闭通知', value: 'off', cls: 'danger' },
           { label: '发送测试通知', value: 'test' },
           { label: '取消', value: null, cls: 'primary', cancel: true },
@@ -205,12 +230,21 @@
           await api('POST', '/api/push/unsubscribe', { endpoint: sub.endpoint }).catch(() => {});
           await sub.unsubscribe();
         }
+      } else if (subs.some((x) => !x.self)) {
+        // 这台没开，但别的设备开着：先列出来，可以删掉，也可以在这台开启
+        const r = await dialog('完成通知', `<p>这台设备还没开启。${rules}。</p>${listHtml}`, [
+          { label: '在这台设备开启', value: 'on', cls: 'primary' },
+          { label: '关闭', value: null, cancel: true },
+        ]);
+        if (r.value === 'on') { await enablePush(); await api('POST', '/api/push/test'); }
       } else {
         await enablePush();
         await api('POST', '/api/push/test');
       }
     } catch (e) {
       alert('操作失败：' + e.message);
+    } finally {
+      $('#dialogBody').removeEventListener('click', onDel);
     }
     updateNotifyBtn();
   });

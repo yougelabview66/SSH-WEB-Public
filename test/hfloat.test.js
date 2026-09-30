@@ -15,6 +15,9 @@ const B = BASE;
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   await ctx.addInitScript(() => {
     window.__pipOpts = [];
+    window.__watch = [];
+    const wsSend = WebSocket.prototype.send;
+    WebSocket.prototype.send = function (d) { if (typeof d === 'string' && d.includes('"watching"')) window.__watch.push(JSON.parse(d)); return wsSend.call(this, d); };
     const dp = window.documentPictureInPicture;
     if (dp) { const orig = dp.requestWindow.bind(dp); dp.requestWindow = (o) => { window.__pipOpts.push(o); return orig(o); }; }
   });
@@ -90,6 +93,17 @@ const B = BASE;
     const pip = await p.evaluate(() => { try { const w = window.documentPictureInPicture.window; return w ? { n: w.document.querySelectorAll('.dp-tab').length, text: w.document.body.innerText.replace(/\s+/g, ' ') } : null; } catch (e) { return 'err ' + e.message; } });
     ok(pip && pip.n === 2, '📌 置顶到桌面：小窗口里显示 2 个标签的状态: ' + JSON.stringify(pip));
     ok(await p.isHidden('#hostFloat'), '置顶窗口打开时，网页里的悬浮窗隐藏');
+    // 焦点在置顶小窗口上：也算网页在前台，不推送 (无头浏览器里两边都算有焦点，这里模拟主网页失去焦点)
+    const pf = await p.evaluate(async () => {
+      const w = window.documentPictureInPicture.window, hf = document.hasFocus.bind(document);
+      document.hasFocus = () => false; window.dispatchEvent(new Event('blur')); await new Promise((r) => setTimeout(r, 100));
+      const onPip = window.__watch.at(-1)?.front;
+      w.document.hasFocus = () => false; window.dispatchEvent(new Event('blur')); await new Promise((r) => setTimeout(r, 100));
+      const none = window.__watch.at(-1)?.front;
+      document.hasFocus = hf; delete w.document.hasFocus; window.dispatchEvent(new Event('focus'));
+      return { onPip, none };
+    });
+    ok(pf.onPip === true && pf.none === false, '焦点只在置顶小窗口上：还算在前台 (不推送)；两边都没焦点：不在前台 ' + JSON.stringify(pf));
     const opts = await p.evaluate(() => window.__pipOpts.at(-1));
     ok(opts && opts.disallowReturnToOpener === true, '打开时不显示 Chrome 自带的「返回标签页」按钮 (disallowReturnToOpener)');
     ok(await p.evaluate(() => !!window.documentPictureInPicture.window.document.querySelector('[data-a=back]')), '小窗口里有自己的「↩ 网页」按钮');

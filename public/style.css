@@ -561,3 +561,8 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 /* 侧边栏主机拖动排序 */
 .host { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .host.dragging { background: var(--panel2); box-shadow: 0 0 0 1px var(--accent), 0 6px 16px var(--shadow); position: relative; z-index: 2; cursor: grabbing; }
+/* 完成通知：开了通知的设备列表 */
+.sub-list { display: flex; flex-direction: column; gap: 6px; margin: 6px 0 4px; }
+.sub-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; }
+.sub-row small { color: var(--muted); margin-left: 4px; }
+.sub-row button { padding: 3px 10px; font-size: 12px; flex-shrink: 0; }
