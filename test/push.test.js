@@ -82,5 +82,15 @@ run(async () => {
   streams[0].write(claudeScreen('✻ Frosting… (2s)')); await wait(1500);
   streams[0].write(claudeScreen('✻ Worked for 3s')); await wait(1800);
   ok(pushes.length === before, '有人正在看这个标签：状态变了也不推送');
+  // 网页在前台但看的是别的标签：也不推送 (右上角悬浮窗看得到)
+  ws.send(JSON.stringify({ type: 'watching', watching: false, front: true }));
+  streams[0].write(claudeScreen('✻ Frosting… (2s)')); await wait(1500);
+  streams[0].write(claudeScreen('✻ Worked for 4s')); await wait(1800);
+  ok(pushes.length === before, '网页在前台、看的是别的标签：不推送');
+  // 网页最小化 / 切到别的窗口：推送
+  ws.send(JSON.stringify({ type: 'watching', watching: false, front: false }));
+  streams[0].write(claudeScreen('✻ Frosting… (2s)')); await wait(1500);
+  streams[0].write(claudeScreen('✻ Worked for 5s')); await wait(1800);
+  ok(pushes.length === before + 1 && pushes.at(-1).title === 'M-1 · 完成', '网页最小化 / 不在前台：推送 ' + JSON.stringify(pushes.at(-1)));
   ws.close();
 });

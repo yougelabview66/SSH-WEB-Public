@@ -112,9 +112,14 @@
 
   // ------------------------------------------------------------ 完成通知 (Web Push)
   // 告诉服务端哪个标签正被看着：正在看的标签响铃时不推送
+  // watching：正在看这个标签 (终端按正在用的设备排版)；front：网页在前台 (没最小化、浏览器是当前窗口)，
+  // 这时哪个标签都不推送通知 (右上角悬浮窗看得到状态)，最小化 / 切到别的窗口才推送
   function reportWatching() {
-    for (const x of sessions) send(x, { type: 'watching', watching: !document.hidden && x === active });
+    const front = !document.hidden && document.hasFocus();
+    for (const x of sessions) send(x, { type: 'watching', watching: !document.hidden && x === active, front });
   }
+  window.addEventListener('focus', reportWatching);
+  window.addEventListener('blur', reportWatching);
   document.addEventListener('visibilitychange', () => {
     reportWatching();
     sessions.forEach(syncMonitor); // 页面不可见时暂停性能监控采集

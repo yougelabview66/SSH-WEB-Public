@@ -61,6 +61,75 @@
     autosizeDesk();
   }).observe(dInput);
 
+  // ------------------------------------------------------------ 连按两下 Alt 切换时把内容剪切过去
+  // 下方输入框 → 终端：发进终端 (不回车；多行按粘贴发，Claude Code 不会把换行当提交)
+  function moveDeskToTerm(s) {
+    const text = dInput.value;
+    if (!text || !s?.sid) return;
+    if (cmdMode) { setCmdMode(false); setDeskText(''); return; } // 命令模式的字早就逐字发过去了
+    let data = text.replace(/\r?\n/g, '\r');
+    if (data.includes('\r')) {
+      if (!s.term.modes.bracketedPasteMode) return; // 不支持粘贴的程序：多行发过去会被一行行执行，留在输入框
+      data = '\x1b[200~' + data + '\x1b[201~';
+    }
+    send(s, { type: 'data', data });
+    s.movedText = text; // Claude Code 会把多行粘贴显示成 [Pasted text #1 +3 lines]，切回来时还原
+    setDeskText('');
+  }
+
+  // 终端 → 下方输入框：只认 Claude Code 的输入框 (上下两条横线中间、❯ / > 开头)，抄下来后发 Ctrl+L 清空它
+  // (Ctrl+L 是 Claude Code 的「清空输入框」，不会打断正在跑的任务)；认不出就只切换光标
+  function moveTermToDesk(s) {
+    const text = s?.sid && readClaudeInput(s);
+    if (!text) return;
+    const full = /^\[Pasted text #\d+( \+\d+ lines?)?\]$/.test(text) && s.movedText ? s.movedText : text;
+    s.movedText = null;
+    send(s, { type: 'data', data: '\x0c' });
+    setDeskText(dInput.value ? dInput.value + full : full);
+    dInput.setSelectionRange(dInput.value.length, dInput.value.length);
+  }
+
+  const RULE = /^\s*[╭└╰┌]?─{8,}[╮┘╯┐]?\s*$/;
+  function readClaudeInput(s) {
+    const b = s.term.buffer.active, rows = s.term.rows;
+    const line = (y) => b.getLine(b.viewportY + y);
+    const text = (y) => line(y)?.translateToString(true) || '';
+    // 从下往上找：输入框下边的横线，再往上找上边的横线
+    let bot = -1, top = -1;
+    for (let y = rows - 1; y >= 0; y--) if (RULE.test(text(y))) { bot = y; break; }
+    for (let y = bot - 1; y >= 0 && bot - y <= 30; y--) if (RULE.test(text(y))) { top = y; break; }
+    if (top < 0 || bot - top < 2) return '';
+    const width = text(bot).trimEnd().length;
+    const box = /^\s*╰/.test(text(bot)); // 老版本的圆角框：│ > 文字 │
+    const out = [];
+    let real = false;
+    for (let y = top + 1; y < bot; y++) {
+      let t = text(y), start = 0;
+      if (box) { const m = /^(\s*│)(.*?)│?\s*$/.exec(t); if (!m) return ''; start = m[1].length; t = m[2]; }
+      if (y === top + 1) {
+        const m = /^(\s*[❯>]\s?)(.*)$/.exec(t);
+        if (!m) return '';
+        start += m[1].length; t = m[2];
+      } else t = t.replace(/^ {1,2}/, (sp) => { start += sp.length; return ''; });
+      // 空输入框里的灰色提示文字不算：要有正常颜色、不是暗色的字
+      const l = line(y);
+      for (let x = start; x < s.term.cols && !real; x++) {
+        const c = l.getCell(x);
+        if (c && c.getChars().trim() && !c.isDim() && !c.isInverse() && (c.isFgDefault ? c.isFgDefault() : c.getFgColorMode() === 0)) real = true;
+      }
+      out.push(t.trimEnd());
+    }
+    if (!real) return '';
+    // 拼回原文：几乎占满一行的是自动折行 (英文单词之间补空格)，其余是真的换行
+    let res = out[0];
+    for (let i = 1; i < out.length; i++) {
+      const prev = text(top + i).trimEnd();
+      if (prev.length >= width - 12) res += /[\x21-\x7e]$/.test(res) && /^[\x21-\x7e]/.test(out[i]) ? ' ' + out[i] : out[i];
+      else res += '\n' + out[i];
+    }
+    return res.trim() ? res : '';
+  }
+
   function setCmdMode(on) {
     cmdMode = on ? { s: active, n: 0 } : null;
     $('#deskBar').classList.toggle('cmd', on);

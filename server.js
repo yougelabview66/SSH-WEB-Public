@@ -736,7 +736,7 @@ class Session {
     });
   }
 
-  // 有设备正在看这个标签时不推送；同一会话 10 秒内最多推送一次；
+  // 有设备的网页在前台 (没最小化、浏览器是当前窗口) 时不推送；同一会话 10 秒内最多推送一次；
   // 2 分钟内已经按主机状态推送过 (完成 / 待选择 / 报错) 就不再重复推送提示音
   alert(message, title) {
     this.broadcast({ type: 'bell' });
@@ -745,7 +745,7 @@ class Session {
     this.scheduleState();
     // 刚按状态推送过、而且之后还没人操作过：提示音多半是同一件事，不重复推送
     if (now - this.lastAlert < 10000 || (now - this.statePushAt < 120000 && this.tracker.dataAt < this.statePushAt)) return;
-    if ([...this.clients].some((ws) => ws.watching)) return;
+    if (this.someoneFront()) return;
     this.lastAlert = now;
     const name = `${this.title}-${this.n}`;
     push.send({
@@ -772,9 +772,14 @@ class Session {
     if (st.why && (st.cls === 'bad' || prev.cls === 'run')) this.notifyState(st);
   }
 
+  // 有设备的网页正在前台 (看得到右上角的主机状态)：不用推送；老版本网页没有 front，按正在看这个标签算
+  someoneFront() {
+    return [...this.clients].some((ws) => (ws.front ?? ws.watching));
+  }
+
   notifyState(st) {
     const now = Date.now();
-    if ([...this.clients].some((ws) => ws.watching)) return;
+    if (this.someoneFront()) return;
     if (now - this.lastAlert < 10000) return;
     this.lastAlert = this.statePushAt = now;
     push.send({ title: `${this.title}-${this.n} · ${st.label}`, body: st.why, tag: this.id, sessionId: this.id }).catch(() => {});
@@ -1429,8 +1434,9 @@ wss.on('connection', (ws, req) => {
       case 'reconnect':
         if (sess) sess.connect();
         break;
-      case 'watching': // 浏览器当前是否正在看这个标签 (页面可见且是当前标签)
-        ws.watching = !!msg.watching;
+      case 'watching': // 浏览器当前是否正在看这个标签 (页面可见且是当前标签，决定终端按哪台设备排版)；
+        ws.watching = !!msg.watching; // front：网页在前台 (没最小化、浏览器是当前窗口)，决定要不要推送
+        if (msg.front !== undefined) ws.front = !!msg.front;
         break;
       case 'close':
         if (sess) sess.terminate();
