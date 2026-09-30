@@ -25,7 +25,7 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   for (const w of [1280, 1000, 640, 480, 360]) {
     await p.setViewportSize({ width: w, height: 800 }); await wait(400);
     const s = await st();
-    ok(s.ov === 'hidden' && s.need <= s.ch + 1, `宽 ${w}: 输入框 ${s.h}px，提示文字需要 ${s.need}px，完整显示、无滚动条`);
+    ok(s.ov === 'hidden' && s.need <= s.ch + 1, `宽 ${w}: 输入框 ${s.h}px，提示文字需要 ${s.need}px，完整显示、无滚动条 「${s.ph}」`);
     if (w === 640) await p.screenshot({ path: shot('ph-640.png') });
     if (w === 1280) await p.screenshot({ path: shot('ph-1280.png') });
   }

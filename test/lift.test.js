@@ -82,6 +82,29 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   await p.keyboard.press('Alt+1'); await wait(300); s = await st();
   ok(await p.evaluate(() => document.querySelector('.tab.active .title').textContent) === 'L-1' && s.space > 0, 'Alt+1 切换标签，抬高模式保持');
   await p.click('#dMode'); await wait(200);
+  // 浮动：每个标签各自记住位置
+  const tabT = () => p.evaluate(() => document.querySelector('.tab.active .title').textContent);
+  s = await st(); ok(s.mode === '浮动', '切到浮动');
+  await drag(2000); const l1 = (await st()).lift;
+  await p.keyboard.press('Alt+2'); await wait(300);
+  await drag(-300); const l2 = (await st()).lift;
+  ok(await tabT() === 'L-2' && l1 === 0 && l2 > 250, `浮动：L-1 拖到贴底 (${l1}px)，L-2 拖到 ${l2}px`);
+  await p.keyboard.press('Alt+1'); await wait(300); s = await st();
+  ok(await tabT() === 'L-1' && s.lift === l1, `切回 L-1：输入框回到它自己的位置 (${s.lift}px)`);
+  await p.keyboard.press('Alt+2'); await wait(300); s = await st();
+  ok(Math.abs(s.lift - l2) <= 2, `切到 L-2：回到 L-2 的位置 (${s.lift}px)`);
+  await p.reload(); await p.waitForSelector('.tab'); await wait(1500);
+  await p.keyboard.press('Alt+1'); await wait(300); const r1 = (await st()).lift;
+  await p.keyboard.press('Alt+2'); await wait(300); const r2 = (await st()).lift;
+  ok(r1 === l1 && Math.abs(r2 - l2) <= 2, `刷新后每个标签的位置都还在 (L-1 ${r1}px，L-2 ${r2}px)`);
+  await p.click('#dMode'); await p.click('#dMode'); await wait(300); s = await st();
+  ok(s.mode === '抬高' && Math.abs(s.lift - l2) <= 2, `抬高模式用共用位置 (最近一次拖到的 ${s.lift}px)`);
+  await p.click('#dMode'); await wait(200);
+  const id2 = await p.evaluate(() => localStorage.getItem('sshweb.active'));
+  const had = await p.evaluate((id) => JSON.parse(localStorage.getItem('sshweb.floatLift') || '{}')[id] != null, id2);
+  await p.locator('.tab.active .x').click(); await wait(500);
+  const left = await p.evaluate((id) => JSON.parse(localStorage.getItem('sshweb.floatLift') || '{}')[id] != null, id2);
+  ok(had && !left, '关掉标签后，它记的浮动位置也删掉');
   // 暗色截图
   await p.evaluate(() => document.querySelector('#themeSeg [data-mode=dark]').click()); await wait(300);
   await p.screenshot({ path: shot('lift-dark.png') });

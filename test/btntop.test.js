@@ -16,7 +16,7 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   const r = await p.evaluate(() => ['dInput', 'dSend', 'dMode', 'dHide'].map((id) => [id, Math.round(document.getElementById(id).getBoundingClientRect().top), document.getElementById(id).offsetHeight]));
   console.log(JSON.stringify(r));
   ok(r.every(([, t]) => t === r[0][1]), '输入框变高后右边按钮和输入框顶部对齐');
-  ok(r[1][2] === 60 && r[3][2] === 60, '按钮高度仍是 60px');
+  ok(r[1][2] === 40 && r[3][2] === 40, '按钮高度仍是 40px (设定的输入框高度)');
   ok(await p.evaluate(() => document.getElementById('dMode').textContent) === '底部', '模式按钮只显示「底部」');
   await p.screenshot({ path: shot('btntop.png') });
   await browser.close(); process.exit();

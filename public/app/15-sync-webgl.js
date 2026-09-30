@@ -135,6 +135,7 @@
     s.el.remove();
     s.tab.remove();
     sessions.splice(sessions.indexOf(s), 1);
+    if (s.remoteId && floatLift[s.remoteId] != null) { delete floatLift[s.remoteId]; saveDeskPos(); } // 浮动输入框位置不再需要
     if (active === s) {
       active = null;
       if (sessions.length) activate(sessions[sessions.length - 1]);

@@ -40,13 +40,32 @@
   // 命令模式：空输入框里打 / 后，输入逐字直接发给终端，Claude Code 的 / 命令候选列表会在终端里弹出，
   // ↑ ↓ 选择、Tab 补全、Enter 执行；Enter / Esc / Ctrl+C 或退格删光后回到本地编辑
   let cmdMode = null; // { s: 所在标签, n: 已发出的字数 (退格删光时退出) }
-  const DESK_PH = dInput.placeholder;
+  // 提示文字：一行放得下就用完整的，放不下换短的 (空输入框最低只有一行高，不让提示文字撑高)；再放不下就折行完整显示
+  const DESK_PH = [dInput.placeholder, 'Enter 发送 · Shift+Enter 换行'];
+  const CMD_PH = ['命令模式：直接输入到终端，Enter 执行，Esc 退出', '命令模式 · Enter 执行 · Esc 退出'];
+  const phCtx = document.createElement('canvas').getContext('2d');
+  function fitPlaceholder() {
+    const list = cmdMode ? CMD_PH : DESK_PH;
+    const cs = getComputedStyle(dInput);
+    const room = dInput.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - 2;
+    phCtx.font = cs.font;
+    const ph = room > 0 ? list.find((t) => phCtx.measureText(t).width <= room) || list.at(-1) : list[0];
+    if (dInput.placeholder !== ph) dInput.placeholder = ph;
+  }
+  // 宽度变了 (窗口大小、侧边栏开关)：重新挑提示文字、重新算高度
+  let dInputW = 0;
+  new ResizeObserver(() => {
+    if (dInput.clientWidth === dInputW) return;
+    dInputW = dInput.clientWidth;
+    fitPlaceholder();
+    autosizeDesk();
+  }).observe(dInput);
 
   function setCmdMode(on) {
     cmdMode = on ? { s: active, n: 0 } : null;
     $('#deskBar').classList.toggle('cmd', on);
     $('#mobileBar').classList.toggle('cmd', on);
-    dInput.placeholder = on ? '命令模式：直接输入到终端，Enter 执行，Esc 退出' : DESK_PH;
+    fitPlaceholder();
   }
 
   function flushCmd() {
@@ -109,10 +128,13 @@
   $('#btnInput').addEventListener('click', () => setDeskOn(!deskOn));
 
   // 输入栏位置：底部 / 抬高 (终端变矮，下方留白) / 浮动 (盖在终端上)；
-  // 高度 = 距 main 底部占 main 高度的比例，两种模式共用，每台电脑各自记住
+  // 高度 = 距 main 底部占 main 高度的比例，每台电脑各自记住；
+  // 浮动时每个标签各自记住位置 (按会话 ID)，没拖过的标签用共用的位置 (最近一次拖到的，抬高也用它)
   const DESK_MODES = { bottom: '底部', lift: '抬高', float: '浮动' };
   let deskMode = (() => { try { return DESK_MODES[localStorage.getItem('sshweb.deskMode')] ? localStorage.getItem('sshweb.deskMode') : 'bottom'; } catch { return 'bottom'; } })();
   let deskLift = (() => { try { const v = parseFloat(localStorage.getItem('sshweb.deskLift')); return v >= 0 && v < 1 ? v : 1 / 3; } catch { return 1 / 3; } })();
+  const floatLift = (() => { try { return JSON.parse(localStorage.getItem('sshweb.floatLift')) || {}; } catch { return {}; } })();
+  const liftFrac = () => (deskMode === 'float' && active?.remoteId && floatLift[active.remoteId] != null ? floatLift[active.remoteId] : deskLift);
   const deskBar = $('#deskBar'), deskSpace = $('#deskSpace');
   const MIN_TERM = 120; // 抬高模式下上方终端至少保留的高度 (px)
 
@@ -120,7 +142,7 @@
   function deskLiftPx() {
     const mainH = deskBar.parentElement.clientHeight;
     const max = mainH - $('#tabbar').offsetHeight - deskBar.offsetHeight - (deskMode === 'lift' ? MIN_TERM : 0);
-    return Math.round(Math.max(0, Math.min(deskLift * mainH, max)));
+    return Math.round(Math.max(0, Math.min(liftFrac() * mainH, max)));
   }
 
   function applyDeskPos() {
@@ -143,7 +165,8 @@
     try {
       localStorage.setItem('sshweb.deskMode', deskMode);
       localStorage.setItem('sshweb.deskLift', String(deskLift));
-      localStorage.setItem('sshweb.deskMinH', String(deskMinH));
+      localStorage.setItem('sshweb.deskH', String(deskMinH));
+      localStorage.setItem('sshweb.floatLift', JSON.stringify(floatLift));
     } catch {}
   }
 

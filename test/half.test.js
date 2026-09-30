@@ -17,7 +17,7 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   for (const w of [1280, 640, 480, 360]) {
     await p.setViewportSize({ width: w, height: 800 }); await p.fill('#dInput', ''); await p.evaluate(() => document.getElementById('dInput').dispatchEvent(new Event('input'))); await wait(300);
     const s = await st();
-    ok(s.ov === "hidden" && s.sh <= s.ch && s.h >= 60, `宽 ${w}: 空输入框高 ${s.h}px，无滚动条 (${s.ov})，发送按钮高 ${s.bh}`);
+    ok(s.ov === "hidden" && s.sh <= s.ch && s.h >= 40, `宽 ${w}: 空输入框高 ${s.h}px，无滚动条 (${s.ov})，发送按钮高 ${s.bh}`);
     if (w === 640) await p.screenshot({ path: shot('half.png') });
   }
   await p.setViewportSize({ width: 640, height: 800 });

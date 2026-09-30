@@ -252,8 +252,8 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
   background: var(--panel); border-top: 1px solid var(--border); }
 /* 默认不显示滚动条，超过最大高度才出现 (autosizeDesk 里切换) */
 #dInput { margin: 0; flex: 1; resize: none; font: 15px/1.4 ui-monospace, Menlo, Consolas, monospace;
-  padding: 8px 10px; min-height: 60px; max-height: 40vh; overflow-y: hidden; }
-#deskBar button { flex-shrink: 0; width: 48px; height: 60px; font-size: 18px; padding: 0;
+  padding: 8px 10px; min-height: 40px; max-height: 40vh; overflow-y: hidden; }
+#deskBar button { flex-shrink: 0; width: 48px; height: var(--desk-h, 40px); font-size: 18px; padding: 0;
   display: flex; align-items: center; justify-content: center; }
 /* 命令模式 (打 / 后逐字发给终端) */
 #deskBar.cmd #dInput { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }

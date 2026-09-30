@@ -261,9 +261,12 @@
   // 按比例设置抬高位置 (像素)，超出范围时停在边界，不记住超出的值
   function setLiftPx(px) {
     const h = deskBar.parentElement.clientHeight;
+    const own = deskMode === 'float' && active?.remoteId; // 浮动：记到这个标签上，同时作为共用位置
     deskLift = Math.max(0, px) / h;
+    if (own) floatLift[active.remoteId] = deskLift;
     applyDeskPos();
     deskLift = deskLiftPx() / h;
+    if (own) floatLift[active.remoteId] = deskLift;
   }
 
   // 拖左边的把手上下调整位置
@@ -274,16 +277,28 @@
   });
 
   // 拖上边缘调整输入框高度 (最低高度，字多了照样自动变高)，往上拖变高，下边缘 / 抬高位置不动；双击恢复默认
-  const DESK_MIN_H = 60;
-  let deskMinH = (() => { try { return Math.max(DESK_MIN_H, parseInt(localStorage.getItem('sshweb.deskMinH'), 10) || DESK_MIN_H); } catch { return DESK_MIN_H; } })();
+  // 最低 / 默认 40px = 一行；右边的按钮和输入框设定的高度一样高
+  // (以前默认 60px 存在 sshweb.deskMinH 里：拖高过的 (> 60) 保留，60 当作没设置过，改用新默认)
+  const DESK_MIN_H = 40;
+  let deskMinH = (() => {
+    try {
+      const v = parseInt(localStorage.getItem('sshweb.deskH'), 10);
+      if (v) return Math.max(DESK_MIN_H, v);
+      const old = parseInt(localStorage.getItem('sshweb.deskMinH'), 10);
+      return old > 60 ? old : DESK_MIN_H;
+    } catch { return DESK_MIN_H; }
+  })();
 
-  function applyMinH() {
+  function setMinHStyle() {
     dInput.style.minHeight = deskMinH + 'px';
     dInput.style.maxHeight = `max(40vh, ${deskMinH}px)`;
+    deskBar.style.setProperty('--desk-h', deskMinH + 'px');
+  }
+  function applyMinH() {
+    setMinHStyle();
     autosizeDesk();
   }
-  dInput.style.minHeight = deskMinH + 'px';
-  dInput.style.maxHeight = `max(40vh, ${deskMinH}px)`;
+  setMinHStyle();
 
   function setMinH(h) {
     // 最高到 main 的一半，抬高模式下还要给上方终端留出位置
