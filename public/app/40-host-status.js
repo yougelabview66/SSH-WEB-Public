@@ -30,6 +30,7 @@
         <span class="stt ${cls}">${st}</span></div>`;
     }).join('');
     for (const box of boxes) if (box.innerHTML !== html) box.innerHTML = html;
+    alignPipBack();
     // 悬浮窗收起时，标题栏上用小圆点显示每个标签的状态
     const sum = states.map(([st, cls], i) => `<i class="hf-d ${cls}" title="${esc($('.title', deskTabList[i].tab).textContent)}：${st}"></i>`).join('');
     if (hfSum.innerHTML !== sum) hfSum.innerHTML = sum;
@@ -170,6 +171,9 @@
     d.addEventListener('mousedown', (e) => {
       if (e.target.closest('[data-a=back]') || e.target.closest('.dp-tab')) { onStatusDown(e); window.focus(); }
     });
+    w.addEventListener('resize', alignPipBack);
+    d.fonts?.ready.then(alignPipBack);
+    link.addEventListener('load', alignPipBack);
     w.addEventListener('pagehide', () => {
       pipWin = null;
       pipClosedByUser = true; // 小窗口被关掉 (点了 ✕)：这次不再自动打开
@@ -177,6 +181,18 @@
     });
     updateHostFloat();
     renderDeskTabs();
+  }
+  // 「↩ 网页」的右边和第一行最右边的卡片对齐 (卡片自动换行，第一行通常到不了窗口右边)
+  function alignPipBack() {
+    if (!pipWin) return;
+    const d = pipWin.document, head = d.querySelector('.pip-head'), box = d.querySelector('.dp-tabs');
+    const cards = box && box.children;
+    if (!head || !cards || !cards.length) return;
+    const top = cards[0].offsetTop;
+    let right = 0;
+    for (const c of cards) if (c.offsetTop === top) right = Math.max(right, c.getBoundingClientRect().right);
+    const pad = Math.max(0, Math.round(box.getBoundingClientRect().right - right)) + 'px';
+    if (head.style.paddingRight !== pad) head.style.paddingRight = pad;
   }
   function syncPipTheme() {
     if (!pipWin) return;

@@ -288,7 +288,7 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 .hf-d.off { background: none; border: 1px dashed var(--muted); }
 /* 置顶到桌面的小窗口 */
 .pip-body { margin: 0; padding: 8px; background: var(--panel); color: var(--text); font: 13px system-ui, sans-serif; }
-.pip-head { display: flex; justify-content: flex-end; margin: -4px -4px 6px; }
+.pip-head { display: flex; justify-content: flex-end; margin: -4px 0 6px; }
 .pip-head button { font-size: 12px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel2);
   color: var(--text); cursor: pointer; }
 @media (prefers-reduced-motion: reduce) { .dp-tab .stt.run { animation: none; } }
