@@ -96,7 +96,8 @@
       s.term.textarea.addEventListener('focus', () => mInput.focus());
       s.box.addEventListener('click', () => { if (s.longPressed) { s.longPressed = false; return; } mInput.focus(); });
     }
-    s.ro = new ResizeObserver(() => { if (active === s) s.fit.fit(); });
+    // 历史视图打开时输入栏藏起来、终端区域变高，先不重新排版 (免得 tmux 整屏重画)，关掉后尺寸又和原来一样
+    s.ro = new ResizeObserver(() => { if (active === s && !s.scrollView) s.fit.fit(); });
     s.ro.observe(s.box);
     s.term.onData((data) => {
       // 终端对程序询问的自动应答 (不是用户打的字)：服务端不算输入，不影响主机状态和打字预测
@@ -202,7 +203,7 @@
     clearTimeout(s.retryTimer);
     hideReconnect(s);
     setStatus(s, 'wait');
-    if (s.box.clientWidth) s.fit.fit();
+    if (s.box.clientWidth && !s.scrollView) s.fit.fit();
 
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     const ws = new WebSocket(`${proto}://${location.host}/ws`);
@@ -342,7 +343,7 @@
   // 让服务端终端尺寸与当前显示一致 (其他设备可能改过尺寸)
   function syncSize(s) {
     if (!s.box.clientWidth) return;
-    s.fit.fit();
+    if (!s.scrollView) s.fit.fit();
     send(s, { type: 'resize', cols: s.term.cols, rows: s.term.rows, claim: userHere() });
   }
 

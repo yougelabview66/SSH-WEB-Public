@@ -9,13 +9,13 @@ const hist = HIST.join('\n') + '\n';
 const OTHER = Array.from({ length: 200 }, (_, i) => `完全不相干的另一个 pane ${i}`).join('\n') + '\n';
 
 // mode: ok | none (没有 tmux) | busy (全屏程序) | other (抓到别的 pane) | plain (普通 shell，不开鼠标) | claude (全屏模式的 Claude Code)
-let got = ''; let ccUp = 0; const execs = []; const envs = [];
+let got = ''; let ccUp = 0; let winChanges = 0; const execs = []; const envs = [];
 function mockServer(port, mode) {
   new Server({ hostKeys: [hostKey()] }, (c) => {
     c.on('authentication', (ctx) => ctx.accept());
     c.on('ready', () => c.on('session', (acc) => {
       const s = acc();
-      s.on('pty', (a) => a()); s.on('window-change', (a) => a && a());
+      s.on('pty', (a) => a()); s.on('window-change', (a) => { winChanges++; a && a(); });
       s.on('env', (a, r, info) => { envs.push({ mode, key: info.key, val: info.val }); a && a(); });
       s.on('shell', (a) => {
         const st = a();
@@ -74,7 +74,8 @@ const WHEEL_UP = '\x1b[<64;';
 
   // ---- tmux：往上滚 → 本地历史视图
   await open('TMUX');
-  await overTerm(); got = '';
+  const termH0 = await p.evaluate(() => document.querySelector('.term.active .term-box').getBoundingClientRect().height);
+  await overTerm(); got = ''; winChanges = 0;
   await p.mouse.wheel(0, -100); await wait(1200);
   ok(await p.evaluate(() => !document.querySelector('.term.active .font-toast')), '打开历史视图时不弹「读取 tmux 历史…」');
   let v = await view();
@@ -87,6 +88,9 @@ const WHEEL_UP = '\x1b[<64;';
   ok(v && v.text.includes('line 1 普通输出') && v.text.includes('ERROR line 3000'), '历史视图里有完整的 3000 行');
   ok(v && /rgb|#/.test(v.red), '颜色保留 (ERROR 行是红色: ' + (v && v.red) + ')');
   ok(v && v.max - v.top > 0 && v.max - v.top < 200, `一开始停在底部往回几行的位置 (离底部 ${v && v.max - v.top}px)`);
+  const lsH = await p.evaluate(() => document.querySelector('.term.active .lscroll').getBoundingClientRect().height);
+  ok(await p.isHidden('#deskBar') && lsH > termH0 + 40, `历史视图打开时输入框藏起来，历史视图变高 (${Math.round(termH0)} → ${Math.round(lsH)}px)`);
+  ok(winChanges === 0, '输入框藏起来时终端尺寸不变 (不会让 tmux 整屏重画)');
   await p.screenshot({ path: shot('lscroll.png') });
   // 本地滚动：不再发任何东西给服务器
   const before = got.length;
@@ -96,6 +100,7 @@ const WHEEL_UP = '\x1b[<64;';
   // Esc 返回，不发 Esc 给终端
   got = ''; await p.keyboard.press('Escape'); await wait(300);
   ok(!(await view()) && !got.includes('\x1b'), 'Esc → 回到实时画面，Esc 没有发给终端');
+  ok(await p.isVisible('#deskBar') && winChanges === 0 && await p.evaluate(() => document.activeElement.id) === 'dInput', '回到实时画面后输入框回来、焦点在输入框，终端尺寸始终没变');
   // 滚到底再往下 → 返回
   await overTerm(); await p.mouse.wheel(0, -100); await wait(1000);
   ok(!!(await view()) && execs.length === 2, '再往上滚 → 重新抓一次最新历史');
@@ -104,8 +109,8 @@ const WHEEL_UP = '\x1b[<64;';
   ok(!(await view()), '滚到最底下再往下滚 → 回到实时画面');
   // 打字 → 返回
   await overTerm(); await p.mouse.wheel(0, -100); await wait(1000);
-  await p.click('#dInput'); got = ''; await p.keyboard.type('ls'); await p.keyboard.press('Enter'); await wait(400);
-  ok(!(await view()) && got.includes('ls'), '在输入框发送内容 → 回到实时画面，内容照常发出');
+  got = ''; await p.keyboard.type('ls'); await p.keyboard.press('Enter'); await wait(400);
+  ok(!(await view()) && got.includes('ls') && await p.isVisible('#deskBar'), '输入框藏着时直接打字 → 回到实时画面，打的字一个不少照常发出: ' + JSON.stringify(got));
   // 按钮 → 返回
   await overTerm(); await p.mouse.wheel(0, -100); await wait(1000);
   await p.click('.term.active .ls-close'); await wait(300);
@@ -169,7 +174,10 @@ const WHEEL_UP = '\x1b[<64;';
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await wait(1500);
   const mv = await m.evaluate(() => { const pre = document.querySelector('.term.active .ls-body'); return pre ? { top: pre.scrollTop, max: pre.scrollHeight - pre.clientHeight } : null; });
   ok(!!mv && !got.includes(WHEEL_UP), '手机：在终端上往下滑 → 打开本地历史视图，滑动没有发给 tmux');
+  ok(await m.isHidden('#mobileBar'), '手机：历史视图打开时输入栏 (连同按键栏) 藏起来');
   await m.screenshot({ path: shot('lscroll-mobile.png') });
+  await m.locator('.term.active .ls-close').tap(); await wait(400);
+  ok(!(await m.$('.term.active .lscroll')) && await m.isVisible('#mobileBar'), '手机：点「回到实时画面」后输入栏回来');
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
   await browser.close(); process.exit();
 })().catch((e) => { console.error(e); process.exit(1); });

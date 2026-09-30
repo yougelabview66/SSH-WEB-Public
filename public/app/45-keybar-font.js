@@ -181,6 +181,7 @@
     $('#btnInput').classList.toggle('on', deskOn);
     applyDeskPos();
     updateHostFloat();
+    syncLsBars();
     if (cmdMode && cmdMode.s !== active) setCmdMode(false);
     // 每个标签有自己的草稿
     const draft = active?.draft || '';

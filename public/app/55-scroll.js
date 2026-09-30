@@ -74,6 +74,7 @@
     s.box.appendChild(v);
     s.scrollView = v;
     s.lsLine = lh;
+    syncLsBars();
     pre.scrollTop = pre.scrollHeight - pre.clientHeight - up * 3 * lh; // 和滚轮一样往回看几行
     v.querySelector('.ls-close').addEventListener('click', () => closeLocalScroll(s));
     // 电脑：在最底下还往下滚 = 回到实时画面
@@ -89,6 +90,11 @@
     });
   }
 
+  // 历史视图打开时把输入栏 (电脑输入框 / 抬高的留白 / 手机输入栏) 藏起来，多出来的地方给历史视图
+  function syncLsBars() {
+    $('#app').classList.toggle('ls-open', !!active?.scrollView);
+  }
+
   const atBottom = (el) => el.scrollTop + el.clientHeight >= el.scrollHeight - 2;
 
   // 手指一开始是在终端上滑的，这一次滑动剩下的滚轮事件继续滚历史视图
@@ -102,6 +108,7 @@
     if (!s.scrollView) return;
     s.scrollView.remove();
     s.scrollView = null;
+    syncLsBars();
     if (s === active) focusTerm(s);
   }
 
@@ -142,10 +149,16 @@
 
   // 历史视图打开时 Esc 只用来返回，不发给终端 (免得打断 Claude Code)
   window.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape' || !active?.scrollView || document.querySelector('.overlay:not(.hidden)')) return;
-    e.preventDefault();
-    e.stopPropagation();
-    closeLocalScroll(active);
+    if (!active?.scrollView || document.querySelector('.overlay:not(.hidden)')) return;
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      closeLocalScroll(active);
+      return;
+    }
+    // 输入框藏起来了，焦点不在任何输入框上时直接打字：回到实时画面，焦点回到输入框，这个字照常打进去
+    const typing = !e.ctrlKey && !e.metaKey && !e.altKey && (e.key.length === 1 || e.key === 'Enter' || e.key === 'Backspace');
+    if (typing && !e.target.closest?.('input, textarea, [contenteditable]')) closeLocalScroll(active);
   }, true);
 
   // tmux capture-pane -e 的颜色 (SGR) 转成 HTML；其他控制序列丢掉
