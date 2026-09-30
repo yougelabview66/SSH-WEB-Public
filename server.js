@@ -22,6 +22,7 @@ const { Client } = require('ssh2');
 const registerSftp = require('./lib/sftp');
 const registerMonitor = require('./lib/monitor');
 const createPush = require('./lib/push');
+const CliInput = require('./lib/cli-input');
 const { StatusTracker } = require('./lib/status');
 const { Terminal: HeadlessTerminal } = require('@xterm/headless');
 const { SerializeAddon } = require('@xterm/addon-serialize');
@@ -358,7 +359,8 @@ app.get(['/', '/index.html'], sendIndex);
 // 前端代码按功能拆在 public/app/*.js (文件名带编号，按顺序)，这里拼成一个 app.js：
 // 各部分在同一个函数作用域里共用变量，所以只拆文件、不拆作用域，浏览器拿到的和拆之前完全一样
 const APP_DIR = path.join(__dirname, 'public', 'app');
-const APP_JS = "'use strict';\n\n(() => {\n"
+// lib/cli-input.js 服务端和网页共用 (网页里是全局的 CliInput)
+const APP_JS = "'use strict';\n\n" + fs.readFileSync(path.join(__dirname, 'lib', 'cli-input.js'), 'utf8') + "\n(() => {\n"
   + fs.readdirSync(APP_DIR).filter((f) => f.endsWith('.js')).sort().map((f) => fs.readFileSync(path.join(APP_DIR, f), 'utf8')).join('')
   + '})();\n';
 app.get('/app.js', (req, res) => {
@@ -720,6 +722,7 @@ class Session {
     this.replayLen = 0;
     // 主机状态 (运行中 / 完成 / 待选择 / 报错 / 空闲)，见 lib/status.js
     this.tracker = new StatusTracker();
+    this.cli = CliInput.create(); // 终端输入框里的内容 (所有设备的输入都算)，网页据此决定点终端时光标去哪
     this.state = { label: '空闲', cls: 'idle' };
     this.stateTimer = null;
     this.statePushAt = 0;
@@ -921,6 +924,7 @@ class Session {
       this.sendTo(ws, { type: 'status', status: this.status, sid: this.status === 'connected' ? this.id : null });
       if (this.sshRtt !== undefined) this.sendTo(ws, { type: 'lat', ssh: this.sshRtt });
       this.sendTo(ws, { type: 'state', label: this.state.label, cls: this.state.cls });
+      this.sendTo(ws, { type: 'cli', ...this.cli.get() });
       if (this.pending) this.sendTo(ws, { type: this.pending.type, ...this.pending.payload });
     });
   }
@@ -951,7 +955,7 @@ class Session {
 
   setStatus(status) {
     this.status = status;
-    if (status === 'connected') { this.connectedAt = Date.now(); this.tracker = new StatusTracker(); }
+    if (status === 'connected') { this.connectedAt = Date.now(); this.tracker = new StatusTracker(); this.cli.clear(); this.broadcast({ type: 'cli', ...this.cli.get() }); }
     this.broadcast({ type: 'status', status, sid: status === 'connected' ? this.id : null });
   }
 
@@ -972,6 +976,7 @@ class Session {
       return;
     }
     this.stream.write(data);
+    if (this.cli.feed(data)) this.broadcast({ type: 'cli', ...this.cli.get() });
     this.tracker.onInput(Date.now(), true); // 有人往这个标签发了内容：回显不算运行中，「完成」算已经看到了
     this.scheduleState();
   }

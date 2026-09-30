@@ -115,6 +115,21 @@ claudeServer(2253); claudeServer(2254, true); claudeServer(2256, false, 'sgr'); 
   ccStream.write('\x1b[4;1H\x1b[K❯ 帮我运行一下测试  → to accept');
   await wait(300); await clickRow(3);
   ok(await inDesk(), 'Claude Code 显示推荐提示词 (没在终端里打过字)：点它光标回到下方输入框');
+
+  // 记忆存在服务器上：别的设备上打的字、刷新页面前打的字也算
+  const p2 = await (await browser.newContext({ viewport: { width: 1280, height: 800 } })).newPage(); p2.on('pageerror', (e) => errors.push(e.message));
+  await p2.goto(BASE + '/'); await p2.waitForSelector('.tab'); await wait(1500);
+  await p2.locator('.tab', { hasText: 'CCM' }).first().click(); await wait(800);
+  await p2.locator('.term.active .xterm-helper-textarea').focus(); await p2.keyboard.type('from other device'); await wait(600);
+  await p.click('#dInput'); await clickRow(3);
+  ok(await inTerm(), '在另一台设备的终端输入框里打了字：这台点 Claude Code 的输入框也锁定在终端');
+  await p.reload(); await p.waitForSelector('.tab'); await wait(1500);
+  await p.click('#dInput'); await clickRow(3);
+  ok(await inTerm(), '刷新页面后：记忆还在 (存在服务器上)，点输入框锁定在终端');
+  await p2.keyboard.press('Enter'); await wait(600);
+  await p.click('#dInput'); await clickRow(3);
+  ok(await inDesk(), '另一台设备按回车发送后：这台点输入框回到下方输入框');
+  await p2.context().close();
   await p.locator('.host', { hasText: 'SHELL' }).click(); await wait(1500);
   await clickRow(0);
   ok(await inDesk(), '普通命令行 (没有 Claude Code 输入框)：点终端照旧回到下方输入框');

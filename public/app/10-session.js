@@ -46,7 +46,7 @@
   // restore: 服务端已有的后台会话信息 (刷新 / 重新打开浏览器时恢复)
   function openSession(params, title, connType, restore) {
     $('#empty').classList.add('hidden');
-    const s = { id: Math.random().toString(36).slice(2), params, title, connType };
+    const s = { id: Math.random().toString(36).slice(2), params, title, connType, cli: CliInput.create() };
     if (restore) {
       s.remoteId = restore.id;
       s.histHost = restore.histHost;
@@ -98,14 +98,10 @@
     } else {
       // 电脑：下方输入框开着时，点终端后光标回到下方输入框；点击本身照常交给 tmux / Claude Code。
       // 不抢的情况：选中了文字 (方便复制)、连按两下 Alt 进终端直接打字、
-      // 在终端的输入框里打过字还没发送 (见 trackCliInput) 而且屏幕上 Claude Code 的输入框里确实还有字 (想改里面的内容)
+      // 终端的输入框里打过字、还没删光也没发送 (锁定，想改里面的内容；见 lib/cli-input.js，任何设备上打的都算)
       s.box.addEventListener('click', (e) => {
         if (e.button !== 0 || !deskOn || termDirect || s.term.hasSelection() || e.target.closest('button, .lscroll')) return;
-        if (s.cliChars > 0) {
-          const box = claudeInputBox(s);
-          if (!box || box.hasText) return; // 认不出 Claude Code 输入框 (普通命令行) 就只看记忆
-          s.cliChars = 0; // 屏幕上输入框已经空了 (删光了，只剩暗灰色的推荐 / 提示文字)：记忆作废
-        }
+        if (s.cli.locked()) return;
         dInput.focus({ preventScroll: true });
       });
     }
@@ -199,32 +195,12 @@
   // (别的设备正在用时，后台设备自动重连 / 恢复画面发出的尺寸服务端只记下来不生效)
   const userHere = () => !document.hidden && document.hasFocus();
 
-  // 记住终端 (Claude Code) 的输入框里有没有打过字：直接打字 / 粘贴 / ↑ 翻出历史 = 有字；
-  // 回车、Ctrl+C、Ctrl+L、Ctrl+U 或者退格删光 = 没字。有字时点终端不把光标拉回下方输入框 (想改里面的内容)
-  function trackCliInput(s, d) {
-    let n = s.cliChars || 0;
-    if (d.startsWith('\x1b[200~')) { s.cliChars = n + d.length; return; }
-    for (let i = 0; i < d.length; i++) {
-      const c = d[i];
-      if (c === '\x1b') {
-        // 控制序列整个跳过 (鼠标点击 / 滚轮的报告 ESC[<0;10;5M 这种不算打字)
-        const seq = /^\x1b(?:\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]|O.|.)?/.exec(d.slice(i))[0];
-        if (seq === '\x1b[A' || seq === '\x1bOA') n = Math.max(n, 1);
-        i += seq.length - 1;
-        if (seq === '\x1b[M') i += 3; // 老式鼠标报告：ESC[M 后面跟 3 个字节
-      } else if (c === '\r' || c === '\n' || c === '\x03' || c === '\x0c' || c === '\x15') n = 0;
-      else if (c === '\x7f' || c === '\b') n = Math.max(0, n - 1);
-      else if (c >= ' ') n++;
-    }
-    s.cliChars = n;
-  }
-
   function send(s, obj) {
     if (!s.ws || s.ws.readyState !== WebSocket.OPEN) return;
     if (obj.type === 'data' && s.scrollView) closeLocalScroll(s); // 打字 / 按键 = 回到实时画面
     if (obj.type === 'data' && typeof obj.data === 'string' && !obj.auto) {
       predictInput(s, obj.data); // 打字预测回显
-      trackCliInput(s, obj.data);
+      s.cli.feed(obj.data); // 终端输入框里的内容先在本地算一遍 (服务器算好后会同步过来，以服务器的为准)
     }
     // 大段粘贴分块发送，避免单条消息超过服务端 1MB 上限导致连接被断开
     if (obj.type === 'data' && typeof obj.data === 'string' && obj.data.length > 32768) {
@@ -322,6 +298,8 @@
         });
       } else if (m.type === 'tmux-history') {
         onTmuxHistory(s, m);
+      } else if (m.type === 'cli') {
+        s.cli.set(m); // 服务器算的终端输入框内容 (包括别的设备上打的字)
       } else if (m.type === 'state') {
         s.srvState = { label: m.label, cls: m.cls };
         renderDeskTabs();

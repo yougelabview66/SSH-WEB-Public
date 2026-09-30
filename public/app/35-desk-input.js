@@ -61,34 +61,6 @@
     autosizeDesk();
   }).observe(dInput);
 
-  // ------------------------------------------------------------ 屏幕上 Claude Code 的输入框里有没有字
-  // 输入框 = 屏幕下部两条横线中间、第一行 ❯ / > 开头 (选择框的「❯ 1. Yes」不算)；上面那条横线右边可能带会话名称。
-  // 推荐文字、空输入框的提示文字是暗灰色的，不算字。只是看一眼，不改里面的内容
-  const RULE = /^\s*[╭└╰┌]?─{8,}/;
-  function claudeInputBox(s) {
-    const b = s.term.buffer.active, rows = s.term.rows;
-    const line = (y) => b.getLine(b.viewportY + y);
-    const text = (y) => line(y)?.translateToString(true) || '';
-    let bot = -1, top = -1;
-    for (let y = rows - 1; y >= 0; y--) if (RULE.test(text(y))) { bot = y; break; }
-    for (let y = bot - 1; y >= 0 && bot - y <= 30; y--) if (RULE.test(text(y))) { top = y; break; }
-    if (top < 0 || bot - top < 2) return null;
-    const first = text(top + 1).replace(/^\s*│/, '');
-    const m = /^(\s*[❯>]\s?)(.*)$/.exec(first);
-    if (!m || /^\d+\.\s/.test(m[2])) return null;
-    const start = text(top + 1).length - first.length + m[1].length;
-    let hasText = false;
-    for (let y = top + 1; y < bot && !hasText; y++) {
-      const l = line(y);
-      for (let x = y === top + 1 ? start : 0; x < s.term.cols && !hasText; x++) {
-        const c = l.getCell(x), ch = c?.getChars();
-        if (!ch || !ch.trim() || '│'.includes(ch)) continue;
-        if (!c.isDim() && !c.isInverse() && (c.isFgDefault ? c.isFgDefault() : c.getFgColorMode() === 0)) hasText = true;
-      }
-    }
-    return { top, bot, hasText };
-  }
-
   function setCmdMode(on) {
     cmdMode = on ? { s: active, n: 0 } : null;
     $('#deskBar').classList.toggle('cmd', on);
