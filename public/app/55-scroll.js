@@ -112,18 +112,31 @@
     if (b.type !== 'alternate' || s.scrollView) return false;
     return /\[\d+\/\d+\]\s*$/.test(b.getLine(b.viewportY)?.translateToString(true) || '');
   }
+  // Claude Code 全屏模式 (/tui fullscreen) 自己接管滚轮，往上翻时输入框上方显示
+  // 「Jump to bottom (ctrl+end) ↓」/「3 new messages (ctrl+end) ↓」：同样显示「回到实时画面」，点了发 Ctrl+End
+  const CC_PILL = /(^|\s)(Jump to bottom|\d+ new messages?)(( \([^)]*\))? ↓|: \S.{0,24} to scroll)(\s|$)/;
+  function claudeScrolledUp(s) {
+    const b = s.term.buffer.active;
+    if (b.type !== 'alternate' || s.scrollView) return false;
+    for (let y = b.viewportY + s.term.rows - 1; y >= b.viewportY; y--) { // 提示在下半部分，从下往上找
+      if (CC_PILL.test(b.getLine(y)?.translateToString(true) || '')) return true;
+    }
+    return false;
+  }
+  const EXIT_KEYS = { tmux: ['q', '退出 tmux 复制模式 (发送 q)'], claude: ['\x1b[1;5F', '回到 Claude Code 最新的对话 (发送 Ctrl+End)'] };
   function updateCopyModeBtn(s) {
-    const on = !!s.sid && tmuxInCopyMode(s);
-    if (on && !s.copyBtn) {
+    const mode = !s.sid ? null : tmuxInCopyMode(s) ? 'tmux' : claudeScrolledUp(s) ? 'claude' : null;
+    if (mode && !s.copyBtn) {
       s.copyBtn = document.createElement('button');
       s.copyBtn.className = 'ls-close tmux-exit';
       s.copyBtn.textContent = '回到实时画面 ✕';
-      s.copyBtn.title = '退出 tmux 复制模式 (发送 q)';
       s.copyBtn.addEventListener('mousedown', (e) => e.preventDefault());
-      s.copyBtn.addEventListener('click', () => { send(s, { type: 'data', data: 'q' }); focusTerm(s); });
+      s.copyBtn.addEventListener('click', () => { send(s, { type: 'data', data: EXIT_KEYS[s.copyBtn.dataset.mode][0] }); focusTerm(s); });
       s.box.appendChild(s.copyBtn);
     }
-    if (s.copyBtn) s.copyBtn.classList.toggle('hidden', !on);
+    if (!s.copyBtn) return;
+    s.copyBtn.classList.toggle('hidden', !mode);
+    if (mode && s.copyBtn.dataset.mode !== mode) { s.copyBtn.dataset.mode = mode; s.copyBtn.title = EXIT_KEYS[mode][1]; }
   }
   setInterval(() => { if (active) updateCopyModeBtn(active); }, 300);
 

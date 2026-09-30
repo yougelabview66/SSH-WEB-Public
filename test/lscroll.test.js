@@ -8,8 +8,8 @@ for (let i = 1; i <= 3000; i++) HIST.push(i % 10 === 0 ? `\x1b[31mERROR line ${i
 const hist = HIST.join('\n') + '\n';
 const OTHER = Array.from({ length: 200 }, (_, i) => `完全不相干的另一个 pane ${i}`).join('\n') + '\n';
 
-// mode: ok | none (没有 tmux) | busy (全屏程序) | other (抓到别的 pane) | plain (普通 shell，不开鼠标)
-let got = ''; const execs = []; const envs = [];
+// mode: ok | none (没有 tmux) | busy (全屏程序) | other (抓到别的 pane) | plain (普通 shell，不开鼠标) | claude (全屏模式的 Claude Code)
+let got = ''; let ccUp = 0; const execs = []; const envs = [];
 function mockServer(port, mode) {
   new Server({ hostKeys: [hostKey()] }, (c) => {
     c.on('authentication', (ctx) => ctx.accept());
@@ -21,37 +21,49 @@ function mockServer(port, mode) {
         const st = a();
         st.on('data', (d) => {
           got += d; const k = String(d);
+          if (mode === 'claude') {
+            // 模拟 Claude Code 全屏模式：滚轮往上 → 输入框上方盖一个提示 (两边还是对话内容)，第二次起是「N new messages」；Ctrl+End → 回到底部，提示消失
+            if (k.includes('\x1b[<64;')) { st.write(`\x1b7\x1b[20;1H\x1b[K对话内容 xyz          \x1b[7m ${++ccUp > 1 ? ccUp + ' new messages' : 'Jump to bottom'} (ctrl+end) ↓ \x1b[0m          对话内容\x1b8`); }
+            if (k === '\x1b[1;5F') { ccUp = 0; st.write('\x1b7\x1b[20;1H\x1b[K\x1b8'); }
+            return;
+          }
           // 模拟 tmux 复制模式：收到滚轮向上就在右上角显示位置标记，收到 q 退出
           if (mode !== 'plain' && k.includes('\x1b[<64;')) st.write('\x1b7\x1b[1;60H\x1b[7m[5/300]\x1b[0m\x1b8');
           if (mode !== 'plain' && k === 'q') st.write('\x1b7\x1b[1;60H\x1b[K\x1b8');
         });
         if (mode === 'plain') { st.write(HIST.slice(-80).join('\r\n') + '\r\n$ '); return; }
+        if (mode === 'claude') {
+          st.write('\x1b[?1049h\x1b[?1000h\x1b[?1006h\x1b[H\x1b[2J' + HIST.slice(-10).join('\r\n')
+            + '\r\n回答里提到 Jump to bottom 这几个字\r\nJump to bottom\r\n3 new messages 也是普通文字' // 普通对话文字，不算提示
+            + '\x1b[30;1H────────\r\n> \r\n────────');
+          return;
+        }
         // 像 tmux：备用屏幕 + 鼠标 (SGR)，屏幕上是历史的最后几十行，最后一行状态栏
         st.write('\x1b[?1049h\x1b[?1000h\x1b[?1006h\x1b[H\x1b[2J' + HIST.slice(-60).join('\r\n') + '\x1b[999;1H\x1b[42m[main] 0:bash*\x1b[K\x1b[0m');
       });
       s.on('exec', (a, r, info) => {
         const ch = a();
         execs.push({ mode, cmd: info.command });
-        const code = mode === 'none' ? 3 : mode === 'busy' ? 4 : 0;
+        const code = mode === 'none' ? 3 : mode === 'busy' || mode === 'claude' ? 4 : 0;
         if (!code) ch.write(mode === 'other' ? OTHER : hist);
         ch.exit(code); ch.end();
       });
     }));
   }).listen(port, '127.0.0.1');
 }
-mockServer(2240, 'ok'); mockServer(2241, 'none'); mockServer(2242, 'busy'); mockServer(2243, 'other'); mockServer(2244, 'plain');
+mockServer(2240, 'ok'); mockServer(2241, 'none'); mockServer(2242, 'busy'); mockServer(2243, 'other'); mockServer(2244, 'plain'); mockServer(2245, 'claude');
 const B = BASE;
 const WHEEL_UP = '\x1b[<64;';
 
 (async () => {
-  for (const [n, port] of [['TMUX', 2240], ['NOTMUX', 2241], ['BUSY', 2242], ['OTHER', 2243], ['PLAIN', 2244]]) {
+  for (const [n, port] of [['TMUX', 2240], ['NOTMUX', 2241], ['BUSY', 2242], ['OTHER', 2243], ['PLAIN', 2244], ['CC', 2245]]) {
     await post('/api/hosts', { name: n, host: '127.0.0.1', port, username: 'u', password: 'x' });
   }
   const browser = await launch();
   const errors = [];
   const p = await (await browser.newContext({ viewport: { width: 1280, height: 800 } })).newPage(); p.on('pageerror', (e) => errors.push(e.message));
   await p.goto(B + '/'); await p.waitForSelector('#app:not(.hidden)');
-  const PORTS = { TMUX: 2240, NOTMUX: 2241, BUSY: 2242, OTHER: 2243, PLAIN: 2244 };
+  const PORTS = { TMUX: 2240, NOTMUX: 2241, BUSY: 2242, OTHER: 2243, PLAIN: 2244, CC: 2245 };
   const open = async (name) => { await p.locator('.host', { hasText: ':' + PORTS[name] }).first().click(); await wait(1500); };
   const overTerm = async () => { const b = await p.locator('.term.active .term-box').boundingBox(); await p.mouse.move(b.x + b.width / 2, b.y + b.height / 2); };
   const view = () => p.evaluate(() => {
@@ -123,6 +135,18 @@ const WHEEL_UP = '\x1b[<64;';
   ok(got === 'q' && await p.isHidden('.term.active .tmux-exit'), '点它发送 q 退出复制模式，按钮消失');
   await open('NOTMUX'); await wait(500);
   ok(await p.evaluate(() => !document.querySelector('.term.active .font-toast')), '没有 tmux 时也不弹提示');
+  // ---- Claude Code 全屏模式：它自己滚，出现「Jump to bottom (ctrl+end) ↓」时也显示「回到实时画面」
+  await open('CC'); await wait(500);
+  ok(await p.isHidden('.term.active .tmux-exit'), 'Claude Code 全屏模式：对话里的普通文字 (Jump to bottom / 3 new messages) 不当成提示');
+  await overTerm(); got = '';
+  await p.mouse.wheel(0, -100); await wait(1500);
+  ok(got.includes(WHEEL_UP) && !(await view()), 'Claude Code 全屏模式：滚轮交给它自己滚，不打开历史视图');
+  ok(await p.isVisible('.term.active .tmux-exit'), '出现「Jump to bottom (ctrl+end) ↓」→ 显示「回到实时画面」');
+  await p.mouse.wheel(0, -100); await wait(600);
+  ok(await p.isVisible('.term.active .tmux-exit'), '变成「2 new messages (ctrl+end) ↓」时按钮还在');
+  await p.screenshot({ path: shot('cc-fullscreen.png') });
+  got = ''; await p.click('.term.active .tmux-exit'); await wait(700);
+  ok(got === '\x1b[1;5F' && await p.isHidden('.term.active .tmux-exit'), '点它发送 Ctrl+End 回到最新对话，提示消失后按钮也消失: ' + JSON.stringify(got));
   // ---- 普通 shell (没开鼠标)：xterm 自己的本地滚动，不去抓
   await open('PLAIN'); await overTerm();
   const ex2 = execs.length;
