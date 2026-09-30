@@ -104,6 +104,10 @@ claudeServer(2253); claudeServer(2254, true); claudeServer(2256, false, 'sgr'); 
   ok(await inTerm(), '按 ↑ 翻出历史 (输入框里有了字)：点终端留在终端');
   await typeInTerm(['Control+c']); await clickRow(3);
   ok(await inDesk(), 'Ctrl+C 后：点终端回到下方输入框');
+  await p.fill('#dInput', ''); await p.click('#dInput'); await p.keyboard.press('Tab'); await wait(300); // 下方输入框空着按 Tab：发给 Claude Code，填入推荐文字
+  await clickRow(3);
+  ok(await inTerm(), '下方输入框空着按 Tab (Claude Code 填入推荐文字)：点 Claude Code 的输入框锁定在终端');
+  await typeInTerm(['Control+c']);
   // 打了字再用 Ctrl+W 删光 (记忆数不准，还以为有字)：屏幕上输入框只剩暗灰色的推荐文字 → 回到下方输入框
   await typeInTerm(['h', 'e', 'l', 'l', 'o', ' ', 'y', 'o', 'u']); await clickRow(3);
   ok(await inTerm(), '打了 hello you：点输入框留在终端');
