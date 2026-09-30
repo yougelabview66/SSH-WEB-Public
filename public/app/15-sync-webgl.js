@@ -107,7 +107,7 @@
     });
     enableWebgl(s);
     requestAnimationFrame(() => { syncSize(s); focusTerm(s); });
-    s.tab.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    revealTab(s.tab);
     s.tab.classList.remove('ring');
     updateSftpBtn();
     updateMobileBar();

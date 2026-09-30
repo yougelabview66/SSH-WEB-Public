@@ -78,7 +78,10 @@
     <main>
       <div id="tabbar">
         <button id="btnToggle" title="主机列表">☰</button>
+        <button id="tabsL" class="tabs-arrow hidden" title="往左翻标签">‹</button>
         <div id="tabs"></div>
+        <button id="tabsR" class="tabs-arrow hidden" title="往右翻标签">›</button>
+        <button id="btnTabList" class="hidden" title="全部标签">▾</button>
         <button id="lat" class="lat hidden" title="网络延迟 (上排：网页，下排：SSH)，点击查看"><span class="sig" data-k="web"><span class="bars"><i></i><i></i><i></i><i></i></span></span><span class="sig" data-k="ssh"><span class="bars"><i></i><i></i><i></i><i></i></span></span></button>
         <button id="btnInput" class="tbtn hidden" title="底部输入框：打字先在本地编辑，回车才发送，没有卡顿">✏️<span class="lbl"> 输入框</span></button>
         <button id="btnFloat" class="tbtn hidden" title="主机状态悬浮窗：开 / 关">🖥️<span class="lbl"> 状态</span></button>
@@ -135,6 +138,8 @@
 
   <!-- 延迟详情 (点标签栏的信号图标) -->
   <div id="latPop" class="hidden"></div>
+  <!-- 全部标签 (标签多到放不下时，点标签栏的 ▾) -->
+  <div id="tabListPop" class="hidden"></div>
 
   <!-- 连接 / 编辑主机 -->
   <div id="modal" class="overlay hidden">
