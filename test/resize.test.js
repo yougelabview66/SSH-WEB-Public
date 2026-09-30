@@ -67,7 +67,9 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   // 刷新保持
   await p.reload(); await p.waitForSelector('.tab'); await wait(1500); s = await st();
   ok(Math.abs(s.h - hSaved) <= 2, `刷新后高度保持 ${s.h}px`);
-  ok(await p.evaluate(() => document.getElementById('dSend').offsetHeight) === s.h, '右边按钮和设定的输入框高度一样高');
+  ok(s.h > 60 && await p.evaluate(() => document.getElementById('dSend').offsetHeight) === 60, `输入框拖高到 ${s.h}px 时，右边按钮最高只到 60px`);
+  await drag(2000); await drag(-10); s = await st();
+  ok(s.h < 60 && await p.evaluate(() => document.getElementById('dSend').offsetHeight) === s.h, `输入框不到 60px (${s.h}px) 时，右边按钮和它一样高`);
   // 以前存的默认 60px 当作没设置过 → 40px；拖高过的 (> 60) 保留
   for (const [old, want] of [['60', 40], ['150', 150]]) {
     await p.evaluate((v) => { localStorage.removeItem('sshweb.deskH'); localStorage.setItem('sshweb.deskMinH', v); }, old);
