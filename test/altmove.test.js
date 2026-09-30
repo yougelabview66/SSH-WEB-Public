@@ -7,7 +7,7 @@ const { Server } = require('ssh2');
 // 多行粘贴显示成 [Pasted text #1 +3 lines]；Ctrl+L 清空；长文字按单词折行，续行缩进两格
 const W = 40;
 let got = '', termRows = 0, ccStream = null;
-function claudeServer(port, plain) {
+function claudeServer(port, plain, mouse) {
   new Server({ hostKeys: [hostKey()] }, (c) => {
     c.on('authentication', (ctx) => ctx.accept());
     c.on('ready', () => c.on('session', (acc) => {
@@ -15,7 +15,7 @@ function claudeServer(port, plain) {
       s.on('pty', (a, r, i) => { termRows = i.rows; a(); }); s.on('window-change', (a, r, i) => { termRows = i.rows; a && a(); });
       s.on('shell', (a) => {
         const st = a();
-        if (!plain) ccStream = st;
+        if (!plain && !mouse) ccStream = st;
         if (plain) { st.write('$ ls\r\nfile1  file2\r\n$ '); st.on('data', (d) => { got += d; }); return; }
         let cur = '', pastes = 0;
         const wrap = (t) => {
@@ -34,7 +34,8 @@ function claudeServer(port, plain) {
           const body = cur ? wrap(cur).map((l, i) => (i ? '  ' : '❯ ') + l) : ['❯ \x1b[7mT\x1b[27m\x1b[2mry "fix lint errors"\x1b[22m'];
           st.write('\x1b[3;1H\x1b[J' + rule + '\r\n' + body.join('\r\n') + '\r\n' + rule + '\r\n  ⏵⏵ auto mode on (shift+tab to cycle)');
         };
-        st.write('\x1b[?1049h\x1b[?2004h\x1b[H\x1b[2J● 之前的回答内容\r\n');
+        // mouse：像开了鼠标的 tmux，点终端会收到鼠标报告 (sgr = ESC[<0;x;yM，x10 = 老式 ESC[M + 3 字节)
+        st.write('\x1b[?1049h\x1b[?2004h' + (mouse ? '\x1b[?1000h' + (mouse === 'sgr' ? '\x1b[?1006h' : '') : '') + '\x1b[H\x1b[2J● 之前的回答内容\r\n');
         draw();
         st.on('data', (d) => {
           const k = String(d); got += k;
@@ -50,10 +51,10 @@ function claudeServer(port, plain) {
     }));
   }).listen(port, '127.0.0.1');
 }
-claudeServer(2253); claudeServer(2254, true);
+claudeServer(2253); claudeServer(2254, true); claudeServer(2256, false, 'sgr'); claudeServer(2257, false, 'x10');
 
 (async () => {
-  for (const [name, port] of [['CCM', 2253], ['SHELL', 2254]]) {
+  for (const [name, port] of [['CCM', 2253], ['SHELL', 2254], ['MSGR', 2256], ['MX10', 2257]]) {
     await fetch(BASE + '/api/hosts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, host: '127.0.0.1', port, username: 'u', password: 'x' }) });
   }
   const browser = await launch();
@@ -105,6 +106,17 @@ claudeServer(2253); claudeServer(2254, true);
   await p.locator('.host', { hasText: 'SHELL' }).click(); await wait(1500);
   await clickRow(0);
   ok(await inDesk(), '普通命令行 (没有 Claude Code 输入框)：点终端照旧回到下方输入框');
+  // 开了鼠标的 tmux：点终端会发鼠标报告，不能被当成打了字
+  for (const [name, desc] of [['MSGR', '新式鼠标报告 ESC[<0;x;yM'], ['MX10', '老式鼠标报告 ESC[M']]) {
+    await p.locator('.host', { hasText: name }).click(); await wait(1500);
+    got = '';
+    for (let i = 0; i < 3; i++) { await clickRow(3); await clickRow(0); }
+    ok(got.includes(name === 'MSGR' ? '\x1b[<0;' : '\x1b[M') && await inDesk(), `tmux 开了鼠标 (${desc})：连点终端 6 次，鼠标点击不算打字，光标回到下方输入框`);
+    await typeInTerm(['a']); await clickRow(3);
+    ok(await inTerm(), `tmux 开了鼠标 (${desc})：真的在终端里打了字，点终端留在终端`);
+    await typeInTerm(['Enter']); await clickRow(3);
+    ok(await inDesk(), `tmux 开了鼠标 (${desc})：发送后点终端回到下方输入框`);
+  }
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
   await browser.close(); process.exit();
 })().catch((e) => { console.error(e); process.exit(1); });

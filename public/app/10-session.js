@@ -201,9 +201,11 @@
     for (let i = 0; i < d.length; i++) {
       const c = d[i];
       if (c === '\x1b') {
-        const seq = /^\x1b(?:\[[\d;]*[A-Za-z~]|O[A-Za-z]|.)?/.exec(d.slice(i))[0];
+        // 控制序列整个跳过 (鼠标点击 / 滚轮的报告 ESC[<0;10;5M 这种不算打字)
+        const seq = /^\x1b(?:\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]|O.|.)?/.exec(d.slice(i))[0];
         if (seq === '\x1b[A' || seq === '\x1bOA') n = Math.max(n, 1);
         i += seq.length - 1;
+        if (seq === '\x1b[M') i += 3; // 老式鼠标报告：ESC[M 后面跟 3 个字节
       } else if (c === '\r' || c === '\n' || c === '\x03' || c === '\x0c' || c === '\x15') n = 0;
       else if (c === '\x7f' || c === '\b') n = Math.max(0, n - 1);
       else if (c >= ' ') n++;
