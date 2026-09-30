@@ -6,7 +6,7 @@ const { Server } = require('ssh2');
 // 模拟 Claude Code 的输入框：上下两条横线，❯ 开头；空的时候显示灰色提示文字；
 // 多行粘贴显示成 [Pasted text #1 +3 lines]；Ctrl+L 清空；长文字按单词折行，续行缩进两格
 const W = 40;
-let got = '', termRows = 0;
+let got = '', termRows = 0, ccStream = null;
 function claudeServer(port, plain) {
   new Server({ hostKeys: [hostKey()] }, (c) => {
     c.on('authentication', (ctx) => ctx.accept());
@@ -15,6 +15,7 @@ function claudeServer(port, plain) {
       s.on('pty', (a, r, i) => { termRows = i.rows; a(); }); s.on('window-change', (a, r, i) => { termRows = i.rows; a && a(); });
       s.on('shell', (a) => {
         const st = a();
+        if (!plain) ccStream = st;
         if (plain) { st.write('$ ls\r\nfile1  file2\r\n$ '); st.on('data', (d) => { got += d; }); return; }
         let cur = '', pastes = 0;
         const wrap = (t) => {
@@ -77,18 +78,30 @@ claudeServer(2253); claudeServer(2254, true);
   got = ''; await altAlt();
   ok(await inDesk() && got === '' && await p.inputValue('#dInput') === 'hello world', '终端 → 下方输入框：只切换光标，不抄回来、不发 Ctrl+L，下方输入框的字还在');
 
-  // 点终端：点的是 Claude Code 的输入框、里面有字 → 光标留在终端 (想改里面的内容)；空的 / 点别处 → 回到下方输入框
+  // 点终端：记得在终端的输入框里打过字 (还没发送) → 光标留在终端 (想改里面的内容)；没打过字 → 回到下方输入框
   const clickRow = async (row) => {
     const r = await p.evaluate(() => { const e = document.querySelector('.term.active .xterm-screen').getBoundingClientRect(); return { x: e.left, y: e.top, h: e.height }; });
     await p.mouse.click(r.x + 120, r.y + (row + 0.5) * (r.h / termRows)); await wait(300);
   };
-  await clickRow(3); // Claude Code 输入框那一行 (里面是 typed in cli)
-  ok(await inTerm(), '点 Claude Code 的输入框、里面有字：光标留在终端，方便修改');
-  await clickRow(0);
-  ok(await inDesk(), 'Claude Code 输入框有字，但点的是终端别处：光标回到下方输入框');
-  await p.locator('.term.active .xterm-helper-textarea').focus(); await p.keyboard.press('Control+l'); await wait(300); // 在 Claude Code 里清空输入框
-  await p.click('#dInput'); await clickRow(3);
-  ok(await inDesk(), '点 Claude Code 的输入框、里面是空的 (只有灰色提示文字)：光标回到下方输入框');
+  const typeInTerm = async (keys) => { await p.locator('.term.active .xterm-helper-textarea').focus(); for (const k of keys) await p.keyboard.press(k); await wait(200); await p.click('#dInput'); };
+  await clickRow(3); // 前面在终端里打了 typed in cli
+  ok(await inTerm(), '在终端的输入框里打过字：点 Claude Code 的输入框，光标留在终端，方便修改');
+  await p.click('#dInput'); await clickRow(0);
+  ok(await inTerm(), '打过字还没发送时，点终端别处也留在终端');
+  await typeInTerm(['Control+l']); await clickRow(3);
+  ok(await inDesk(), 'Ctrl+L 清空后：点终端回到下方输入框');
+  await typeInTerm(['a', 'b', 'Backspace', 'Backspace']); await clickRow(3);
+  ok(await inDesk(), '打了字又用退格删光：点终端回到下方输入框');
+  await typeInTerm(['x', 'Enter']); await clickRow(3);
+  ok(await inDesk(), '打了字按回车发送后：点终端回到下方输入框');
+  await typeInTerm(['ArrowUp']); await clickRow(3);
+  ok(await inTerm(), '按 ↑ 翻出历史 (输入框里有了字)：点终端留在终端');
+  await typeInTerm(['Control+c']); await clickRow(3);
+  ok(await inDesk(), 'Ctrl+C 后：点终端回到下方输入框');
+  // Claude Code 自己在输入框里显示推荐提示词 (正常颜色)，你没打过字：点它回到下方输入框
+  ccStream.write('\x1b[4;1H\x1b[K❯ 帮我运行一下测试  → to accept');
+  await wait(300); await clickRow(3);
+  ok(await inDesk(), 'Claude Code 显示推荐提示词 (没在终端里打过字)：点它光标回到下方输入框');
   await p.locator('.host', { hasText: 'SHELL' }).click(); await wait(1500);
   await clickRow(0);
   ok(await inDesk(), '普通命令行 (没有 Claude Code 输入框)：点终端照旧回到下方输入框');

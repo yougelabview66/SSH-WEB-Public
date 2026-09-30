@@ -97,10 +97,9 @@
       s.box.addEventListener('click', () => { if (s.longPressed) { s.longPressed = false; return; } mInput.focus(); });
     } else {
       // 电脑：下方输入框开着时，点终端后光标回到下方输入框；点击本身照常交给 tmux / Claude Code。
-      // 不抢的情况：选中了文字 (方便复制)、连按两下 Alt 进终端直接打字、点的是 Claude Code 的输入框而且里面有字 (想改里面的内容)
+      // 不抢的情况：选中了文字 (方便复制)、连按两下 Alt 进终端直接打字、在终端的输入框里打过字还没发送 (想改里面的内容，见 trackCliInput)
       s.box.addEventListener('click', (e) => {
-        if (e.button !== 0 || !deskOn || termDirect || s.term.hasSelection() || e.target.closest('button, .lscroll')) return;
-        if (clickedClaudeInputWithText(s, e)) return;
+        if (e.button !== 0 || !deskOn || termDirect || s.cliChars > 0 || s.term.hasSelection() || e.target.closest('button, .lscroll')) return;
         dInput.focus({ preventScroll: true });
       });
     }
@@ -194,10 +193,31 @@
   // (别的设备正在用时，后台设备自动重连 / 恢复画面发出的尺寸服务端只记下来不生效)
   const userHere = () => !document.hidden && document.hasFocus();
 
+  // 记住终端 (Claude Code) 的输入框里有没有打过字：直接打字 / 粘贴 / ↑ 翻出历史 = 有字；
+  // 回车、Ctrl+C、Ctrl+L、Ctrl+U 或者退格删光 = 没字。有字时点终端不把光标拉回下方输入框 (想改里面的内容)
+  function trackCliInput(s, d) {
+    let n = s.cliChars || 0;
+    if (d.startsWith('\x1b[200~')) { s.cliChars = n + d.length; return; }
+    for (let i = 0; i < d.length; i++) {
+      const c = d[i];
+      if (c === '\x1b') {
+        const seq = /^\x1b(?:\[[\d;]*[A-Za-z~]|O[A-Za-z]|.)?/.exec(d.slice(i))[0];
+        if (seq === '\x1b[A' || seq === '\x1bOA') n = Math.max(n, 1);
+        i += seq.length - 1;
+      } else if (c === '\r' || c === '\n' || c === '\x03' || c === '\x0c' || c === '\x15') n = 0;
+      else if (c === '\x7f' || c === '\b') n = Math.max(0, n - 1);
+      else if (c >= ' ') n++;
+    }
+    s.cliChars = n;
+  }
+
   function send(s, obj) {
     if (!s.ws || s.ws.readyState !== WebSocket.OPEN) return;
     if (obj.type === 'data' && s.scrollView) closeLocalScroll(s); // 打字 / 按键 = 回到实时画面
-    if (obj.type === 'data' && typeof obj.data === 'string' && !obj.auto) predictInput(s, obj.data); // 打字预测回显
+    if (obj.type === 'data' && typeof obj.data === 'string' && !obj.auto) {
+      predictInput(s, obj.data); // 打字预测回显
+      trackCliInput(s, obj.data);
+    }
     // 大段粘贴分块发送，避免单条消息超过服务端 1MB 上限导致连接被断开
     if (obj.type === 'data' && typeof obj.data === 'string' && obj.data.length > 32768) {
       for (let i = 0; i < obj.data.length; i += 32768) s.ws.send(JSON.stringify({ type: 'data', data: obj.data.slice(i, i + 32768) }));

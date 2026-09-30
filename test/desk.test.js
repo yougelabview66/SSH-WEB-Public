@@ -68,6 +68,7 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   await p.locator('.term.active .term-box').click({ position: { x: 200, y: 100 } }); await wait(200);
   got = ''; await p.keyboard.type('pwd'); await wait(300);
   ok(got === 'pwd', '连按两下 Alt 进终端后，点终端照样直接在终端打字');
+  await p.keyboard.press('Enter'); await wait(100); // 发送掉 (终端输入框里有没发送的字时点终端会留在终端，见 altmove 测试)
   await p.click('#dInput'); await wait(100);
   await p.locator('.term.active .term-box').click({ position: { x: 200, y: 100 } }); await wait(200);
   ok(await p.evaluate(() => document.activeElement.id) === 'dInput', '光标回到输入框以后，再点终端又会回到输入框');
