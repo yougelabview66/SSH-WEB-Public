@@ -61,22 +61,6 @@
     autosizeDesk();
   }).observe(dInput);
 
-  // ------------------------------------------------------------ 连按两下 Alt 从下方输入框切到终端时，把内容剪切过去
-  // 发进终端 (不回车；多行按粘贴发，Claude Code 不会把换行当提交)。反方向 (终端 → 下方输入框) 只切换光标：
-  // 从屏幕认 Claude Code 输入框里的字不可靠，清空时还可能丢掉粘贴的图片 / 长文本
-  function moveDeskToTerm(s) {
-    const text = dInput.value;
-    if (!text || !s?.sid) return;
-    if (cmdMode) { setCmdMode(false); setDeskText(''); return; } // 命令模式的字早就逐字发过去了
-    let data = text.replace(/\r?\n/g, '\r');
-    if (data.includes('\r')) {
-      if (!s.term.modes.bracketedPasteMode) return; // 不支持粘贴的程序：多行发过去会被一行行执行，留在输入框
-      data = '\x1b[200~' + data + '\x1b[201~';
-    }
-    send(s, { type: 'data', data });
-    setDeskText('');
-  }
-
   function setCmdMode(on) {
     cmdMode = on ? { s: active, n: 0 } : null;
     $('#deskBar').classList.toggle('cmd', on);

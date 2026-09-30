@@ -1,5 +1,5 @@
 'use strict';
-// 连按两下 Alt 从下方输入框切到终端时，内容跟着剪切过去；反方向只切换光标
+// 连按两下 Alt 在下方输入框和终端之间只切换光标，两边的字都不动
 const { BASE, ok, wait, shot, launch, hostKey } = require('./helpers');
 const { Server } = require('ssh2');
 
@@ -65,36 +65,17 @@ claudeServer(2253); claudeServer(2254, true);
   const inDesk = () => p.evaluate(() => document.activeElement.id === 'dInput');
   await p.click('#dInput');
 
-  // 下方输入框是空的：只切换光标，什么都不发
-  got = ''; await altAlt();
-  ok(await inTerm() && got === '', '下方输入框是空的：只把光标切到终端，什么都不发');
-  await altAlt();
-  ok(await inDesk() && got === '', '切回下方输入框：什么都不发');
-
-  // 下方输入框 → 终端：内容跟着过去
+  // 下方输入框有字：切到终端只切换光标，字留在下方输入框，什么都不发
   await p.keyboard.type('hello world'); got = '';
   await altAlt();
-  ok(await inTerm() && got === 'hello world' && await p.inputValue('#dInput') === '', '下方输入框 → 终端：内容发进 Claude Code 的输入框 (不回车)，下方输入框清空: ' + JSON.stringify(got));
+  ok(await inTerm() && got === '' && await p.inputValue('#dInput') === 'hello world', '下方输入框 → 终端：只切换光标，下方输入框的字不动、不发给终端: ' + JSON.stringify(got));
   await p.screenshot({ path: shot('altmove-term.png') });
-  // 终端 → 下方输入框：只切换光标，不读、不清 Claude Code 的输入框 (粘贴的图片 / 长文本不会被清掉)
+  // 在终端里打的字照常发给 Claude Code
+  await p.keyboard.type('typed in cli'); await wait(300);
+  ok(got === 'typed in cli', '在终端里打的字直接发给 Claude Code');
+  // 切回下方输入框：只切换光标，不读、不清 Claude Code 的输入框
   got = ''; await altAlt();
-  ok(await inDesk() && await p.inputValue('#dInput') === '' && got === '', '终端 → 下方输入框：只切换光标，不抄回来、不发 Ctrl+L: ' + JSON.stringify(got));
-
-  // 多行：按粘贴发过去
-  await p.fill('#dInput', 'line1\nline2\nline3'); await p.evaluate(() => document.getElementById('dInput').dispatchEvent(new Event('input')));
-  got = ''; await altAlt();
-  ok(got === '\x1b[200~line1\rline2\rline3\x1b[201~' && await p.inputValue('#dInput') === '', '多行内容按粘贴发过去 (换行不会被当成提交): ' + JSON.stringify(got));
-  await altAlt();
-
-  // 普通命令行 (不支持括号粘贴)：单行照样发过去，多行留在输入框 (免得被一行行执行)
-  await p.locator('.host', { hasText: 'SHELL' }).click(); await wait(1500);
-  await p.click('#dInput'); await p.keyboard.type('ls -la'); got = '';
-  await altAlt();
-  ok(got === 'ls -la' && await p.inputValue('#dInput') === '', '普通命令行：单行内容发到命令行 (不回车)');
-  await altAlt();
-  await p.fill('#dInput', 'echo 1\necho 2'); await p.evaluate(() => document.getElementById('dInput').dispatchEvent(new Event('input')));
-  got = ''; await altAlt();
-  ok(got === '' && await p.inputValue('#dInput') === 'echo 1\necho 2', '普通命令行不支持粘贴模式：多行内容留在输入框，不会被一行行执行');
+  ok(await inDesk() && got === '' && await p.inputValue('#dInput') === 'hello world', '终端 → 下方输入框：只切换光标，不抄回来、不发 Ctrl+L，下方输入框的字还在');
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
   await browser.close(); process.exit();
 })().catch((e) => { console.error(e); process.exit(1); });
