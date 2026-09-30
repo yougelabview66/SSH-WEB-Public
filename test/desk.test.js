@@ -52,10 +52,31 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   got = ''; await p.keyboard.insertText('你好世界'); await wait(200);
   ok(got === '', '中文上屏不发送'); await p.keyboard.press('Enter'); await wait(300);
   ok(got === '你好世界\r', '中文回车发送');
-  // 终端里仍可直接打字
+  // 点终端：光标回到下方输入框 (习惯性点了 Claude Code 自己的输入框也不会跑进终端)
+  await p.fill('#dInput', '');
   await p.locator('.term.active .term-box').click({ position: { x: 200, y: 100 } }); await wait(200);
   got = ''; await p.keyboard.type('pwd'); await wait(300);
-  ok(got === 'pwd', '点终端后可直接在终端打字 (和原来一样)');
+  ok(got === '' && await p.inputValue('#dInput') === 'pwd' && await p.evaluate(() => document.activeElement.id) === 'dInput', '点终端后光标回到下方输入框，打的字进输入框');
+  await p.fill('#dInput', '');
+  // 拖动选中文字：不抢光标，方便复制
+  const tb = await p.locator('.term.active .xterm-screen').boundingBox();
+  await p.mouse.move(tb.x + 4, tb.y + 8); await p.mouse.down(); await p.mouse.move(tb.x + 200, tb.y + 8, { steps: 5 }); await p.mouse.up(); await wait(200);
+  ok(await p.evaluate(() => document.activeElement.classList.contains('xterm-helper-textarea')), '在终端里拖动选中文字时不抢光标 (方便复制)');
+  await p.click('#dInput');
+  // 连按两下 Alt 进终端直接打字，这时点终端不拉回来
+  await p.keyboard.press('Alt'); await p.keyboard.press('Alt'); await wait(200);
+  await p.locator('.term.active .term-box').click({ position: { x: 200, y: 100 } }); await wait(200);
+  got = ''; await p.keyboard.type('pwd'); await wait(300);
+  ok(got === 'pwd', '连按两下 Alt 进终端后，点终端照样直接在终端打字');
+  await p.click('#dInput'); await wait(100);
+  await p.locator('.term.active .term-box').click({ position: { x: 200, y: 100 } }); await wait(200);
+  ok(await p.evaluate(() => document.activeElement.id) === 'dInput', '光标回到输入框以后，再点终端又会回到输入框');
+  // 输入框关掉时，点终端照旧直接打字
+  await p.click('#dHide'); await wait(200);
+  await p.locator('.term.active .term-box').click({ position: { x: 200, y: 100 } }); await wait(200);
+  got = ''; await p.keyboard.type('ls'); await wait(300);
+  ok(got === 'ls', '下方输入框关掉时，点终端照旧直接在终端打字');
+  await p.click('#btnInput'); await wait(200);
   // 草稿按标签保存
   await p.click('#dInput'); await p.keyboard.type('draft1');
   await p.locator('.host', { hasText: 'D' }).click(); await wait(1200);

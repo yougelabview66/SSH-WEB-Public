@@ -204,7 +204,7 @@
     if (now - altLast > 400) { altLast = now; return; }
     altLast = 0;
     if (isTouch || !active || document.querySelector('.overlay:not(.hidden)')) return;
-    if (document.activeElement === dInput) active.term.focus();
+    if (document.activeElement === dInput) { active.term.focus(); termDirect = true; }
     else if (!deskOn) setDeskOn(true);
     else dInput.focus();
   }, true);

@@ -48,7 +48,7 @@ run(async () => {
   ok(size.cols === phone.cols && size.rows === phone.rows, `电脑用过之后手机刷新页面：按手机排版 ${s()}`);
 
   // 在电脑上打字：按电脑排版
-  await d.locator('.term.active .term-box').click({ position: { x: 300, y: 200 } }); await d.keyboard.type('x'); await wait(800);
+  await d.locator('.term.active .xterm-helper-textarea').focus(); await d.keyboard.type('x'); await wait(800); // 直接在终端里打字
   ok(size.cols > 100, `在电脑上打字：按电脑排版 ${s()}`);
   // 在手机上打字 (输入栏发送)：按手机排版
   await m.tap('#mInput'); await m.keyboard.type('y'); await m.keyboard.press('Enter'); await wait(800);

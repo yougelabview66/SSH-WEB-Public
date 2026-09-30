@@ -95,6 +95,13 @@
       s.term.textarea.setAttribute('readonly', 'readonly');
       s.term.textarea.addEventListener('focus', () => mInput.focus());
       s.box.addEventListener('click', () => { if (s.longPressed) { s.longPressed = false; return; } mInput.focus(); });
+    } else {
+      // 电脑：下方输入框开着时，点终端 (包括 Claude Code 自己的输入框) 后光标回到下方输入框；
+      // 点击本身照常交给 tmux / Claude Code。选中了文字时不抢 (方便复制)；连按两下 Alt 进终端直接打字时也不抢
+      s.box.addEventListener('click', (e) => {
+        if (e.button !== 0 || !deskOn || termDirect || s.term.hasSelection() || e.target.closest('button, .lscroll')) return;
+        dInput.focus({ preventScroll: true });
+      });
     }
     // 历史视图打开时输入栏藏起来、终端区域变高，先不重新排版 (免得 tmux 整屏重画)，关掉后尺寸又和原来一样
     s.ro = new ResizeObserver(() => { if (active === s && !s.scrollView) s.fit.fit(); });

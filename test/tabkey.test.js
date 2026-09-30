@@ -29,10 +29,10 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   ok(p.url() === url0, 'Alt+← 没有触发浏览器后退');
   ok(await p.evaluate(() => document.activeElement.id) === 'dInput', '切换后焦点在输入框');
   // 在终端里 (xterm 获得焦点) 也能用
-  await p.locator('.term.active .term-box').click({ position: { x: 300, y: 200 } }); await wait(200);
+  await p.locator('.term.active .xterm-helper-textarea').focus(); await wait(200); // 焦点放进终端 (点终端会回到下方输入框)
   got = ''; await p.keyboard.press('Alt+1'); await wait(300);
   ok(await act() === 'T-1' && got === '', '焦点在终端里时 Alt+1 也能切换，且不发给终端');
-  await p.locator('.term.active .term-box').click({ position: { x: 300, y: 200 } }); await wait(200);
+  await p.locator('.term.active .xterm-helper-textarea').focus(); await wait(200); // 焦点放进终端 (点终端会回到下方输入框)
   got = ''; await p.keyboard.press('Alt+b'); await wait(300);
   ok(got === '\x1bb', '其他 Alt 组合键 (Alt+b) 照常发给终端');
   // 按界面顺序 (模拟拖动排序后)

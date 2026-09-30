@@ -1,6 +1,8 @@
   // ------------------------------------------------------------ 手机输入栏
   const mInput = $('#mInput');
   const dInput = $('#dInput');
+  let termDirect = false; // 连按两下 Alt 进了终端直接打字：点终端时不把光标拉回下方输入框，光标回到输入框后恢复
+  dInput.addEventListener('focus', () => { termDirect = false; });
   let deskOn = (() => { try { return localStorage.getItem('sshweb.deskInput') !== '0'; } catch { return true; } })();
   const mods = { shift: false, ctrl: false, alt: false };
 

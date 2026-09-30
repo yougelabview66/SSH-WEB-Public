@@ -56,7 +56,7 @@ run(async () => {
   await p.goto(BASE + '/'); await p.waitForSelector('#app:not(.hidden)');
   const open = async (name) => {
     await p.locator('.host', { hasText: name }).first().click(); await wait(7000); // 等延迟测量 (刚连上 2 秒一次，攒够 3 次)
-    await p.locator('.term.active .term-box').click({ position: { x: 400, y: 300 } }); await wait(200); // 焦点放到终端里直接打字
+    await p.locator('.term.active .xterm-helper-textarea').focus(); await wait(200); // 焦点放到终端里直接打字 (点终端会回到下方输入框)
   };
   const pred = () => p.evaluate(() => [...document.querySelectorAll('.term.active .pred-ch')].map((e) => e.textContent).join(''));
   const type = async (t) => { for (const ch of t) await p.keyboard.type(ch); };
