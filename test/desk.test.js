@@ -41,7 +41,9 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   got = ''; await p.keyboard.type('a'); await p.keyboard.press('Shift+Enter'); await p.keyboard.type('b'); await p.keyboard.press('Shift+Enter'); await p.keyboard.type('c');
   const h1 = (await p.locator('#dInput').boundingBox()).height;
   ok(h1 > 70, 'Shift+Enter 换行，输入框自动变高 ' + h1);
-  await p.keyboard.press('Enter'); await wait(300);
+  await p.keyboard.press('Enter');
+  for (let t = 0; t < 20 && !got.endsWith('\r'); t++) await wait(50); // 最后的回车隔一会儿才单独发 (机器忙时会晚到)
+  await wait(100);
   ok(got === 'a\rb\rc\r', '无括号粘贴模式时多行按行发送: ' + JSON.stringify(got));
   ok((await p.locator('#dInput').boundingBox()).height < h1, '发送后输入框恢复一行');
   streams[0].write('\x1b[?2004h'); await wait(200);
