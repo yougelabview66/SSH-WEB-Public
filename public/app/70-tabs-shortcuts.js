@@ -189,7 +189,7 @@
     if (target && target !== active) activate(target);
   }, true);
 
-  // ------------------------------------------------------------ 连按两下 Alt：光标在输入框和终端之间切换，内容跟着剪切过去
+  // ------------------------------------------------------------ 连按两下 Alt：光标在输入框和终端之间切换 (切到终端时内容跟着过去)
   // 只算单独按下又松开的 Alt (Alt+1 等组合键里的 Alt 不算)；输入框隐藏时顺便打开
   let altClean = false, altLast = 0;
   window.addEventListener('keydown', (e) => {
@@ -204,10 +204,10 @@
     if (now - altLast > 400) { altLast = now; return; }
     altLast = 0;
     if (isTouch || !active || document.querySelector('.overlay:not(.hidden)')) return;
-    // 切换时把当前这边的内容剪切到另一边 (见 moveDeskToTerm / moveTermToDesk)
+    // 从下方输入框切到终端时把内容剪切过去 (见 moveDeskToTerm)；反方向只切换光标
     if (document.activeElement === dInput) { moveDeskToTerm(active); active.term.focus(); termDirect = true; }
-    else if (!deskOn) { setDeskOn(true); moveTermToDesk(active); }
-    else { moveTermToDesk(active); dInput.focus(); }
+    else if (!deskOn) setDeskOn(true);
+    else dInput.focus();
   }, true);
   window.addEventListener('blur', () => { altClean = false; altLast = 0; });
 
