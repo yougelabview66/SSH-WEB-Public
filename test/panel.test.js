@@ -66,7 +66,8 @@ const B = BASE;
   ok(await p.evaluate(() => document.querySelector('.tab.active .title').textContent) === 'PN-1' && r[0].cur, '点一行切到那个标签');
   ok(await p.evaluate(() => document.activeElement.id) === 'dInput', '切换后焦点在输入框');
   // 往这个标签发送内容 (回显不算运行中) → 完成清掉，回到空闲
-  await p.keyboard.type('hi'); await p.keyboard.press('Enter');
+  got = ''; await p.keyboard.type('hi'); await p.keyboard.press('Enter');
+  for (let t = 0; t < 40 && !got.includes('hi'); t++) await wait(50); // 回显要在服务器收到输入之后 (测试机忙时输入可能晚到)
   for (let i = 0; i < 3; i++) { streams[0].write(i ? 'x' : 'hi\r\n'); await wait(100); }
   await wait(1200); r = await rows();
   ok(r[0].st === '空闲', '往这个标签发送内容后 → 回到空闲，输入的回显不算运行中 (' + r[0].st + ')');

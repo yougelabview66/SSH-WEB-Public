@@ -180,6 +180,7 @@
     $('#btnInput').classList.toggle('hidden', !(!isTouch && active));
     $('#btnInput').classList.toggle('on', deskOn);
     syncDeskMode();
+    syncDeskH();
     applyDeskPos();
     updateHostFloat();
     syncLsBars();

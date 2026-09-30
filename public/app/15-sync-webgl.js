@@ -166,9 +166,10 @@
     s.el.remove();
     s.tab.remove();
     sessions.splice(sessions.indexOf(s), 1);
-    if (s.remoteId && (floatLift[s.remoteId] != null || deskModes[s.remoteId])) { // 这个标签记的输入框模式 / 位置不再需要
+    if (s.remoteId && (floatLift[s.remoteId] != null || deskModes[s.remoteId] || deskHs[s.remoteId])) { // 这个标签记的输入框模式 / 位置 / 高度不再需要
       delete floatLift[s.remoteId];
       delete deskModes[s.remoteId];
+      delete deskHs[s.remoteId];
       saveDeskPos();
     }
     if (active === s) {

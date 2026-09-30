@@ -128,7 +128,7 @@
   $('#btnInput').addEventListener('click', () => setDeskOn(!deskOn));
 
   // 输入栏模式：底部 / 浮动 (盖在终端上，拖左边的把手上下调整位置)；
-  // 每个标签各自记住模式和浮动位置 (按会话 ID)，没设置过的标签用最近一次选的模式 / 拖到的位置；
+  // 每个标签各自记住模式、浮动位置和高度 (按会话 ID)，没设置过的标签用最近一次选的模式 / 拖到的位置 / 高度；
   // 位置 = 距 main 底部占 main 高度的比例，每台电脑各自记住
   const DESK_MODES = { bottom: '底部', float: '浮动' };
   const loadJson = (k) => { try { return JSON.parse(localStorage.getItem(k)) || {}; } catch { return {}; } };
@@ -171,7 +171,8 @@
       localStorage.setItem('sshweb.deskMode', deskModeDef);
       localStorage.setItem('sshweb.deskModes', JSON.stringify(deskModes));
       localStorage.setItem('sshweb.deskLift', String(deskLift));
-      localStorage.setItem('sshweb.deskH', String(deskMinH));
+      localStorage.setItem('sshweb.deskH', String(deskHDef));
+      localStorage.setItem('sshweb.deskHs', JSON.stringify(deskHs));
       localStorage.setItem('sshweb.floatLift', JSON.stringify(floatLift));
     } catch {}
   }

@@ -271,8 +271,9 @@
   // 拖上边缘调整输入框高度 (最低高度，字多了照样自动变高)，往上拖变高，下边缘 / 浮动位置不动；双击恢复默认
   // 最低 / 默认 40px = 一行；右边的按钮和输入框设定的高度一样高 (最高 60px，见 style.css)
   // (以前默认 60px 存在 sshweb.deskMinH 里：拖高过的 (> 60) 保留，60 当作没设置过，改用新默认)
+  // 每个标签各自记住高度 (按会话 ID)，没设置过的标签用最近一次拖到的高度
   const DESK_MIN_H = 40;
-  let deskMinH = (() => {
+  let deskHDef = (() => {
     try {
       const v = parseInt(localStorage.getItem('sshweb.deskH'), 10);
       if (v) return Math.max(DESK_MIN_H, v);
@@ -280,6 +281,8 @@
       return old > 60 ? old : DESK_MIN_H;
     } catch { return DESK_MIN_H; }
   })();
+  let deskMinH = deskHDef; // 当前标签的高度
+  const deskHs = loadJson('sshweb.deskHs');
 
   function setMinHStyle() {
     dInput.style.minHeight = deskMinH + 'px';
@@ -292,11 +295,19 @@
   }
   setMinHStyle();
 
+  // 切到别的标签：换成那个标签的高度
+  function syncDeskH() {
+    const h = active?.remoteId && deskHs[active.remoteId];
+    const v = h >= DESK_MIN_H ? h : deskHDef;
+    if (v !== deskMinH) { deskMinH = v; applyMinH(); }
+  }
+
   function setMinH(h) {
     // 最高到 main 的一半
     const main = deskBar.parentElement.clientHeight;
     let max = Math.round(main * 0.5);
-    deskMinH = Math.round(Math.max(DESK_MIN_H, Math.min(h, max)));
+    deskMinH = deskHDef = Math.round(Math.max(DESK_MIN_H, Math.min(h, max)));
+    if (active?.remoteId) deskHs[active.remoteId] = deskMinH;
     applyMinH();
   }
 
@@ -305,8 +316,9 @@
     const h0 = dInput.offsetHeight;
     dragY(e, (dy) => setMinH(h0 - dy));
   });
-  $('#dResize').addEventListener('dblclick', () => {
+  $('#dResize').addEventListener('dblclick', () => { // 只恢复这个标签
     deskMinH = DESK_MIN_H;
+    if (active?.remoteId) deskHs[active.remoteId] = deskMinH;
     applyMinH();
     saveDeskPos();
     dInput.focus();

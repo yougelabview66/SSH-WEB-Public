@@ -87,6 +87,33 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   await p.keyboard.press('Alt+1'); await wait(300); const r1 = await st();
   await p.keyboard.press('Alt+2'); await wait(300); const r2 = await st();
   ok(r1.mode === '浮动' && Math.abs(r1.lift - liftF) <= 2 && r2.mode === '底部', `刷新后每个标签的模式 / 位置都还在 (L-1 ${r1.mode} ${r1.lift}px，L-2 ${r2.mode})`);
+  // 高度也各自记住
+  const dragH = async (dy) => {
+    const g = await p.locator('#dResize').boundingBox();
+    const x = g.x + 300, y = g.y + g.height / 2;
+    await p.mouse.move(x, y); await p.mouse.down();
+    for (let i = 1; i <= 10; i++) { await p.mouse.move(x, y + dy * i / 10); await wait(20); }
+    await p.mouse.up(); await wait(300);
+  };
+  const hOf = () => p.evaluate(() => document.getElementById('dInput').offsetHeight);
+  await p.keyboard.press('Alt+1'); await wait(300); await dragH(-80); const h1 = await hOf();
+  await p.keyboard.press('Alt+2'); await wait(300);
+  ok(await hOf() === h1, `L-1 拖到 ${h1}px 后，没设置过高度的 L-2 用最近一次拖到的高度`);
+  await dragH(2000); const h2 = await hOf();
+  await p.keyboard.press('Alt+1'); await wait(300); const b1 = await hOf();
+  ok(h1 > 100 && h2 === 40 && b1 === h1, `L-2 拖到 ${h2}px，切回 L-1 还是它自己的 ${b1}px`);
+  await p.keyboard.press('Alt+2'); await wait(300);
+  ok(await hOf() === h2, `切到 L-2：还是 ${h2}px`);
+  await p.reload(); await p.waitForSelector('.tab'); await wait(1500);
+  await p.keyboard.press('Alt+1'); await wait(300); const rh1 = await hOf();
+  await p.keyboard.press('Alt+2'); await wait(300); const rh2 = await hOf();
+  ok(rh1 === h1 && rh2 === h2, `刷新后每个标签的高度都还在 (L-1 ${rh1}px，L-2 ${rh2}px)`);
+  await p.keyboard.press('Alt+1'); await wait(300);
+  await p.dblclick('#dResize', { position: { x: 300, y: 4 } }); await wait(300);
+  const d1 = await hOf(); await p.keyboard.press('Alt+2'); await wait(300); await dragH(-60); const d2 = await hOf();
+  await p.keyboard.press('Alt+1'); await wait(300);
+  ok(d1 === 40 && await hOf() === 40 && d2 > 80, `双击只恢复当前标签 (L-1 ${d1}px)，别的标签不受影响`);
+  await p.keyboard.press('Alt+2'); await wait(300);
   // 老版本存的「抬高」当作底部
   const idOf = () => p.evaluate(() => localStorage.getItem('sshweb.active'));
   const id2 = await idOf();
@@ -95,10 +122,11 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   ok((await st()).mode === '底部', '以前选的「抬高」模式刷新后变成底部');
   // 关掉标签，记的模式 / 位置一起删掉
   await p.click('#dMode'); await wait(300); await drag(-100);
-  const had = await p.evaluate((id) => [JSON.parse(localStorage.getItem('sshweb.deskModes') || '{}')[id], JSON.parse(localStorage.getItem('sshweb.floatLift') || '{}')[id]], id2);
+  const saved = (id) => p.evaluate((id) => ['deskModes', 'floatLift', 'deskHs'].map((k) => JSON.parse(localStorage.getItem('sshweb.' + k) || '{}')[id]), id);
+  const had = await saved(id2);
   await p.locator('.tab.active .x').click(); await wait(500);
-  const left = await p.evaluate((id) => [JSON.parse(localStorage.getItem('sshweb.deskModes') || '{}')[id], JSON.parse(localStorage.getItem('sshweb.floatLift') || '{}')[id]], id2);
-  ok(had[0] === 'float' && had[1] != null && left[0] == null && left[1] == null, '关掉标签后，它记的模式和浮动位置也删掉');
+  const left = await saved(id2);
+  ok(had[0] === 'float' && had[1] != null && had[2] != null && left.every((v) => v == null), '关掉标签后，它记的模式、浮动位置和高度也删掉 ' + JSON.stringify(had));
   // 暗色截图
   await p.evaluate(() => document.querySelector('#themeSeg [data-mode=dark]').click()); await wait(300);
   await p.screenshot({ path: shot('lift-dark.png') });
