@@ -127,21 +127,30 @@
   $('#dHide').addEventListener('click', () => setDeskOn(false));
   $('#btnInput').addEventListener('click', () => setDeskOn(!deskOn));
 
-  // 输入栏位置：底部 / 抬高 (终端变矮，下方留白) / 浮动 (盖在终端上)；
-  // 高度 = 距 main 底部占 main 高度的比例，每台电脑各自记住；
-  // 浮动时每个标签各自记住位置 (按会话 ID)，没拖过的标签用共用的位置 (最近一次拖到的，抬高也用它)
-  const DESK_MODES = { bottom: '底部', lift: '抬高', float: '浮动' };
-  let deskMode = (() => { try { return DESK_MODES[localStorage.getItem('sshweb.deskMode')] ? localStorage.getItem('sshweb.deskMode') : 'bottom'; } catch { return 'bottom'; } })();
+  // 输入栏模式：底部 / 浮动 (盖在终端上，拖左边的把手上下调整位置)；
+  // 每个标签各自记住模式和浮动位置 (按会话 ID)，没设置过的标签用最近一次选的模式 / 拖到的位置；
+  // 位置 = 距 main 底部占 main 高度的比例，每台电脑各自记住
+  const DESK_MODES = { bottom: '底部', float: '浮动' };
+  const loadJson = (k) => { try { return JSON.parse(localStorage.getItem(k)) || {}; } catch { return {}; } };
+  // 以前的「抬高」模式已去掉，当作底部
+  let deskModeDef = (() => { try { return localStorage.getItem('sshweb.deskMode') === 'float' ? 'float' : 'bottom'; } catch { return 'bottom'; } })();
+  let deskMode = deskModeDef;
+  const deskModes = loadJson('sshweb.deskModes');
   let deskLift = (() => { try { const v = parseFloat(localStorage.getItem('sshweb.deskLift')); return v >= 0 && v < 1 ? v : 1 / 3; } catch { return 1 / 3; } })();
-  const floatLift = (() => { try { return JSON.parse(localStorage.getItem('sshweb.floatLift')) || {}; } catch { return {}; } })();
-  const liftFrac = () => (deskMode === 'float' && active?.remoteId && floatLift[active.remoteId] != null ? floatLift[active.remoteId] : deskLift);
-  const deskBar = $('#deskBar'), deskSpace = $('#deskSpace');
-  const MIN_TERM = 120; // 抬高模式下上方终端至少保留的高度 (px)
+  const floatLift = loadJson('sshweb.floatLift');
+  const liftFrac = () => (active?.remoteId && floatLift[active.remoteId] != null ? floatLift[active.remoteId] : deskLift);
+  const deskBar = $('#deskBar');
+
+  // 切到别的标签：换成那个标签的模式
+  function syncDeskMode() {
+    const m = active?.remoteId && deskModes[active.remoteId];
+    deskMode = DESK_MODES[m] ? m : deskModeDef;
+  }
 
   // 按比例算出像素值，并限制在允许范围内 (窗口变小时自动收回)
   function deskLiftPx() {
     const mainH = deskBar.parentElement.clientHeight;
-    const max = mainH - $('#tabbar').offsetHeight - deskBar.offsetHeight - (deskMode === 'lift' ? MIN_TERM : 0);
+    const max = mainH - $('#tabbar').offsetHeight - deskBar.offsetHeight;
     return Math.round(Math.max(0, Math.min(liftFrac() * mainH, max)));
   }
 
@@ -149,12 +158,8 @@
     const shown = !deskBar.classList.contains('hidden');
     for (const m of Object.keys(DESK_MODES)) deskBar.classList.toggle(m, m === deskMode);
     $('#dMode').textContent = DESK_MODES[deskMode];
-    deskBar.classList.toggle('float', deskMode === 'float');
-    deskSpace.classList.toggle('hidden', !(shown && deskMode === 'lift'));
     if (!shown || deskMode === 'bottom') { deskBar.style.bottom = ''; return; }
-    const px = deskLiftPx();
-    if (deskMode === 'lift') { deskSpace.style.height = px + 'px'; deskBar.style.bottom = ''; renderDeskPanel(); }
-    else deskBar.style.bottom = px + 'px';
+    deskBar.style.bottom = deskLiftPx() + 'px';
   }
 
   // main 的高度变了 (窗口大小、手机键盘调整的 #app 高度) 就重新按比例算位置；
@@ -163,7 +168,8 @@
 
   function saveDeskPos() {
     try {
-      localStorage.setItem('sshweb.deskMode', deskMode);
+      localStorage.setItem('sshweb.deskMode', deskModeDef);
+      localStorage.setItem('sshweb.deskModes', JSON.stringify(deskModes));
       localStorage.setItem('sshweb.deskLift', String(deskLift));
       localStorage.setItem('sshweb.deskH', String(deskMinH));
       localStorage.setItem('sshweb.floatLift', JSON.stringify(floatLift));
@@ -171,8 +177,8 @@
   }
 
   $('#dMode').addEventListener('click', () => {
-    const order = Object.keys(DESK_MODES);
-    deskMode = order[(order.indexOf(deskMode) + 1) % order.length];
+    deskMode = deskModeDef = deskMode === 'float' ? 'bottom' : 'float';
+    if (active?.remoteId) deskModes[active.remoteId] = deskMode;
     saveDeskPos();
     applyDeskPos();
     updateHostFloat();

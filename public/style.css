@@ -261,10 +261,7 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 #mobileBar.cmd #mInput { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
 #deskBar #dHide { width: 32px; color: var(--muted); }
 #deskBar #dMode { font-size: 13px; }
-/* 抬高 / 浮动 (applyDeskPos 设置留白高度 / bottom) */
-#deskSpace { flex-shrink: 0; background: var(--panel); overflow-y: auto; padding: 6px 12px 10px; }
-/* 留白里的信息面板 */
-.dp-h { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); margin: 6px 0 6px; }
+/* 主机状态卡片 (悬浮窗 / 置顶小窗口 / 全部标签列表) */
 .dp-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
 .dp-tab { display: flex; align-items: center; gap: 8px; padding: 5px 8px 5px 10px; border-radius: 8px; cursor: pointer;
   font-size: 13px; border: 1px solid var(--border); background: var(--bg); }
@@ -512,7 +509,7 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 /* 字体大小 */
 /* tmux 本地快速滚动的历史视图 */
 .lscroll { position: absolute; inset: 0; z-index: 20; display: flex; }
-#app.ls-open #deskBar, #app.ls-open #deskSpace, #app.ls-open #mobileBar { display: none; } /* 历史视图打开时输入栏让出地方 */
+#app.ls-open #deskBar, #app.ls-open #mobileBar { display: none; } /* 历史视图打开时输入栏让出地方 */
 .ls-body { flex: 1; margin: 0; padding: 4px 0 0 6px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;
   overscroll-behavior: contain; -webkit-overflow-scrolling: touch; user-select: text; -webkit-user-select: text; }
 .ls-close { position: absolute; bottom: 12px; right: 18px; /* 右上角是主机状态悬浮窗的默认位置 */ z-index: 1; font-size: 12px; padding: 4px 10px; opacity: .92;

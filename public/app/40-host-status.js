@@ -1,16 +1,9 @@
-  // ------------------------------------------------------------ 抬高模式下方留白里的信息面板：各主机 (标签) 状态
+  // ------------------------------------------------------------ 各主机 (标签) 状态
   let deskTabList = [], lastStatusPaint = 0;
-  const panelShown = () => !deskSpace.classList.contains('hidden');
 
-  function renderDeskPanel() {
-    if (!deskSpace.firstChild) deskSpace.innerHTML = '<div class="dp-h">主机状态</div><div class="dp-tabs"></div>';
-    renderDeskTabs();
-  }
-
-  // 主机状态画到所有显示着的地方：抬高模式的留白、网页内悬浮窗、置顶到桌面的小窗口
+  // 主机状态画到所有显示着的地方：网页内悬浮窗、置顶到桌面的小窗口
   function statusBoxes() {
     const out = [];
-    if (panelShown()) out.push(deskSpace.querySelector('.dp-tabs'));
     if (!hostFloat.classList.contains('hidden') && !hostFloat.classList.contains('min')) out.push(hfTabs);
     if (pipWin) out.push(pipWin.document.querySelector('.dp-tabs'));
     return out.filter(Boolean);
@@ -47,7 +40,6 @@
     const x = deskTabList[+row.dataset.k];
     if (x && x !== active) activate(x);
   }
-  deskSpace.addEventListener('mousedown', onStatusDown);
 
   // ------------------------------------------------------------ 电脑：主机状态悬浮窗
   // 顶部「🖥️ 状态」开关，显示在终端上 (和输入框模式无关)，按住标题栏拖动，开关 / 位置 / 收起状态每台电脑各自记住；
@@ -258,10 +250,10 @@
     el.addEventListener('pointercancel', up);
   }
 
-  // 按比例设置抬高位置 (像素)，超出范围时停在边界，不记住超出的值
+  // 按比例设置浮动位置 (像素)，超出范围时停在边界，不记住超出的值
   function setLiftPx(px) {
     const h = deskBar.parentElement.clientHeight;
-    const own = deskMode === 'float' && active?.remoteId; // 浮动：记到这个标签上，同时作为共用位置
+    const own = active?.remoteId; // 记到这个标签上，同时作为共用位置 (没拖过的标签用)
     deskLift = Math.max(0, px) / h;
     if (own) floatLift[active.remoteId] = deskLift;
     applyDeskPos();
@@ -276,7 +268,7 @@
     dragY(e, (dy) => setLiftPx(lift0 - dy));
   });
 
-  // 拖上边缘调整输入框高度 (最低高度，字多了照样自动变高)，往上拖变高，下边缘 / 抬高位置不动；双击恢复默认
+  // 拖上边缘调整输入框高度 (最低高度，字多了照样自动变高)，往上拖变高，下边缘 / 浮动位置不动；双击恢复默认
   // 最低 / 默认 40px = 一行；右边的按钮和输入框设定的高度一样高 (最高 60px，见 style.css)
   // (以前默认 60px 存在 sshweb.deskMinH 里：拖高过的 (> 60) 保留，60 当作没设置过，改用新默认)
   const DESK_MIN_H = 40;
@@ -301,10 +293,9 @@
   setMinHStyle();
 
   function setMinH(h) {
-    // 最高到 main 的一半，抬高模式下还要给上方终端留出位置
+    // 最高到 main 的一半
     const main = deskBar.parentElement.clientHeight;
     let max = Math.round(main * 0.5);
-    if (deskMode === 'lift') max = Math.min(max, main - $('#tabbar').offsetHeight - MIN_TERM - (deskBar.offsetHeight - dInput.offsetHeight));
     deskMinH = Math.round(Math.max(DESK_MIN_H, Math.min(h, max)));
     applyMinH();
   }

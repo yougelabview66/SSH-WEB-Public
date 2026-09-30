@@ -51,6 +51,17 @@
   $('.vb-reload', verBar).addEventListener('click', () => location.reload());
   $('.vb-close', verBar).addEventListener('click', () => { verDismissed = verBar.dataset.v; verBar.classList.add('hidden'); });
   verEl.addEventListener('click', () => { if (verEl.classList.contains('old')) location.reload(); });
+  // 保险：事件连接可能「假死」(以为还连着，其实服务器已经重启过) 收不到版本号，
+  // 所以回到前台 / 窗口重新获得焦点 (最多 20 秒一次) / 网络恢复时，以及每 5 分钟，再主动问一次
+  let verPolledAt = 0;
+  async function pollVersion() {
+    verPolledAt = Date.now();
+    try { checkVersion((await api('GET', '/api/me')).version); } catch {}
+  }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) pollVersion(); });
+  window.addEventListener('focus', () => { if (Date.now() - verPolledAt > 20000) pollVersion(); });
+  window.addEventListener('online', pollVersion);
+  setInterval(() => { if (!document.hidden) pollVersion(); }, 5 * 60 * 1000);
 
   // 页面回到前台时立即重连 (手机锁屏期间连接可能已断)
   document.addEventListener('visibilitychange', () => {
@@ -155,7 +166,11 @@
     s.el.remove();
     s.tab.remove();
     sessions.splice(sessions.indexOf(s), 1);
-    if (s.remoteId && floatLift[s.remoteId] != null) { delete floatLift[s.remoteId]; saveDeskPos(); } // 浮动输入框位置不再需要
+    if (s.remoteId && (floatLift[s.remoteId] != null || deskModes[s.remoteId])) { // 这个标签记的输入框模式 / 位置不再需要
+      delete floatLift[s.remoteId];
+      delete deskModes[s.remoteId];
+      saveDeskPos();
+    }
     if (active === s) {
       active = null;
       if (sessions.length) activate(sessions[sessions.length - 1]);

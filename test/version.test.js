@@ -10,6 +10,11 @@ const VERSION = require('../package.json').version;
   const p = await ctx.newPage(); p.on('pageerror', (e) => errors.push(e.message));
   await p.goto(BASE + '/'); await p.waitForSelector('#app:not(.hidden)'); await wait(1500);
   ok(await p.isHidden('#verBar') && await p.evaluate(() => !document.querySelector('.sidebar-foot .ver').classList.contains('old')), `版本一致 (v${VERSION})：不提醒`);
+  // 保险：事件连接「假死」没重连，页面回到前台时主动问一次服务器版本
+  await p.route(BASE + '/api/me', async (r) => { const res = await r.fetch(); const j = await res.json(); r.fulfill({ response: res, json: { ...j, version: '9.9.9' } }); });
+  await p.evaluate(() => document.dispatchEvent(new Event('visibilitychange'))); await wait(800);
+  ok(await p.isVisible('#verBar') && (await p.locator('#verBar .vb-text').textContent()).includes('v9.9.9'), '事件连接没断时，回到前台主动查一次也能发现服务器更新了');
+  await p.unroute(BASE + '/api/me');
   // 模拟「服务器更新了，网页还是旧的」：把页面里的版本号换成旧的
   await p.route(BASE + '/', async (r) => { const res = await r.fetch(); r.fulfill({ response: res, body: (await res.text()).replaceAll(VERSION, '0.0.1') }); });
   await p.reload(); await p.waitForSelector('#app:not(.hidden)'); await wait(1500);

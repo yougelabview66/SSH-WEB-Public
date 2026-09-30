@@ -26,7 +26,7 @@ run(async () => {
     await p.goto(BASE + '/'); await p.waitForSelector('#app:not(.hidden)');
     return p;
   };
-  const chip = (p) => p.evaluate(() => document.querySelector('#hostFloat .dp-tab .stt, #deskSpace .dp-tab .stt')?.textContent || '');
+  const chip = (p) => p.evaluate(() => document.querySelector('#hostFloat .dp-tab .stt')?.textContent || '');
 
   let p = await open();
   await p.locator('.host', { hasText: 'ST' }).click(); await wait(1500);

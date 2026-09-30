@@ -43,18 +43,15 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   await p.fill('#dInput', ''); await p.evaluate(() => document.getElementById('dInput').dispatchEvent(new Event('input'))); await wait(200);
   await drag(2000); s = await st(); ok(s.h === 40, '往下拖最低 40px');
   await drag(-2000); s = await st(); ok(s.h <= s.mainH * 0.5 + 2, `往上拖最高为 main 一半：${s.h}px`);
-  // 抬高模式
-  await p.click('#dMode'); await wait(400); s = await st();
-  const lift1 = s.lift;
-  ok(s.terms >= 118 && s.top >= s.tabbarBottom, `抬高模式下自动限制：终端保留 ${s.terms}px，输入栏距底 ${s.lift}px`);
+  // 双击恢复
   await p.dblclick('#dResize', { position: { x: 300, y: 4 } }); await wait(300); s = await st();
   ok(s.h === 40, '双击上边缘恢复 40px');
-  const liftA = s.lift; await drag(-100); s = await st();
-  ok(Math.abs(s.h - 140) <= 2 && Math.abs(s.lift - liftA) <= 1, `抬高：往上拖 100 → 高 ${s.h}px，下边缘不动 (距底 ${liftA} → ${s.lift})`);
   // 浮动
   await p.click('#dMode'); await wait(400); s = await st();
+  const liftA = s.lift; await drag(-100); s = await st();
+  ok(Math.abs(s.h - 140) <= 2 && Math.abs(s.lift - liftA) <= 1, `浮动：往上拖 100 → 高 ${s.h}px，下边缘不动 (距底 ${liftA} → ${s.lift})`);
   const liftF = s.lift; await drag(-60); s = await st();
-  ok(Math.abs(s.h - 200) <= 2 && Math.abs(s.lift - liftF) <= 1, `浮动：往上拖 60 → 高 ${s.h}px，下边缘不动`);
+  ok(Math.abs(s.h - 200) <= 2 && Math.abs(s.lift - liftF) <= 1, `浮动：再往上拖 60 → 高 ${s.h}px，下边缘不动`);
   await drag(-2000); s = await st();
   ok(s.top >= s.tabbarBottom - 1, `浮动：拖到最高不超出终端区域 (顶 ${s.top} ≥ ${s.tabbarBottom})`);
   await drag(2000); await drag(-40); s = await st(); const hSaved = s.h;

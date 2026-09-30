@@ -90,7 +90,7 @@
     });
   }
 
-  // 历史视图打开时把输入栏 (电脑输入框 / 抬高的留白 / 手机输入栏) 藏起来，多出来的地方给历史视图
+  // 历史视图打开时把输入栏 (电脑输入框 / 手机输入栏) 藏起来，多出来的地方给历史视图
   function syncLsBars() {
     $('#app').classList.toggle('ls-open', !!active?.scrollView);
   }

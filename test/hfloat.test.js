@@ -71,11 +71,9 @@ const B = BASE;
     const top = cs[0].offsetTop, right = Math.max(...cs.filter((c) => c.offsetTop === top).map((c) => c.getBoundingClientRect().right));
     return { min: f.querySelector('[data-a=min]').getBoundingClientRect().right, right }; });
   ok(Math.abs(al0.min - al0.right) <= 1, '悬浮窗「–」的右边和第一行最右边的卡片对齐: ' + JSON.stringify(al0));
-  // 悬浮窗和输入框模式无关：抬高 / 浮动模式都显示
+  // 悬浮窗和输入框模式无关：底部 / 浮动都显示
   await p.click('#dMode'); await wait(500);
-  ok(await p.isVisible('#hostFloat') && await p.isVisible('#deskSpace .dp-tabs'), '抬高模式：悬浮窗照样显示');
-  await p.click('#dMode'); await wait(500);
-  ok(await p.isVisible('#hostFloat'), '浮动模式：悬浮窗显示');
+  ok(await p.isVisible('#hostFloat'), '输入框浮动模式：悬浮窗照样显示');
   await p.click('#dMode'); await wait(300);
   // 顶部「🖥️ 状态」开关
   ok(await p.isVisible('#btnFloat') && await p.evaluate(() => document.getElementById('btnFloat').classList.contains('on')), '顶部有「🖥️ 状态」按钮，默认打开 (高亮)');

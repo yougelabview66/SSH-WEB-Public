@@ -22,8 +22,8 @@ const claudeScreen = (statusLine) => '\x1b[?1049h\x1b[H\x1b[2J' +
   const p = await (await browser.newContext({ viewport: { width: 1280, height: 800 } })).newPage(); p.on('pageerror', (e) => errors.push(e.message));
   await p.goto(B + '/'); await p.waitForSelector('#app:not(.hidden)');
   for (let i = 0; i < 2; i++) { await p.locator('.host', { hasText: 'CC' }).click(); await wait(1000); }
-  await p.click('#dMode'); await wait(500); // 抬高 → 显示主机状态
-  const st = async (i = 0) => (await p.evaluate((i) => document.querySelectorAll('#deskSpace .dp-tab .stt')[i]?.textContent, i));
+  await wait(500); // 主机状态在右上角的悬浮窗里
+  const st = async (i = 0) => (await p.evaluate((i) => document.querySelectorAll('#hostFloat .dp-tab .stt')[i]?.textContent, i));
   // CC-1 在后台
   streams[0].write(claudeScreen('✻ Frosting… (12s · ↓ 1.2k tokens)')); await wait(5000);
   ok(await st() === '运行中', 'Claude 在思考、画面 5 秒没变 → 仍然是运行中 (' + await st() + ')');
@@ -35,7 +35,7 @@ const claudeScreen = (statusLine) => '\x1b[?1049h\x1b[H\x1b[2J' +
   ok(await st() === '完成', '其他过去式动词 (Sautéed for) 也认 (' + await st() + ')');
   await p.screenshot({ path: shot('claude-done.png') });
   // 切过去发送内容 → 空闲
-  await p.locator('#deskSpace .dp-tab').first().click(); await wait(400);
+  await p.locator('#hostFloat .dp-tab').first().click(); await wait(400);
   await p.click('#dInput'); await p.keyboard.type('好的'); await p.keyboard.press('Enter'); await wait(1200);
   ok(await st() === '空闲', '看到后往这个标签发送内容 → 空闲 (' + await st() + ')');
   // 没有状态行、输出停停走走 (像别的设备在打字)：不应该算完成 / 运行中乱跳

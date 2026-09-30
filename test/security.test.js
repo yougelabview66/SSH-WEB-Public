@@ -66,7 +66,7 @@ run(async () => {
   await p.click('#btnMon'); await wait(1500); await p.click('#btnMon'); await wait(200);
   await p.click('#btnSftp'); await wait(1000); await p.click('#btnSftp'); await wait(200);
   await p.click('#lat'); await wait(300); await p.click('#lat'); await wait(200);
-  await p.click('#dMode'); await wait(300); await p.click('#dMode'); await wait(300); await p.click('#dMode'); await wait(300);
+  await p.click('#dMode'); await wait(300); await p.click('#dMode'); await wait(300);
   await p.evaluate(() => document.querySelector('#themeSeg [data-mode=dark]').click()); await wait(200);
   await p.reload(); await p.waitForSelector('#app:not(.hidden)');
   ok(await p.evaluate(() => document.documentElement.dataset.theme) === 'dark', '主题脚本 (theme.js) 照常在页面加载时生效');

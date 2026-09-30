@@ -20,23 +20,22 @@ const B = BASE;
   await post('/api/favorites', { cmd: '/compact', host: '' });
   await post('/api/favorites', { cmd: 'git status', host: '' });
   await post('/api/favorites', { cmd: 'only-other-host', host: 'someone@elsewhere:22' });
-  ok(await p.isHidden('#deskSpace'), '底部模式没有面板');
-  await p.click('#dMode'); await wait(800);
-  ok(await p.isVisible('#deskSpace .dp-tabs'), '抬高模式下留白里显示「主机状态」');
-  ok(await p.locator('#deskSpace .dp-favs, #deskSpace button').count() === 0, '不再显示收藏命令');
+  await wait(800);
+  ok(await p.isVisible('#hostFloat .dp-tabs'), '主机状态显示在右上角的悬浮窗里 (底部模式也有)');
+  ok(await p.locator('#hostFloat .dp-favs').count() === 0, '不显示收藏命令');
   // 标签状态
-  const rows = () => p.evaluate(() => [...document.querySelectorAll('#deskSpace .dp-tab')].map((r) => ({ nm: r.querySelector('.nm').textContent, st: r.querySelector('.stt').textContent, cur: r.classList.contains('cur') })));
+  const rows = () => p.evaluate(() => [...document.querySelectorAll('#hostFloat .dp-tab')].map((r) => ({ nm: r.querySelector('.nm').textContent, st: r.querySelector('.stt').textContent, cur: r.classList.contains('cur') })));
   let r = await rows();
-  const lay = await p.evaluate(() => { const e = [...document.querySelectorAll('#deskSpace .dp-tab')].map((x) => x.getBoundingClientRect()); return { sameRow: Math.abs(e[0].top - e[1].top) < 1, leftToRight: e[1].left > e[0].right, text: document.querySelector('#deskSpace .dp-tabs').textContent }; });
+  const lay = await p.evaluate(() => { const e = [...document.querySelectorAll('#hostFloat .dp-tab')].map((x) => x.getBoundingClientRect()); return { sameRow: Math.abs(e[0].top - e[1].top) < 1, leftToRight: e[1].left > e[0].right, text: document.querySelector('#hostFloat .dp-tabs').textContent }; });
   ok(lay.sameRow && lay.leftToRight, '横向排列：两个标签在同一行，从左到右');
   ok(!/有输出|秒前|分钟前/.test(lay.text), '不再显示「多少秒前有输出」: ' + lay.text.replace(/\s+/g, ' ').trim());
   ok(r.length === 2 && r[1].nm === 'PN-2' && r[1].cur && !r[0].cur, '两个标签各一行，当前标签高亮: ' + JSON.stringify(r.map((x) => x.nm)));
   const spin = async (ms) => { const iv = setInterval(() => streams[0].write('\r⠋ Working… ' + Date.now() % 1000), 150); await wait(ms); clearInterval(iv); };
-  const st0 = async () => { const r0 = (await rows())[0]; const cls = await p.evaluate(() => document.querySelector('#deskSpace .dp-tab .stt').className); return r0.st + '|' + cls; };
+  const st0 = async () => { const r0 = (await rows())[0]; const cls = await p.evaluate(() => document.querySelector('#hostFloat .dp-tab .stt').className); return r0.st + '|' + cls; };
   let x;
   streams[0].write('\r12:01'); await wait(1200); x = await st0(); ok(x === '空闲|stt idle', '一开始空闲；零星一次输出 (如 tmux 时钟) 不算运行中 (' + x + ')');
   await spin(1500); x = await st0();
-  const anim = await p.evaluate(() => getComputedStyle(document.querySelector('#deskSpace .dp-tab .stt')).animationName);
+  const anim = await p.evaluate(() => getComputedStyle(document.querySelector('#hostFloat .dp-tab .stt')).animationName);
   ok(x === '运行中|stt run' && anim === 'dp-blink', '持续有输出 → 运行中，黄色闪烁 (' + x + ', ' + anim + ')');
   await wait(3500); x = await st0(); ok(x === '完成|stt done', '运行停下来 3 秒 → 完成，绿色，不用等提示音 (' + x + ')');
   streams[0].write('\r12:02'); await wait(1200); x = await st0(); ok(x === '完成|stt done', '完成之后零星一次输出不影响 (' + x + ')');
@@ -63,7 +62,7 @@ const B = BASE;
   ok(x === '报错|stt bad', '以 ⎿ API Error 开头的行 → 报错 (' + x + ')');
   streams[0].write('\x1b[2J\x1b[H> '); await wait(800);
   // 点行切换
-  await p.locator('#deskSpace .dp-tab', { hasText: 'PN-1' }).click(); await wait(500); r = await rows();
+  await p.locator('#hostFloat .dp-tab', { hasText: 'PN-1' }).click(); await wait(500); r = await rows();
   ok(await p.evaluate(() => document.querySelector('.tab.active .title').textContent) === 'PN-1' && r[0].cur, '点一行切到那个标签');
   ok(await p.evaluate(() => document.activeElement.id) === 'dInput', '切换后焦点在输入框');
   // 往这个标签发送内容 (回显不算运行中) → 完成清掉，回到空闲
@@ -75,14 +74,14 @@ const B = BASE;
   streams[1].end(); await wait(1500); r = await rows();
   ok(r[1].st === '未连接', '连接断开 → 未连接 (' + r[1].st + ')');
   await p.click('#dMode'); await wait(400);
-  ok(await p.isHidden('#deskSpace'), '浮动模式没有面板');
-  await p.click('#dMode'); await wait(300); await p.click('#dMode'); await wait(400); // 底部 → 抬高
+  ok(await p.isVisible('#hostFloat .dp-tabs'), '输入框浮动模式下悬浮窗照样显示');
+  await p.click('#dMode'); await wait(300);
   await p.evaluate(() => document.querySelector('#themeSeg [data-mode=dark]').click()); await wait(300);
   await p.screenshot({ path: shot('panel-dark.png') });
   // 手机
   const m = await (await browser.newContext({ ...devices['Pixel 7'] })).newPage(); m.on('pageerror', (e) => errors.push(e.message));
   await m.goto(B + '/'); await m.waitForSelector('.tab'); await wait(1200);
-  ok(await m.isHidden('#deskSpace'), '手机上没有面板');
+  ok(await m.isHidden('#hostFloat'), '手机上没有悬浮窗');
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
   await browser.close(); process.exit();
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -179,6 +179,7 @@
     $('#deskBar').classList.toggle('hidden', !(!isTouch && active && deskOn));
     $('#btnInput').classList.toggle('hidden', !(!isTouch && active));
     $('#btnInput').classList.toggle('on', deskOn);
+    syncDeskMode();
     applyDeskPos();
     updateHostFloat();
     syncLsBars();
