@@ -108,6 +108,9 @@ claudeServer(2253); claudeServer(2254, true); claudeServer(2256, false, 'sgr'); 
   await clickRow(3);
   ok(await inTerm(), '下方输入框空着按 Tab (Claude Code 填入推荐文字)：点 Claude Code 的输入框锁定在终端');
   await typeInTerm(['Control+c']);
+  await p.click('#dInput'); await p.keyboard.press('Control+b'); await p.keyboard.press('c'); await wait(300); // tmux 前缀键 + C
+  await clickRow(3);
+  ok(await inDesk(), '在下方输入框里按 Ctrl+B C (tmux 快捷键)：不算往 Claude Code 里打字，点输入框回到下方输入框');
   // Claude Code 正在运行时按 Esc 打断 (可能把刚发的话放回输入框)：锁定
   for (let i = 0; i < 12; i++) { ccStream.write(`\x1b[2;1H\x1b[K✻ Frosting… (${i}s · ↓ 1.2k tokens · esc to interrupt)`); await wait(150); }
   await wait(600);

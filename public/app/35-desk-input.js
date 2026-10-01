@@ -88,8 +88,35 @@
     PageUp: 'pgup', PageDown: 'pgdn', Tab: 'tab', Backspace: 'bs', Delete: 'del',
   };
 
+  // tmux 前缀键：Ctrl+B 和紧跟着的下一个键一起发给 tmux (Ctrl+B D 断开、Ctrl+B C 新窗口、Ctrl+B 方向键…)，
+  // 不管输入框里有没有字；不然下一个键会变成输入框里的字，tmux 等不到
+  let tmuxPrefix = false;
+  function prefixKeySeq(e) {
+    const md = { shift: e.shiftKey, ctrl: e.ctrlKey, alt: e.altKey };
+    if (DESK_KEYS[e.key]) return keySeq(DESK_KEYS[e.key], md);
+    if (e.ctrlKey && /^Key[A-Z]$/.test(e.code)) return String.fromCharCode(e.code.charCodeAt(3) - 64);
+    if (e.key === 'Enter') return '\r';
+    if (e.key === 'Escape') return '\x1b';
+    if (e.key.length === 1) return e.key;
+    return '';
+  }
+  dInput.addEventListener('blur', () => { tmuxPrefix = false; });
+
   dInput.addEventListener('keydown', (e) => {
     if (e.isComposing || e.keyCode === 229) return; // 输入法选字中
+    if (active && tmuxPrefix) {
+      if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return; // 只按了修饰键：继续等下一个键
+      tmuxPrefix = false;
+      const seq = prefixKeySeq(e);
+      if (seq) { e.preventDefault(); sendKeys(seq); }
+      return;
+    }
+    if (active && e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey && e.code === 'KeyB') {
+      e.preventDefault();
+      sendKeys('\x02');
+      tmuxPrefix = true;
+      return;
+    }
     if (cmdMode) {
       if (e.key === 'Enter') { e.preventDefault(); return cmdEnter(); }
       if (e.key === 'Escape' || (e.ctrlKey && e.code === 'KeyC')) setCmdMode(false); // 照常发给终端

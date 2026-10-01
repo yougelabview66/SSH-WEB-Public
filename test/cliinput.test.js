@@ -55,6 +55,14 @@ t('选中文件后再回车发送', ['look at @src/ma', '\r', ' ok', '\r'], fals
 t('/ 命令按回车 (执行)', ['/compact', '\r'], false);
 t('邮箱里的 @ 不算文件列表', ['mail a@b.com now', '\r'], false);
 
+// tmux 前缀键 Ctrl+B：后面那个键是给 tmux 的，不算打字
+t('Ctrl+B D (tmux 断开) 不算打字', ['\x02', 'd'], false);
+t('Ctrl+B 和 D 在同一段里', ['\x02d'], false);
+t('Ctrl+B 方向键 (tmux 切分屏) 不是翻历史', ['\x02', '\x1b[A'], false);
+t('Ctrl+B 后先来焦点报告，再按 C', ['\x02', '\x1b[I', 'c'], false);
+t('Ctrl+B C 之后正常打字', ['\x02', 'c', 'hi'], true);
+t('有字时按 Ctrl+B D，字还在', ['abc', '\x02', 'd'], true);
+
 // 服务器同步过来的状态能原样还原 (包括搜索中)
 const a = create(); a.feed('abc'); a.feed('\x12');
 const b = create(); b.set(JSON.parse(JSON.stringify(a.get())));

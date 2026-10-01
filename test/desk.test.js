@@ -37,6 +37,17 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   ok(got === '\x1b' && await p.inputValue('#dInput') === 'ac', 'Esc 随时发给终端，草稿保留');
   await p.fill('#dInput', ''); got = ''; await p.keyboard.press('Enter'); await wait(200);
   ok(got === '\r', '空输入框按回车只发回车');
+  // tmux 前缀键：Ctrl+B 和紧跟着的下一个键一起发给 tmux，不管输入框里有没有字
+  got = ''; await p.keyboard.press('Control+b'); await p.keyboard.press('d'); await wait(300);
+  ok(got === '\x02d' && await p.inputValue('#dInput') === '', '下方输入框空着按 Ctrl+B D：一起发给 tmux (断开)，d 不留在输入框: ' + JSON.stringify(got));
+  await p.keyboard.type('abc'); got = '';
+  await p.keyboard.press('Control+b'); await p.keyboard.press('%'); await wait(300);
+  ok(got === '\x02%' && await p.inputValue('#dInput') === 'abc', '输入框里有字时按 Ctrl+B %：也发给 tmux，输入框里的字不动: ' + JSON.stringify(got));
+  got = ''; await p.keyboard.press('Control+b'); await p.keyboard.press('ArrowUp'); await wait(300);
+  ok(got === '\x02\x1b[A' && await p.inputValue('#dInput') === 'abc', 'Ctrl+B ↑ (tmux 切分屏) 也发给 tmux: ' + JSON.stringify(got));
+  got = ''; await p.keyboard.type('d'); await wait(200);
+  ok(got === '' && await p.inputValue('#dInput') === 'abcd', '前缀键用过一次后恢复正常打字');
+  await p.fill('#dInput', '');
   // 多行 (Shift+Enter)
   got = ''; await p.keyboard.type('a'); await p.keyboard.press('Shift+Enter'); await p.keyboard.type('b'); await p.keyboard.press('Shift+Enter'); await p.keyboard.type('c');
   const h1 = (await p.locator('#dInput').boundingBox()).height;
