@@ -4,7 +4,7 @@ const { Server, utils } = require('ssh2');
 
 // 模拟 tmux 的历史：3000 行，每 10 行一行红色
 const HIST = [];
-for (let i = 1; i <= 3000; i++) HIST.push(i % 10 === 0 ? `\x1b[31mERROR line ${i}\x1b[39m 出错了` : `line ${i} 普通输出 abc`);
+for (let i = 1; i <= 3000; i++) HIST.push(i % 10 === 0 ? `\x1b[31mERROR line ${i}\x1b[39m 出错了` : i % 7 === 0 ? `line ${i} 长行 ` + "很长的一行 Claude 输出 ".repeat(i % 3 + 2) : `line ${i} 普通输出 abc`); // 有中文、有手机上会折行的长行
 const hist = HIST.join('\n') + '\n';
 const OTHER = Array.from({ length: 200 }, (_, i) => `完全不相干的另一个 pane ${i}`).join('\n') + '\n';
 
@@ -181,19 +181,36 @@ const WHEEL_UP = '\x1b[<64;';
   ok(await m.isHidden('#mobileBar'), '手机：历史视图打开时输入栏 (连同按键栏) 藏起来');
   await m.screenshot({ path: shot('lscroll-mobile.png') });
   // 在历史视图里长按复制：复制的是历史，面板停在正在看的那一行 (不是终端当前那一屏)
-  const k = await m.evaluate(() => { const pre = document.querySelector('.term.active .ls-body'); const lh = parseFloat(pre.style.lineHeight); pre.scrollTop = 1500 * lh; return Math.round(pre.scrollTop / lh); });
-  const seen = await m.evaluate(() => { const pre = document.querySelector('.term.active .ls-body'), r = pre.getBoundingClientRect(); return document.elementFromPoint(r.left + 10, r.top + 6) && pre.textContent.split('\n')[Math.round(pre.scrollTop / parseFloat(pre.style.lineHeight))]; });
+  // 有折行的长行、有中文 (后备字体行更高)：按文字找到第 1501 行，把它滚到历史视图最上面
+  const seen = await m.evaluate(() => {
+    const pre = document.querySelector('.term.active .ls-body'), w = document.createTreeWalker(pre, NodeFilter.SHOW_TEXT);
+    let n = 0, node;
+    while ((node = w.nextNode())) {
+      const t = node.data; let i = -1;
+      while (n < 1500 && (i = t.indexOf('\n', i + 1)) >= 0) n++;
+      if (n === 1500) { const rg = document.createRange(); rg.setStart(node, i + 1); rg.setEnd(node, i + 2);
+        pre.scrollTop += rg.getBoundingClientRect().top - pre.getBoundingClientRect().top; break; }
+    }
+    return pre.textContent.split('\n')[1500];
+  });
   const lb = await m.locator('.term.active .ls-body').boundingBox();
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: lb.x + 100, y: lb.y + 150 }] }); await wait(700);
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await wait(400);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await wait(800); // 等面板过一会儿的再次对齐
   const cp = await m.evaluate(() => {
-    const ta = document.getElementById('copyText'), lines = ta.value.split('\n');
-    return { shown: !document.getElementById('copyPanel').classList.contains('hidden'), n: lines.length, top: lines[Math.round(ta.scrollTop / (ta.scrollHeight / lines.length))] || '',
+    const ta = document.getElementById('copyText'), lines = ta.value.split('\n'), full = ta.value, st = ta.scrollTop;
+    // 复制面板最上面是哪一行：前 k 行在这个文本框里实际多高，正好等于滚动位置的那个 k
+    const pb = parseFloat(getComputedStyle(ta).paddingBottom);
+    const h = (k) => { ta.value = full.split('\n', k).join('\n'); return ta.scrollHeight - pb; };
+    ta.style.flex = 'none'; ta.style.height = ta.style.minHeight = '0px';
+    let top = '';
+    for (let k = 1; k < lines.length; k++) if (Math.abs(h(k) - st) < 2) { top = lines[k]; break; } else if (k % 100 === 0 && h(k + 100) < st) k += 99;
+    ta.value = full; ta.style.flex = ta.style.height = ta.style.minHeight = ''; ta.scrollTop = st;
+    return { shown: !document.getElementById('copyPanel').classList.contains('hidden'), n: lines.length, top,
       info: document.getElementById('copyInfo').textContent, hasOld: ta.value.includes('line 1 普通输出'), hasNew: ta.value.includes('ERROR line 3000') };
   });
   ok(cp.shown && cp.hasOld && cp.hasNew && cp.n >= 3000 && cp.info.includes('tmux 历史'), `手机：在历史视图里长按 → 复制面板里是整段 tmux 历史 (${cp.n} 行，${cp.info})，不是终端当前那一屏`);
   const num = (t) => +(/line (\d+)/.exec(t || '') || [])[1];
-  ok(Math.abs(num(cp.top) - num(seen)) <= 2, `复制面板停在正在看的那一行 (历史视图最上面「${seen}」，复制面板最上面「${cp.top}」)`);
+  ok(num(cp.top) === num(seen), `复制面板停在正在看的那一行 (历史视图最上面「${seen}」，复制面板最上面「${cp.top}」)`);
   await m.screenshot({ path: shot('lscroll-copy.png') });
   await m.evaluate(() => document.getElementById('copyPanel').classList.add('hidden'));
   await m.locator('.term.active .ls-close').tap(); await wait(400);

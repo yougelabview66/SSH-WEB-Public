@@ -30,8 +30,31 @@
       : s.term.buffer.active.type === 'alternate' ? `${n} 行 (全屏程序只有当前画面)` : `${n} 行`;
     mInput.blur();
     $('#copyPanel').classList.remove('hidden');
-    if (hist && n) ta.scrollTop = firstVisibleLine(hist) * (ta.scrollHeight / n);
-    else ta.scrollTop = ta.scrollHeight; // 定位到最新内容
+    if (hist && n) scrollToLine(ta, firstVisibleLine(hist));
+    else { ta._place = null; ta.scrollTop = ta.scrollHeight; } // 定位到最新内容
+  }
+
+  // 复制面板滚到第 k 行：中文 / emoji 用的后备字体让这些行比别的行高，不能按「平均行高 × 行号」算，
+  // 量前 k 行实际有多高。字体刚加载完行高还会变，所以过一会儿再对一次 (用户自己滑过就不动了)
+  function scrollToLine(ta, k) {
+    const full = ta.value;
+    const place = () => {
+      // 面板关了 / 换了内容 / 用户已经自己滑了：不动
+      if (ta._place !== place || $('#copyPanel').classList.contains('hidden') || ta.scrollTop !== ta._lineTop) return;
+      ta.style.flex = 'none'; ta.style.height = ta.style.minHeight = '0px';
+      ta.value = full.split('\n', k).join('\n');
+      const h = k ? ta.scrollHeight - parseFloat(getComputedStyle(ta).paddingBottom) : 0;
+      ta.value = full;
+      ta.style.flex = ta.style.height = ta.style.minHeight = '';
+      ta.scrollTop = h;
+      ta._lineTop = ta.scrollTop;
+    };
+    ta._place = place;
+    ta._lineTop = ta.scrollTop;
+    place();
+    requestAnimationFrame(place);
+    setTimeout(place, 300);
+    document.fonts?.ready.then(place);
   }
 
   // 历史视图里最上面那一行是第几行 (长行会折行显示，所以按文字算，不按像素算)
