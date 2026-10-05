@@ -18,16 +18,33 @@
     return lines.join('\n');
   }
 
+  // 历史视图 (tmux 本地快速滚动) 打开时：复制的是历史视图里的文字 (不是终端当前那一屏)，
+  // 复制面板滚到正在看的那一行
   function openCopyPanel(s) {
     if (!s) return;
     const ta = $('#copyText');
-    ta.value = terminalText(s);
+    const hist = s.scrollView?.querySelector('.ls-body');
+    ta.value = hist ? hist.textContent.replace(/\n+$/, '') : terminalText(s);
     const n = ta.value ? ta.value.split('\n').length : 0;
-    $('#copyInfo').textContent = s.term.buffer.active.type === 'alternate'
-      ? `${n} 行 (全屏程序只有当前画面)` : `${n} 行`;
+    $('#copyInfo').textContent = hist ? `${n} 行 (tmux 历史)`
+      : s.term.buffer.active.type === 'alternate' ? `${n} 行 (全屏程序只有当前画面)` : `${n} 行`;
     mInput.blur();
     $('#copyPanel').classList.remove('hidden');
-    ta.scrollTop = ta.scrollHeight; // 定位到最新内容
+    if (hist && n) ta.scrollTop = firstVisibleLine(hist) * (ta.scrollHeight / n);
+    else ta.scrollTop = ta.scrollHeight; // 定位到最新内容
+  }
+
+  // 历史视图里最上面那一行是第几行 (长行会折行显示，所以按文字算，不按像素算)
+  function firstVisibleLine(pre) {
+    const r = pre.getBoundingClientRect(), x = r.left + 8, y = r.top + 4;
+    let node, off;
+    if (document.caretRangeFromPoint) { const rg = document.caretRangeFromPoint(x, y); node = rg?.startContainer; off = rg?.startOffset; }
+    else if (document.caretPositionFromPoint) { const p = document.caretPositionFromPoint(x, y); node = p?.offsetNode; off = p?.offset; }
+    if (!node || !pre.contains(node)) return Math.round(pre.scrollTop / (pre.scrollHeight / Math.max(1, pre.textContent.split('\n').length)));
+    const range = document.createRange();
+    range.setStart(pre, 0);
+    range.setEnd(node, off);
+    return (range.toString().match(/\n/g) || []).length;
   }
 
   function closeCopyPanel() {

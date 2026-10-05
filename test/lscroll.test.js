@@ -180,6 +180,22 @@ const WHEEL_UP = '\x1b[<64;';
   ok(!!mv && !got.includes(WHEEL_UP), '手机：在终端上往下滑 → 打开本地历史视图，滑动没有发给 tmux');
   ok(await m.isHidden('#mobileBar'), '手机：历史视图打开时输入栏 (连同按键栏) 藏起来');
   await m.screenshot({ path: shot('lscroll-mobile.png') });
+  // 在历史视图里长按复制：复制的是历史，面板停在正在看的那一行 (不是终端当前那一屏)
+  const k = await m.evaluate(() => { const pre = document.querySelector('.term.active .ls-body'); const lh = parseFloat(pre.style.lineHeight); pre.scrollTop = 1500 * lh; return Math.round(pre.scrollTop / lh); });
+  const seen = await m.evaluate(() => { const pre = document.querySelector('.term.active .ls-body'), r = pre.getBoundingClientRect(); return document.elementFromPoint(r.left + 10, r.top + 6) && pre.textContent.split('\n')[Math.round(pre.scrollTop / parseFloat(pre.style.lineHeight))]; });
+  const lb = await m.locator('.term.active .ls-body').boundingBox();
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: lb.x + 100, y: lb.y + 150 }] }); await wait(700);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await wait(400);
+  const cp = await m.evaluate(() => {
+    const ta = document.getElementById('copyText'), lines = ta.value.split('\n');
+    return { shown: !document.getElementById('copyPanel').classList.contains('hidden'), n: lines.length, top: lines[Math.round(ta.scrollTop / (ta.scrollHeight / lines.length))] || '',
+      info: document.getElementById('copyInfo').textContent, hasOld: ta.value.includes('line 1 普通输出'), hasNew: ta.value.includes('ERROR line 3000') };
+  });
+  ok(cp.shown && cp.hasOld && cp.hasNew && cp.n >= 3000 && cp.info.includes('tmux 历史'), `手机：在历史视图里长按 → 复制面板里是整段 tmux 历史 (${cp.n} 行，${cp.info})，不是终端当前那一屏`);
+  const num = (t) => +(/line (\d+)/.exec(t || '') || [])[1];
+  ok(Math.abs(num(cp.top) - num(seen)) <= 2, `复制面板停在正在看的那一行 (历史视图最上面「${seen}」，复制面板最上面「${cp.top}」)`);
+  await m.screenshot({ path: shot('lscroll-copy.png') });
+  await m.evaluate(() => document.getElementById('copyPanel').classList.add('hidden'));
   await m.locator('.term.active .ls-close').tap(); await wait(400);
   ok(!(await m.$('.term.active .lscroll')) && await m.isVisible('#mobileBar'), '手机：点「回到实时画面」后输入栏回来');
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
