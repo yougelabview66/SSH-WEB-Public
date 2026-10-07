@@ -241,19 +241,29 @@
       : '需要通过 HTTPS 访问 (iPhone 需先添加到主屏幕)' + (others ? '；点开可以查看、删除已开通知的设备' : '');
   }
 
-  // 每次开启都换一个新订阅：旧的可能是旧推送密钥订的、或者服务器上已经删了，接着用会一直收不到
+  // 浏览器里的旧订阅密钥对得上就接着用，只重新登记到服务器 (可能在别的设备上被删了)；密钥变了才重新订阅。
+  // 不要随便重新订阅：要连得上浏览器的推送服务 (Chrome 是谷歌的 FCM)，连不上就失败，旧的也作废了
   async function enablePush() {
     const perm = await Notification.requestPermission();
     if (perm !== 'granted') throw new Error('没有获得通知权限，请在浏览器设置里允许这个网站发送通知');
     const reg = swReg || await navigator.serviceWorker.ready;
     const { publicKey } = await api('GET', '/api/push/key');
     serverKey = publicKey;
-    const old = await reg.pushManager.getSubscription();
-    if (old) {
-      await api('POST', '/api/push/unsubscribe', { endpoint: old.endpoint }).catch(() => {});
-      await old.unsubscribe().catch(() => {});
+    let sub = await reg.pushManager.getSubscription();
+    if (sub && !(await keyMatches(sub))) {
+      await api('POST', '/api/push/unsubscribe', { endpoint: sub.endpoint }).catch(() => {});
+      await sub.unsubscribe().catch(() => {});
+      sub = null;
     }
-    const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(publicKey) });
+    if (!sub) {
+      try {
+        sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(publicKey) });
+      } catch (e) {
+        if (e.name !== 'AbortError') throw e;
+        throw new Error(`连不上浏览器的推送服务（${e.message}）。Chrome 等浏览器要通过谷歌的推送服务 (FCM) 收通知：`
+          + '网络连不上谷歌、手机没有谷歌服务，或 Brave 浏览器没打开「使用 Google 服务推送消息」时会这样，换个网络稍后再试');
+      }
+    }
     await api('POST', '/api/push/subscribe', { subscription: sub.toJSON() });
     return sub;
   }

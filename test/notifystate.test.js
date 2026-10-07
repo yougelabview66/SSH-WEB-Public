@@ -1,6 +1,7 @@
 'use strict';
 // 完成通知：按钮的「已开启」要和服务器对得上 (在别的设备上被删了、推送密钥变了都算没开)，
-// 重新开启换新订阅；测试通知只发给这台；推送服务回 403 (密钥对不上) 的订阅自动删掉
+// 重新开启时旧订阅还能用就接着用 (不用连推送服务)，密钥变了才换新订阅；测试通知只发给这台；
+// 推送服务回 403 (密钥对不上) 的订阅自动删掉
 // 浏览器的推送订阅是模拟的 (无头 Chromium 连不上真的推送服务、通知权限也读不对)，推送发到本地模拟推送服务
 // @env PUSH_ALLOW_ANY_ENDPOINT=true NODE_TLS_REJECT_UNAUTHORIZED=0
 const fs = require('fs');
@@ -42,6 +43,8 @@ function fakePush({ base, keys }) {
   Notification.requestPermission = async () => 'granted';
   PushManager.prototype.getSubscription = async function () { return make(load()); };
   PushManager.prototype.subscribe = async function (o) {
+    // 模拟连不上推送服务 (国内网络连不上谷歌的 FCM)
+    if (localStorage.getItem('fakeFail')) throw new DOMException('Registration failed - push service error', 'AbortError');
     if (load()) throw new DOMException('已经有订阅了，要先取消', 'InvalidStateError');
     const n = Number(localStorage.getItem('fakeN') || 0) + 1;
     localStorage.setItem('fakeN', n);
@@ -85,25 +88,34 @@ run(async () => {
   ok(await label() === '未开启 · 其他 1 台已开', '这台的订阅在服务器上被删了：显示未开启 (' + await label() + ')');
   await p.click('#btnNotify'); await wait(500);
   ok((await p.locator('#dialogBody').textContent()).includes('这台设备还没开启'), '点开：提示这台还没开启');
+  // 这时推送服务连不上也没关系：浏览器里的订阅还能用，重新登记到服务器就行
+  await p.evaluate(() => localStorage.setItem('fakeFail', '1'));
   pushed = [];
   await clickBtn('在这台设备开启'); await wait(500);
-  ok(await label() === '已开启' && await has(`${base}/this-2`) && !(await has(`${base}/this-1`)), '重新开启：换了新订阅登记到服务器，显示已开启');
-  ok(pushed.length === 1 && pushed[0] === '/this-2', '重新开启后的测试通知发到新订阅 ' + JSON.stringify(pushed));
+  ok(await label() === '已开启' && await has(`${base}/this-1`), '重新开启：接着用浏览器里的订阅 (不用连推送服务)，重新登记到服务器');
+  ok(pushed.length === 1 && pushed[0] === '/this-1', '重新开启后的测试通知发到这台 ' + JSON.stringify(pushed));
 
-  // 推送密钥变了 (data 目录重建过)：浏览器里的订阅是旧密钥订的 → 显示未开启，重新开启换新订阅
+  // 推送密钥变了 (data 目录重建过)：浏览器里的订阅是旧密钥订的 → 显示未开启
   await p.evaluate(() => { const s = JSON.parse(localStorage.getItem('fakeSub')); s.key = btoa('old-key'.repeat(10)); localStorage.setItem('fakeSub', JSON.stringify(s)); });
   await open();
-  ok((await label()).startsWith('未开启') && await has(`${base}/this-2`), '订阅的推送密钥和服务器的对不上：显示未开启 (' + await label() + ')');
+  ok((await label()).startsWith('未开启') && await has(`${base}/this-1`), '订阅的推送密钥和服务器的对不上：显示未开启 (' + await label() + ')');
+  // 重新开启要换新订阅，这时连不上推送服务：给出看得懂的原因
   await p.click('#btnNotify'); await wait(500);
   await clickBtn('在这台设备开启'); await wait(500);
-  ok(await label() === '已开启' && await has(`${base}/this-3`) && !(await has(`${base}/this-2`)), '重新开启：旧订阅从服务器删掉，换成新密钥的订阅');
+  ok(alerts.length === 1 && alerts[0].includes('连不上浏览器的推送服务') && alerts[0].includes('FCM'), '重新订阅时连不上推送服务：提示原因 (' + alerts[0] + ')');
+  alerts.length = 0;
+  // 推送服务连上了再开启：旧订阅从服务器删掉，换成新密钥的订阅
+  await p.evaluate(() => localStorage.removeItem('fakeFail'));
+  await p.click('#btnNotify'); await wait(500);
+  await clickBtn('在这台设备开启'); await wait(500);
+  ok(await label() === '已开启' && await has(`${base}/this-2`) && !(await has(`${base}/this-1`)), '重新开启：旧订阅从服务器删掉，换成新密钥的订阅');
 
   // 推送服务回 403 (密钥对不上)：那条订阅永远推不过去，自动删掉；别的照常
   await J('/api/push/subscribe', { subscription: { endpoint: `${base}/bad-1`, keys } });
   pushed = [];
   await fetch(BASE + '/api/push/test', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
   const left = await J('/api/push/subs', {});
-  ok(pushed.includes('/bad-1') && pushed.includes('/this-3') && left.length === 2 && !(await has(`${base}/bad-1`)), '推送服务回 403 的订阅自动删掉，其他的还在 ' + JSON.stringify(pushed));
+  ok(pushed.includes('/bad-1') && pushed.includes('/this-2') && left.length === 2 && !(await has(`${base}/bad-1`)), '推送服务回 403 的订阅自动删掉，其他的还在 ' + JSON.stringify(pushed));
 
   ok(alerts.length === 0, '没有弹出错误提示 ' + alerts.join('; '));
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
