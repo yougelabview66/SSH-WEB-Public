@@ -209,11 +209,13 @@
     const b = $('#btnNotify');
     const on = pushSupported() && (await currentSub()) && Notification.permission === 'granted';
     // 这台没开、别的设备开着：写出来 (不然会奇怪「没开通知怎么还有通知」)
+    // 这台用不了 (局域网 http://) 也照样写出来：以前用域名开过通知的设备还会收到推送
     const others = on ? 0 : (await pushSubs()).filter((x) => !x.self).length;
-    b.textContent = !pushSupported() ? '不可用' : on ? '已开启' : others ? `未开启 · 其他 ${others} 台已开` : '未开启';
+    b.textContent = on ? '已开启' : (pushSupported() ? '未开启' : '不可用') + (others ? ` · 其他 ${others} 台已开` : '');
     b.classList.toggle('on', !!on);
     b.classList.toggle('na', !pushSupported());
-    b.title = pushSupported() ? '终端有提示音时推送通知' : '需要通过 HTTPS 访问 (iPhone 需先添加到主屏幕)';
+    b.title = pushSupported() ? '终端有提示音时推送通知'
+      : '需要通过 HTTPS 访问 (iPhone 需先添加到主屏幕)' + (others ? '；点开可以查看、删除已开通知的设备' : '');
   }
 
   const b64ToBytes = (b64) => {
@@ -232,17 +234,15 @@
   }
 
   $('#btnNotify').addEventListener('click', async () => {
-    if (!window.isSecureContext) {
-      return alert('完成通知需要通过 HTTPS 访问（例如 Cloudflare 隧道的域名），局域网 http:// 地址无法使用。');
-    }
-    if (!pushSupported()) {
-      return alert(isIOS && !standalone
+    // 这台开不了通知的原因
+    const why = !window.isSecureContext ? '完成通知需要通过 HTTPS 访问（例如 Cloudflare 隧道的域名），局域网 http:// 地址无法开启。'
+      : !pushSupported() ? (isIOS && !standalone
         ? 'iPhone / iPad 需要先点 Safari 的「分享 → 添加到主屏幕」，从主屏幕图标打开后再开启通知（iOS 16.4 以上）。'
-        : '当前浏览器不支持推送通知。');
-    }
+        : '当前浏览器不支持推送通知。') : '';
     const sub = await currentSub();
     // 开了通知的设备列表，每台都能单独删掉 (比如以前开过的浏览器、别的电脑)
     const subs = await pushSubs();
+    if (why && !subs.length) return alert(why);
     const day = (t) => t ? new Date(t).toLocaleDateString() : '';
     const listHtml = subs.length ? `<p>开了通知的设备（都会收到推送）：</p><div class="sub-list">${subs.map((x) => `<div class="sub-row">
         <span>${esc(x.device)}${x.self ? ' <b>（这台）</b>' : ''} <small>${day(x.created)} 开启</small></span>
@@ -259,7 +259,10 @@
     $('#dialogBody').addEventListener('click', onDel);
     const rules = '网页开在前台时不推送，最小化、切到别的窗口或 5 分钟没操作才推送';
     try {
-      if (sub && Notification.permission === 'granted') {
+      if (why) {
+        // 这台开不了，但别的设备开着 (比如以前用域名访问时开过)：照样列出来，在这里就能删掉
+        await dialog('完成通知', `<p>${esc(why)}</p>${listHtml}`, [{ label: '关闭', value: null, cls: 'primary', cancel: true }]);
+      } else if (sub && Notification.permission === 'granted') {
         const r = await dialog('完成通知', `<p>这台设备已开启。Claude Code 完成、需要选择、出错或终端有提示音时推送；${rules}。</p>${listHtml}`, [
           { label: '关闭通知', value: 'off', cls: 'danger' },
           { label: '发送测试通知', value: 'test' },

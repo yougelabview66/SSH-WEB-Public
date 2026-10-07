@@ -1,12 +1,15 @@
 'use strict';
-// 完成通知：这台没开、别的设备开着时写出来，对话框里列出开了通知的设备，能单独删掉
+// 完成通知：这台没开、别的设备开着时写出来，对话框里列出开了通知的设备，能单独删掉；
+// 局域网 http:// 访问 (这台开不了通知) 也照样列出来、能删掉
 const { BASE, ok, wait, launch } = require('./helpers');
+const ANDROID = 'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Mobile Safari/537.36';
+const subscribeOther = () => J('POST', '/api/push/subscribe', { subscription: { endpoint: 'https://fcm.googleapis.com/fcm/send/other-device', keys: { p256dh: 'x', auth: 'y' } } }, ANDROID);
 const J = (m, u, b, ua) => fetch(BASE + u, { method: m, headers: { 'content-type': 'application/json', ...(ua && { 'user-agent': ua }) }, body: b && JSON.stringify(b) }).then((r) => r.json());
 (async () => {
   // 另一台设备 (手机上的 Chrome) 开过通知
-  await J('POST', '/api/push/subscribe', { subscription: { endpoint: 'https://fcm.googleapis.com/fcm/send/other-device', keys: { p256dh: 'x', auth: 'y' } } },
-    'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Mobile Safari/537.36');
-  const browser = await launch();
+  await subscribeOther();
+  // lan.test 指到本机：不是 localhost 的 http:// 地址，浏览器不当作安全环境，跟局域网 IP 访问一样
+  const browser = await launch(['--host-resolver-rules=MAP lan.test 127.0.0.1']);
   const errors = [];
   const p = await (await browser.newContext({ viewport: { width: 1280, height: 800 } })).newPage(); p.on('pageerror', (e) => errors.push(e.message));
   await p.goto(BASE + '/'); await p.waitForSelector('#app:not(.hidden)'); await wait(1500);
@@ -21,6 +24,26 @@ const J = (m, u, b, ua) => fetch(BASE + u, { method: m, headers: { 'content-type
   ok(await p.locator('#dialogBody .sub-row').count() === 0 && (await J('POST', '/api/push/subs', {})).length === 0, '点「删除」：那台设备的订阅删掉了');
   await p.keyboard.press('Escape'); await wait(300);
   ok(await p.locator('#btnNotify').textContent() === '未开启', '删掉后按钮变回「未开启」');
+
+  // 局域网 http:// 访问：这台开不了通知，但以前用域名开过通知的设备还会收到推送，要看得到、删得掉
+  await subscribeOther();
+  const lan = await (await browser.newContext({ viewport: { width: 1280, height: 800 } })).newPage(); lan.on('pageerror', (e) => errors.push(e.message));
+  const dialogs = []; lan.on('dialog', (d) => { dialogs.push(d.message()); d.accept(); });
+  await lan.goto(BASE.replace('127.0.0.1', 'lan.test') + '/'); await lan.waitForSelector('#app:not(.hidden)'); await wait(1500);
+  ok(await lan.evaluate(() => !window.isSecureContext), '局域网地址：页面不是安全环境 (http://)');
+  const lanLabel = await lan.locator('#btnNotify').textContent();
+  ok(lanLabel === '不可用 · 其他 1 台已开', '局域网：按钮写出别的设备开着通知 (' + lanLabel + ')');
+  await lan.click('#btnNotify'); await wait(500);
+  await lan.screenshot({ path: require('./helpers').shot('notify-lan-dlg.png') });
+  const lanBody = await lan.locator('#dialogBody').textContent();
+  ok(await lan.isVisible('#dialog') && lanBody.includes('HTTPS') && lanBody.includes('安卓 · Chrome') && !dialogs.length, '局域网点开：说明要 HTTPS，并列出开了通知的设备');
+  await lan.locator('#dialogBody [data-del]').click(); await wait(500);
+  ok((await J('POST', '/api/push/subs', {})).length === 0, '局域网点「删除」：那台设备的订阅删掉了');
+  await lan.keyboard.press('Escape'); await wait(300);
+  ok(await lan.locator('#btnNotify').textContent() === '不可用', '删掉后按钮变回「不可用」');
+  await lan.click('#btnNotify'); await wait(500);
+  ok(dialogs.length === 1 && dialogs[0].includes('HTTPS') && !(await lan.isVisible('#dialog')), '没有设备开着时：只提示需要 HTTPS');
+
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
   await browser.close(); process.exit();
 })().catch((e) => { console.error(e); process.exit(1); });
