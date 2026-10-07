@@ -199,23 +199,9 @@
     try { return swReg ? await swReg.pushManager.getSubscription() : null; } catch { return null; }
   }
 
-  // 服务器上所有开了通知的设备 (self = 这台)
-  async function pushSubs() {
-    const sub = await currentSub();
-    try { return await api('POST', '/api/push/subs', { endpoint: sub?.endpoint || '' }); } catch { return []; }
-  }
-
-  async function updateNotifyBtn() {
-    const b = $('#btnNotify');
-    const on = pushSupported() && (await currentSub()) && Notification.permission === 'granted';
-    // 这台没开、别的设备开着：写出来 (不然会奇怪「没开通知怎么还有通知」)
-    // 这台用不了 (局域网 http://) 也照样写出来：以前用域名开过通知的设备还会收到推送
-    const others = on ? 0 : (await pushSubs()).filter((x) => !x.self).length;
-    b.textContent = on ? '已开启' : (pushSupported() ? '未开启' : '不可用') + (others ? ` · 其他 ${others} 台已开` : '');
-    b.classList.toggle('on', !!on);
-    b.classList.toggle('na', !pushSupported());
-    b.title = pushSupported() ? '终端有提示音时推送通知'
-      : '需要通过 HTTPS 访问 (iPhone 需先添加到主屏幕)' + (others ? '；点开可以查看、删除已开通知的设备' : '');
+  // 服务器上所有开了通知的设备 (self = 这台)；读不到返回 null
+  async function pushSubs(sub) {
+    try { return await api('POST', '/api/push/subs', { endpoint: sub?.endpoint || '' }); } catch { return null; }
   }
 
   const b64ToBytes = (b64) => {
@@ -223,15 +209,56 @@
     return Uint8Array.from(s, (c) => c.charCodeAt(0));
   };
 
+  // 订阅用的是不是服务器现在的推送密钥 (data 目录重建过密钥会变，旧订阅推不过去)；浏览器不提供或读不到就不比
+  let serverKey = null;
+  async function keyMatches(sub) {
+    const k = sub.options?.applicationServerKey;
+    if (!k) return true;
+    try { serverKey ||= (await api('GET', '/api/push/key')).publicKey; } catch { return true; }
+    const a = new Uint8Array(k), b = b64ToBytes(serverKey);
+    return a.length === b.length && a.every((x, i) => x === b[i]);
+  }
+
+  // 这台是不是真的开着：浏览器有订阅、有通知权限，服务器上也还有这条 (可能在别的设备上被删了、失效被清理了)，
+  // 而且密钥对得上；只看浏览器自己会显示「已开启」却永远收不到
+  async function pushState() {
+    const sub = pushSupported() ? await currentSub() : null;
+    const subs = await pushSubs(sub);
+    const on = !!sub && Notification.permission === 'granted' && (!subs || subs.some((x) => x.self)) && await keyMatches(sub);
+    return { sub, subs: subs || [], on };
+  }
+
+  async function updateNotifyBtn() {
+    const b = $('#btnNotify');
+    const { subs, on } = await pushState();
+    // 这台没开、别的设备开着：写出来 (不然会奇怪「没开通知怎么还有通知」)
+    // 这台用不了 (局域网 http://) 也照样写出来：以前用域名开过通知的设备还会收到推送
+    const others = on ? 0 : subs.filter((x) => !x.self).length;
+    b.textContent = on ? '已开启' : (pushSupported() ? '未开启' : '不可用') + (others ? ` · 其他 ${others} 台已开` : '');
+    b.classList.toggle('on', on);
+    b.classList.toggle('na', !pushSupported());
+    b.title = pushSupported() ? '终端有提示音时推送通知'
+      : '需要通过 HTTPS 访问 (iPhone 需先添加到主屏幕)' + (others ? '；点开可以查看、删除已开通知的设备' : '');
+  }
+
+  // 每次开启都换一个新订阅：旧的可能是旧推送密钥订的、或者服务器上已经删了，接着用会一直收不到
   async function enablePush() {
     const perm = await Notification.requestPermission();
     if (perm !== 'granted') throw new Error('没有获得通知权限，请在浏览器设置里允许这个网站发送通知');
     const reg = swReg || await navigator.serviceWorker.ready;
     const { publicKey } = await api('GET', '/api/push/key');
-    let sub = await reg.pushManager.getSubscription();
-    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(publicKey) });
+    serverKey = publicKey;
+    const old = await reg.pushManager.getSubscription();
+    if (old) {
+      await api('POST', '/api/push/unsubscribe', { endpoint: old.endpoint }).catch(() => {});
+      await old.unsubscribe().catch(() => {});
+    }
+    const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(publicKey) });
     await api('POST', '/api/push/subscribe', { subscription: sub.toJSON() });
+    return sub;
   }
+  // 测试通知只发给这台
+  const testPush = (sub) => api('POST', '/api/push/test', { endpoint: sub.endpoint });
 
   $('#btnNotify').addEventListener('click', async () => {
     // 这台开不了通知的原因
@@ -239,9 +266,8 @@
       : !pushSupported() ? (isIOS && !standalone
         ? 'iPhone / iPad 需要先点 Safari 的「分享 → 添加到主屏幕」，从主屏幕图标打开后再开启通知（iOS 16.4 以上）。'
         : '当前浏览器不支持推送通知。') : '';
-    const sub = await currentSub();
     // 开了通知的设备列表，每台都能单独删掉 (比如以前开过的浏览器、别的电脑)
-    const subs = await pushSubs();
+    const { sub, subs, on } = await pushState();
     if (why && !subs.length) return alert(why);
     const day = (t) => t ? new Date(t).toLocaleDateString() : '';
     const listHtml = subs.length ? `<p>开了通知的设备（都会收到推送）：</p><div class="sub-list">${subs.map((x) => `<div class="sub-row">
@@ -262,13 +288,13 @@
       if (why) {
         // 这台开不了，但别的设备开着 (比如以前用域名访问时开过)：照样列出来，在这里就能删掉
         await dialog('完成通知', `<p>${esc(why)}</p>${listHtml}`, [{ label: '关闭', value: null, cls: 'primary', cancel: true }]);
-      } else if (sub && Notification.permission === 'granted') {
+      } else if (on) {
         const r = await dialog('完成通知', `<p>这台设备已开启。Claude Code 完成、需要选择、出错或终端有提示音时推送；${rules}。</p>${listHtml}`, [
           { label: '关闭通知', value: 'off', cls: 'danger' },
           { label: '发送测试通知', value: 'test' },
           { label: '取消', value: null, cls: 'primary', cancel: true },
         ]);
-        if (r.value === 'test') await api('POST', '/api/push/test');
+        if (r.value === 'test') await testPush(sub);
         if (r.value === 'off') {
           await api('POST', '/api/push/unsubscribe', { endpoint: sub.endpoint }).catch(() => {});
           await sub.unsubscribe();
@@ -279,10 +305,9 @@
           { label: '在这台设备开启', value: 'on', cls: 'primary' },
           { label: '关闭', value: null, cancel: true },
         ]);
-        if (r.value === 'on') { await enablePush(); await api('POST', '/api/push/test'); }
+        if (r.value === 'on') await testPush(await enablePush());
       } else {
-        await enablePush();
-        await api('POST', '/api/push/test');
+        await testPush(await enablePush());
       }
     } catch (e) {
       alert('操作失败：' + e.message);
