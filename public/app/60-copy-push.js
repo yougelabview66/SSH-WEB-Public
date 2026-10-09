@@ -2,10 +2,12 @@
   // 手机上触摸被用来滚动，无法直接选中终端文字；这里把终端内容放进可选择的文本框
   const COPY_LINES = 1000;
 
-  function terminalText(s) {
+  // 终端文字 (最后 1000 行，自动换行的续行接回上一行) 和缓冲区第 row 行在其中是第几行
+  function terminalText(s, row = -1) {
     const b = s.term.buffer.active;
     const start = Math.max(0, b.length - COPY_LINES);
     const lines = [];
+    let at = 0;
     for (let i = start; i < b.length; i++) {
       const line = b.getLine(i);
       if (!line) continue;
@@ -13,40 +15,65 @@
       // 自动换行的续行接回上一行
       if (line.isWrapped && lines.length) lines[lines.length - 1] += text;
       else lines.push(text);
+      if (i === row) at = lines.length - 1;
     }
     while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
-    return lines.join('\n');
+    return { text: lines.join('\n'), line: Math.min(at, Math.max(0, lines.length - 1)) };
   }
 
-  // 历史视图 (tmux 本地快速滚动) 打开时：复制的是历史视图里的文字 (不是终端当前那一屏)，
-  // 复制面板滚到正在看的那一行
-  function openCopyPanel(s) {
+  // 手指按在终端第几行 (缓冲区里的行号)
+  function terminalRowAt(s, y) {
+    const t = s.term, screen = t.element?.querySelector('.xterm-screen') || t.element;
+    const r = screen?.getBoundingClientRect();
+    const top = t.buffer.active.viewportY;
+    if (!r || !r.height || t.rows <= 0) return top;
+    return top + Math.min(t.rows - 1, Math.max(0, Math.floor((y - r.top) / (r.height / t.rows))));
+  }
+
+  // 长按打开 (at = 手指位置)：复制面板里按住的那一行就在手指底下；按键栏的「复制」按钮：定位到最新内容。
+  // 历史视图 (tmux 本地快速滚动) 打开时：复制的是历史视图里的文字 (不是终端当前那一屏)
+  function openCopyPanel(s, at) {
     if (!s) return;
     const ta = $('#copyText');
     const hist = s.scrollView?.querySelector('.ls-body');
-    ta.value = hist ? hist.textContent.replace(/\n+$/, '') : terminalText(s);
+    let line = -1;
+    if (hist) {
+      ta.value = hist.textContent.replace(/\n+$/, '');
+      line = at ? lineAt(hist, at.x, at.y) : firstVisibleLine(hist);
+    } else {
+      const t = terminalText(s, at ? terminalRowAt(s, at.y) : -1);
+      ta.value = t.text;
+      if (at) line = t.line;
+    }
     const n = ta.value ? ta.value.split('\n').length : 0;
     $('#copyInfo').textContent = hist ? `${n} 行 (tmux 历史)`
       : s.term.buffer.active.type === 'alternate' ? `${n} 行 (全屏程序只有当前画面)` : `${n} 行`;
     mInput.blur();
+    ta.style.paddingBottom = '';
     $('#copyPanel').classList.remove('hidden');
-    if (hist && n) scrollToLine(ta, firstVisibleLine(hist));
+    if (n && line >= 0) scrollToLine(ta, Math.min(line, n - 1), at?.y);
     else { ta._place = null; ta.scrollTop = ta.scrollHeight; } // 定位到最新内容
   }
 
-  // 复制面板滚到第 k 行：中文 / emoji 用的后备字体让这些行比别的行高，不能按「平均行高 × 行号」算，
+  // 复制面板滚到第 k 行，有 anchorY (手指的位置) 就让这一行停在手指那个高度，否则停在最上面。
+  // 中文 / emoji 用的后备字体让这些行比别的行高，不能按「平均行高 × 行号」算，
   // 量前 k 行实际有多高。字体刚加载完行高还会变，所以过一会儿再对一次 (用户自己滑过就不动了)
-  function scrollToLine(ta, k) {
+  function scrollToLine(ta, k, anchorY) {
     const full = ta.value;
     const place = () => {
       // 面板关了 / 换了内容 / 用户已经自己滑了：不动
       if (ta._place !== place || $('#copyPanel').classList.contains('hidden') || ta.scrollTop !== ta._lineTop) return;
+      ta.style.paddingBottom = '';
       ta.style.flex = 'none'; ta.style.height = ta.style.minHeight = '0px';
       ta.value = full.split('\n', k).join('\n');
       const h = k ? ta.scrollHeight - parseFloat(getComputedStyle(ta).paddingBottom) : 0;
       ta.value = full;
       ta.style.flex = ta.style.height = ta.style.minHeight = '';
-      ta.scrollTop = h;
+      const want = h - anchorOffset(ta, anchorY);
+      // 靠近最后的行滚不到手指那么高：底下补一点空白
+      const short = want - (ta.scrollHeight - ta.clientHeight);
+      if (short > 0) ta.style.paddingBottom = parseFloat(getComputedStyle(ta).paddingBottom) + short + 'px';
+      ta.scrollTop = want;
       ta._lineTop = ta.scrollTop;
     };
     ta._place = place;
@@ -57,13 +84,29 @@
     document.fonts?.ready.then(place);
   }
 
-  // 历史视图里最上面那一行是第几行 (长行会折行显示，所以按文字算，不按像素算)
+  // 这一行显示在文本框顶部往下多少：手指的高度 (上面留一行、下面留两行)
+  function anchorOffset(ta, y) {
+    if (y == null) return 0;
+    const lh = parseFloat(getComputedStyle(ta).lineHeight) || 18;
+    const want = y - ta.getBoundingClientRect().top - ta.clientTop - lh / 2;
+    return Math.max(0, Math.min(Math.max(want, lh), ta.clientHeight - 3 * lh));
+  }
+
+  // 历史视图里最上面那一行是第几行
   function firstVisibleLine(pre) {
-    const r = pre.getBoundingClientRect(), x = r.left + 8, y = r.top + 4;
+    const r = pre.getBoundingClientRect();
+    return lineAt(pre, r.left + 8, r.top + 4);
+  }
+
+  // 历史视图里 (x, y) 处是第几行 (长行会折行显示，所以按文字算，不按像素算)
+  function lineAt(pre, x, y) {
     let node, off;
     if (document.caretRangeFromPoint) { const rg = document.caretRangeFromPoint(x, y); node = rg?.startContainer; off = rg?.startOffset; }
     else if (document.caretPositionFromPoint) { const p = document.caretPositionFromPoint(x, y); node = p?.offsetNode; off = p?.offset; }
-    if (!node || !pre.contains(node)) return Math.round(pre.scrollTop / (pre.scrollHeight / Math.max(1, pre.textContent.split('\n').length)));
+    if (!node || !pre.contains(node)) {
+      const avg = pre.scrollHeight / Math.max(1, pre.textContent.split('\n').length);
+      return Math.floor((pre.scrollTop + y - pre.getBoundingClientRect().top) / avg);
+    }
     const range = document.createRange();
     range.setStart(pre, 0);
     range.setEnd(node, off);
