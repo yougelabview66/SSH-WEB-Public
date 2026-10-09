@@ -265,10 +265,10 @@
           if (active === s) { syncSize(s); focusTerm(s); }
         }
       } else if (m.type === 'hostkey') {
-        activate(s);
+        activate(s, false);
         hostkeyDialog(m, s.id).then((accept) => { if (accept != null) send(s, { type: 'hostkey-response', accept }); });
       } else if (m.type === 'prompt') {
-        activate(s);
+        activate(s, false);
         promptDialog(m, s.id).then((answers) => {
           if (answers === undefined) return; // 已在其他设备上回答
           send(s, answers ? { type: 'prompt-response', answers } : { type: 'prompt-response', cancel: true });
@@ -335,9 +335,10 @@
     s.restoring = null;
   }
 
-  // 让服务端终端尺寸与当前显示一致 (其他设备可能改过尺寸)
-  function syncSize(s) {
+  // 让服务端终端尺寸与当前显示一致 (其他设备可能改过尺寸)。claim：要当使用者 (切到这个标签)
+  function syncSize(s, claim) {
     if (!s.box.clientWidth) return;
+    if (claim) s.wantClaim = true;
     if (!s.scrollView) s.fit.fit();
     sendSize(s, s.term.cols, s.term.rows);
   }
