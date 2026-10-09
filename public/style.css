@@ -522,6 +522,8 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 .ls-close { position: absolute; bottom: 12px; right: 18px; /* 右上角是主机状态悬浮窗的默认位置 */ z-index: 1; font-size: 12px; padding: 4px 10px; opacity: .92;
   box-shadow: 0 2px 10px var(--shadow); }
 .ls-close.tmux-exit { z-index: 25; } /* 直接放在终端上，要高于 xterm 内部图层 */
+/* 历史视图里的「已复制」提示：右下角，「回到实时画面」上面 */
+.lscroll > .font-toast { top: auto; left: auto; transform: none; right: 18px; bottom: 52px; font-size: 13px; padding: 6px 14px; border-radius: 16px; }
 .font-toast { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); z-index: 6; pointer-events: none;
   background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 10px;
   padding: 8px 16px; font-size: 16px; box-shadow: 0 6px 20px var(--shadow);

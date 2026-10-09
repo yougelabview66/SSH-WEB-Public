@@ -128,6 +128,9 @@ const WHEEL_UP = '\x1b[<64;';
   const toastT = await p.evaluate(() => document.querySelector('.term.active .lscroll .font-toast')?.textContent || '');
   ok(sel.length > 10 && clip === sel && got === '', `历史视图里选中文字松开就复制到剪贴板 (${clip.length} 个字符)，没有发给终端`);
   ok(toastT === `已复制 ${sel.length} 个字符` && !!(await view()), '提示「' + toastT + '」，历史视图不关');
+  const tp = await p.evaluate(() => { const v = document.querySelector('.term.active .lscroll').getBoundingClientRect(), t = document.querySelector('.term.active .lscroll .font-toast').getBoundingClientRect(), c = document.querySelector('.term.active .ls-close').getBoundingClientRect();
+    return { right: Math.round(v.right - t.right), aboveClose: Math.round(c.top - t.bottom), bottom: Math.round(v.bottom - t.bottom) }; });
+  ok(tp.right < 30 && tp.aboveClose >= 0 && tp.bottom < 80, `提示在右下角、「回到实时画面」上面 (离右边 ${tp.right}px，离底部 ${tp.bottom}px)`);
   await p.screenshot({ path: shot('lscroll-copysel.png') });
   await p.mouse.click(lb0.x + 20, lb0.y + 40); await wait(300); // 单击 (没选中文字) 不复制
   ok(await p.evaluate(() => navigator.clipboard.readText()) === clip, '单击不复制');
