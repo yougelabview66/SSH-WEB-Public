@@ -183,8 +183,9 @@
       e.target.disabled = true;
       try {
         await api('POST', `/api/sessions/${s.sid}/tmux-mouse`);
-        el.innerHTML = '<div class="msg">✔ 已为 tmux 开启鼠标，现在可以滑动查看历史了（在底部继续下滑会自动退出查看模式）。<br>'
-          + '<span class="note">tmux 重启后需要重新开启；想永久生效，在 ~/.tmux.conf 加一行 <code>set -g mouse on</code></span></div>';
+        el.innerHTML = '<div class="msg">✔ 已为 tmux 开启鼠标，现在可以滑动查看历史了（在底部继续下滑会自动退出查看模式）。'
+          + '选完文字只复制、不会跳回最新，Ctrl+End 回到最新。<br>'
+          + '<span class="note">tmux 重启后需要重新开启；想永久生效，按 README 把几行设置加到 ~/.tmux.conf</span></div>';
         setTimeout(close, 6000);
       } catch (err) {
         el.querySelector('.msg').textContent = '开启失败：' + err.message;

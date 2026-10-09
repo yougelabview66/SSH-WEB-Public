@@ -609,13 +609,25 @@ app.put('/api/sessions/order', (req, res) => {
   res.json({ ok: true });
 });
 
-// 为 tmux 开启鼠标 (滑动 / 滚轮查看历史)：用单独的 exec 通道执行，不影响终端画面
+// 为 tmux 开启鼠标 (滑动 / 滚轮查看历史)：用单独的 exec 通道执行，不影响终端画面。
+// 开了鼠标后，往上翻 / 拖动选字都在 tmux 复制模式里，tmux 默认松开鼠标 (双击、三击也一样) 就复制并退出复制模式，
+// 人被甩回最新的地方；Ctrl+End (Claude Code 的「回到最新」) 在复制模式里也没反应。所以一起改成：
+// 选完只复制、停在原处 (tmux 3.0 及以前没有 copy-pipe-no-clear，用 copy-selection)；复制模式里 Ctrl+End = 退出、回到最新。
+// 对整个 tmux 服务生效，所以直接在终端软件里 ssh 进同一个 tmux 也一样
+const TMUX_MOUSE_CMD = 'command -v tmux >/dev/null 2>&1 || { echo NO_TMUX; exit 0; }; '
+  + 'tmux list-sessions >/dev/null 2>&1 || { echo NO_SERVER; exit 0; }; '
+  + 'tmux set -g mouse on || exit 1; '
+  + "c=copy-pipe-no-clear; case \"$(tmux -V)\" in *' '[12].*|*' 3.0'*) c=copy-selection;; esac; "
+  + 'for t in copy-mode copy-mode-vi; do '
+  + 'tmux bind -T $t MouseDragEnd1Pane send -X $c && '
+  + "tmux bind -T $t DoubleClick1Pane select-pane '\\;' send -X select-word '\\;' send -X $c && "
+  + "tmux bind -T $t TripleClick1Pane select-pane '\\;' send -X select-line '\\;' send -X $c && "
+  + 'tmux bind -T $t C-End send -X cancel || exit 1; '
+  + 'done; echo OK';
 app.post('/api/sessions/:id/tmux-mouse', (req, res) => {
   const s = liveSession(req.params.id);
   if (!s) return res.status(404).json({ error: '会话未连接' });
-  const cmd = 'command -v tmux >/dev/null 2>&1 || { echo NO_TMUX; exit 0; }; '
-    + 'tmux list-sessions >/dev/null 2>&1 || { echo NO_SERVER; exit 0; }; '
-    + 'tmux set -g mouse on && echo OK';
+  const cmd = TMUX_MOUSE_CMD;
   s.ssh.exec(cmd, (err, stream) => {
     if (err) return res.status(500).json({ error: err.message });
     let out = '';
