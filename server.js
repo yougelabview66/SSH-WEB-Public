@@ -57,11 +57,11 @@ const USER_INPUT_TIMEOUT = 5 * 60 * 1000;
 // 终端输出流控: 几毫秒内的零碎输出合并成一帧发送；
 // 浏览器积压超过 HIGH (网速慢 + 大量输出) 时暂停读取 SSH，降到 LOW 以下再继续，避免数据堆在服务端内存
 const OUTPUT_FLUSH_MS = 4;
-// 输入栏发送的回车等文字显示出来再写 (见 Session.write)：没有输出时最多等这么久 (同以前的固定间隔)，有输出最多等这么久
+// 输入栏发送的回车：文字显示出来马上写，最多等这么久 (同以前的固定间隔，见 Session.write)
 const ECHO_SILENT_MS = 50;
-const ECHO_QUIET_MS = 150; // 有过输出、又停了这么久：程序这一轮处理完了 (认不出显示的样子时兜底，不用等到最长)
-const ECHO_MAX_MS = 1500;
 const RESIZE_AFTER_ENTER = 150; // 回车写进去后，终端尺寸变化再晚这么久 (留给程序处理回车)
+// 使用者关掉页面后，等这么久没人接管再换成别的设备的尺寸 (刷新页面时新页面很快连回来，尺寸不用来回换)
+const OWNER_HANDOVER_MS = 10000;
 const WS_HIGH = 1024 * 1024;
 const WS_LOW = 256 * 1024;
 const TERM_HIGH = 4 * 1024 * 1024; // 无界面终端来不及解析的数据上限
@@ -823,7 +823,6 @@ class Session {
     this.replayLen += len;
     while (this.replayLen - this.replay[0].length >= REPLAY_MAX) this.replayLen -= this.replay.shift().length;
     this.termPending += len;
-    if (this.echoWait) { this.echoWait.out = true; this.echoWait.lastOut = Date.now(); }
     this.term.write(buf, () => { this.termPending -= len; if (this.echoWait && this.writeQueue) this.checkEcho(); });
     // 连接过程中的提示、远端欢迎信息、tmux 首次重画不算「运行中」
     if (this.status === 'connected' && Date.now() - this.connectedAt > 1500) {
@@ -952,11 +951,19 @@ class Session {
   detach(ws) {
     if (!this.clients.delete(ws)) return;
     if (!this.clients.size) this.detachedAt = Date.now();
-    // 使用者关掉了页面：换成还开着的设备 (优先正在看的) 的尺寸
+    // 使用者关掉了页面：等一会儿没人接管，再换成还开着的设备 (优先正在看的) 的尺寸。
+    // 不马上换：刷新页面时新页面很快就连回来、还是原来的尺寸，马上换的话尺寸来回改两次 ——
+    // Claude Code 每次都清屏把整段对话重打一遍 (对话长时好几秒)，打开页面时画面跳来跳去、闪过历史记录
     if (this.owner === ws) {
-      const rest = [...this.clients].reverse();
-      this.owner = rest.find((c) => c.size && c.watching) || rest.find((c) => c.size) || null;
-      if (this.owner) this.applySize(this.owner.size.cols, this.owner.size.rows);
+      this.owner = null;
+      clearTimeout(this.handoverTimer);
+      this.handoverTimer = setTimeout(() => {
+        this.handoverTimer = null;
+        if (this.owner) return; // 已经有人接管了 (刷新回来的页面、在别的设备上打字 / 切到前台)
+        const rest = [...this.clients].reverse();
+        this.owner = rest.find((c) => c.size && c.watching) || rest.find((c) => c.size) || null;
+        if (this.owner) this.applySize(this.owner.size.cols, this.owner.size.rows);
+      }, OWNER_HANDOVER_MS);
     }
   }
 
@@ -968,20 +975,20 @@ class Session {
 
   // 网页从输入栏发送：文字 (echo) 和回车 (gap) 分两条发来，回车要和文字分开写进终端 —— 程序一次读到两样会当成粘贴，
   // 回车变成换行、消息发不出去。回车先排队，等程序把文字显示出来 (说明已经读走了) 马上写 (见 lib/echo-wait.js)：
-  //   - 显示出来了：马上写 (程序空闲时几毫秒，比固定等 50ms 快)
-  //   - 写完文字 ECHO_SILENT_MS 内程序一点输出都没有 (输密码这类本来就不显示的)：按 gap 写，同以前
-  //   - 有输出但还没显示 (正忙着重画、流式输出)：接着等，最多 ECHO_MAX_MS —— 以前固定等 50ms，这时最容易被当成粘贴；
-  //     输出停下来 ECHO_QUIET_MS 了还认不出来 (程序显示的样子和原文不一样)：它这一轮已经处理完了，写
+  //   - 显示出来了：马上写 (程序空闲时十几毫秒，比固定等 50ms 快)
+  //   - gap (50ms) 到了还没显示 (正忙、输密码这类不显示的)：照写，同以前 —— 等显示出来再写更稳，但 Claude Code
+  //     对话长了重画一次要几百毫秒，每条消息都慢半拍
   // 网页那边不计时 (浏览器正忙会把计时拖长，网络抖动也可能把两条挤到一起)。等的期间后面来的内容排在回车后面，顺序不变；
   // 终端尺寸变化也排到回车之后 (见 resize)
-  write(data, autoFrom, fromWs, { gap = 0, echo = false } = {}) {
+  // tmux：给 tmux 的按键 (退出复制模式的 q)，不是打进程序输入框的字，不算进 this.cli
+  write(data, autoFrom, fromWs, { gap = 0, echo = false, tmux = false } = {}) {
     // 终端自动应答 (程序问光标位置之类) 不排队：程序可能正等着这个回答才能把文字显示出来
-    if (this.writeQueue && !autoFrom) { this.writeQueue.push([data, autoFrom, fromWs]); return; }
+    if (this.writeQueue && !autoFrom) { this.writeQueue.push([data, autoFrom, fromWs, tmux]); return; }
     if (gap > 0 && !autoFrom) {
       const e = this.echoWait;
       const wait = e ? 0 : (this.lastWriteAt || 0) + Math.min(gap, 500) - Date.now();
       if (e || wait > 0) {
-        this.writeQueue = [[data, autoFrom, fromWs]];
+        this.writeQueue = [[data, autoFrom, fromWs, tmux]];
         this.enterGap = Math.min(gap, 500);
         if (e) this.checkEcho();
         else this.queueTimer = setTimeout(() => this.releaseQueue(), wait);
@@ -991,11 +998,11 @@ class Session {
     const key = echo && !autoFrom ? echoWait.echoKey(data) : null;
     const base = key ? echoWait.echoMarks(this.term, key) : null;
     if (!autoFrom && !gap && this.echoWait) { clearTimeout(this.echoWait.timer); this.echoWait = null; } // 打了别的：上一段的回显不用等了
-    this.writeNow(data, autoFrom, fromWs);
+    this.writeNow(data, autoFrom, fromWs, !!key, tmux);
     if (gap > 0) this.enterAt = Date.now();
     if (key) {
       clearTimeout(this.echoWait?.timer);
-      this.echoWait = { key, base, at: Date.now(), out: false, timer: null };
+      this.echoWait = { key, base, at: Date.now(), timer: null };
     }
   }
 
@@ -1005,12 +1012,9 @@ class Session {
     if (!e || !this.writeQueue) return;
     const age = Date.now() - e.at;
     const gap = this.enterGap || ECHO_SILENT_MS;
-    const quiet = e.out ? Date.now() - e.lastOut : 0;
-    if (age >= ECHO_MAX_MS || echoWait.echoed(this.term, e.key, e.base) || (!e.out && age >= gap)
-      || (e.out && quiet >= ECHO_QUIET_MS)) return this.releaseQueue();
+    if (age >= gap || echoWait.echoed(this.term, e.key, e.base)) return this.releaseQueue();
     clearTimeout(e.timer);
-    // 下一次检查：一直没输出就到 gap 为止；有输出了到「停了 ECHO_QUIET_MS」为止 (期间来了新输出会再来问)，最多到 ECHO_MAX_MS
-    e.timer = setTimeout(() => this.checkEcho(), Math.min(e.out ? ECHO_QUIET_MS - quiet : gap - age, ECHO_MAX_MS - age));
+    e.timer = setTimeout(() => this.checkEcho(), gap - age);
   }
 
   releaseQueue() {
@@ -1019,14 +1023,16 @@ class Session {
     this.echoWait = null;
     const q = this.writeQueue || [];
     this.writeQueue = null;
-    for (const [d, a, w] of q) this.writeNow(d, a, w);
+    for (const [d, a, w, t] of q) this.writeNow(d, a, w, false, t);
     this.enterAt = Date.now();
     this.applyHeldResize();
   }
 
   // autoFrom：终端自动应答来自哪个浏览器 (不是用户打的字)。几台设备同时开着时每台都会回答同一个询问，
   // 0.5 秒内来自不同设备的相同应答只转发一次；自动应答不算输入，不影响主机状态
-  writeNow(data, autoFrom, fromWs) {
+  // holdCli：输入栏发送的文字，回车紧跟着就来 —— 「终端输入框里有字」这个中间状态先不告诉网页
+  // (网页据此决定点终端时光标去哪：收到了会以为还在终端里编辑，回车写进去之前点终端光标不回下方输入框)
+  writeNow(data, autoFrom, fromWs, holdCli = false, tmux = false) {
     if (!this.stream) return;
     // 有人在这台设备上打字：它就是使用者，按它的尺寸
     if (fromWs && !autoFrom && this.owner !== fromWs && fromWs.size) {
@@ -1042,9 +1048,19 @@ class Session {
     }
     this.stream.write(data);
     this.lastWriteAt = Date.now();
-    if (this.cli.feed(data, { running: this.state.cls === 'run' })) this.broadcast({ type: 'cli', ...this.cli.get() });
+    const changed = !tmux && this.cli.feed(data, { running: this.state.cls === 'run' });
+    clearTimeout(this.cliTimer);
+    if (holdCli && changed) this.cliHeld = true;
+    if (holdCli) this.cliTimer = setTimeout(() => this.syncCli(), 1000); // 回车一直没来 (断线等)：还是要同步
+    else if (changed || this.cliHeld) this.syncCli();
     this.tracker.onInput(Date.now(), true); // 有人往这个标签发了内容：回显不算运行中，「完成」算已经看到了
     this.scheduleState();
+  }
+
+  syncCli() {
+    clearTimeout(this.cliTimer);
+    this.cliHeld = false;
+    this.broadcast({ type: 'cli', ...this.cli.get() });
   }
 
   // 终端尺寸听「正在用的设备」的：ws 是发来尺寸的浏览器，claim = 用户正在这台设备上 (页面在前台且有焦点)。
@@ -1065,6 +1081,7 @@ class Session {
     if (ws) {
       ws.size = { cols, rows };
       if (!claim && this.owner && this.owner !== ws && this.clients.has(this.owner)) return;
+      if (!claim && !this.owner && this.handoverTimer) return; // 使用者刚关掉页面 (可能在刷新)：后台设备自动发来的尺寸先不接管
       this.owner = ws;
     }
     this.applySize(cols, rows);
@@ -1219,6 +1236,10 @@ class Session {
     for (const ws of this.clients) ws.session = null;
     this.clients.clear();
     clearTimeout(this.flushTimer);
+    clearTimeout(this.handoverTimer);
+    // 排着队的回车、等回显的计时：不然到点了还去读已经释放的无界面终端
+    clearTimeout(this.queueTimer); clearTimeout(this.echoWait?.timer); clearTimeout(this.cliTimer);
+    this.writeQueue = null; this.echoWait = null;
     this.replay = [];
     this.term.dispose();
   }
@@ -1515,7 +1536,7 @@ wss.on('connection', (ws, req) => {
         break;
       }
       case 'data':
-        if (sess && typeof msg.data === 'string') sess.write(msg.data, msg.auto === true ? ws : null, ws, { gap: Number(msg.gap) || 0, echo: msg.echo === true });
+        if (sess && typeof msg.data === 'string') sess.write(msg.data, msg.auto === true ? ws : null, ws, { gap: Number(msg.gap) || 0, echo: msg.echo === true, tmux: msg.tmux === true });
         break;
       case 'resize':
         if (sess) sess.resize(msg.cols, msg.rows, ws, msg.claim !== false);

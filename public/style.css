@@ -203,6 +203,9 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 
 /* 会话布局：终端 + 右侧 SFTP 面板 */
 .term-box { flex: 1; min-width: 0; position: relative; padding: 4px 0 0 6px; }
+/* 下方输入框开着、光标却在终端里 (连按两下 Alt 进来的、点终端留在终端的)：描个边 ——
+   Claude Code 等程序把终端光标藏起来了，不然看不出光标在哪，像是切换失败、点了没反应 */
+#app:has(#deskBar:not(.hidden)) .term-box:has(.xterm-helper-textarea:focus)::after { content: ''; position: absolute; inset: 0; border: 1px solid var(--accent); opacity: .7; pointer-events: none; z-index: 5; }
 .sftp { width: 420px; flex-shrink: 0; background: var(--panel); border-left: 1px solid var(--border);
   display: flex; flex-direction: column; min-height: 0; color: var(--text); }
 .sftp-bar { display: flex; gap: 6px; padding: 8px; border-bottom: 1px solid var(--border); align-items: center; }
@@ -518,7 +521,7 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 .lscroll { position: absolute; inset: 0; z-index: 20; display: flex; }
 #app.ls-open #deskBar, #app.ls-open #mobileBar { display: none; } /* 历史视图打开时输入栏让出地方 */
 .ls-body { flex: 1; margin: 0; padding: 4px 0 0 6px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;
-  overscroll-behavior: contain; -webkit-overflow-scrolling: touch; user-select: text; -webkit-user-select: text; }
+  overscroll-behavior: contain; -webkit-overflow-scrolling: touch; user-select: text; -webkit-user-select: text; outline: none; }
 .ls-close { position: absolute; bottom: 12px; right: 18px; /* 右上角是主机状态悬浮窗的默认位置 */ z-index: 1; font-size: 12px; padding: 4px 10px; opacity: .92;
   box-shadow: 0 2px 10px var(--shadow); }
 .ls-close.tmux-exit { z-index: 25; } /* 直接放在终端上，要高于 xterm 内部图层 */

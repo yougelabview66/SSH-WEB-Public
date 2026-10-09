@@ -164,7 +164,10 @@
       // 终端的输入框里打过字、还没删光也没发送 (锁定，想改里面的内容；见 lib/cli-input.js，任何设备上打的都算)
       s.box.addEventListener('click', (e) => {
         if (e.button !== 0 || !deskOn || termDirect || s.term.hasSelection() || e.target.closest('button, .lscroll')) return;
-        if (s.cli.locked()) return;
+        if (s.cli.locked()) { // 拖动选字松开也有 click，那不是想回输入框，不提示
+          if (!selectingText()) fontToast(s, '终端的输入框里有没发送的字，光标留在终端 · 连按两下 Alt 回到下方输入框', 2500);
+          return;
+        }
         dInput.focus({ preventScroll: true });
       });
     }
@@ -265,7 +268,11 @@
   function send(s, obj) {
     if (!s.ws || s.ws.readyState !== WebSocket.OPEN) return;
     if (obj.type === 'data' && s.scrollView) closeLocalScroll(s); // 打字 / 按键 = 回到实时画面
-    if (obj.type === 'data' && typeof obj.data === 'string' && !obj.auto) {
+    // tmux 复制模式里 Ctrl+End 没有用 (不认这个键，按了没反应)：换成 q 退出复制模式，同「回到实时画面」
+    if (obj.type === 'data' && obj.data === '\x1b[1;5F' && tmuxInCopyMode(s)) obj = { ...obj, data: 'q', tmux: true };
+    // tmux：给 tmux 的按键 (退出复制模式的 q)，不是打进程序输入框的字 —— 不预测回显、不算进终端输入框的内容
+    // (以前算进去了：以为输入框里有个 q，之后点终端光标一直留在终端，不回下方输入框)
+    if (obj.type === 'data' && typeof obj.data === 'string' && !obj.auto && !obj.tmux) {
       predictInput(s, obj.data); // 打字预测回显
       s.cli.feed(obj.data, { running: s.srvState?.cls === 'run' }); // 终端输入框里的内容先在本地算一遍 (服务器算好后会同步过来，以服务器的为准)
     }

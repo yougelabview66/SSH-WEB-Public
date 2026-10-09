@@ -101,9 +101,26 @@ const WHEEL_UP = '\x1b[<64;';
   got = ''; await p.keyboard.press('Escape'); await wait(300);
   ok(!(await view()) && !got.includes('\x1b'), 'Esc → 回到实时画面，Esc 没有发给终端');
   ok(await p.isVisible('#deskBar') && winChanges === 0 && await p.evaluate(() => document.activeElement.id) === 'dInput', '回到实时画面后输入框回来、焦点在输入框，终端尺寸始终没变');
-  // 滚到底再往下 → 返回
+  // Ctrl+End → 直接回到实时画面 (以前只滚到历史视图底部，还要再往下滚一下)，不发给终端
   await overTerm(); await p.mouse.wheel(0, -100); await wait(1000);
-  ok(!!(await view()) && execs.length === 2, '再往上滚 → 重新抓一次最新历史');
+  ok(!!(await view()) && await p.evaluate(() => document.activeElement.classList.contains('ls-body')), '打开历史视图时焦点在历史视图上');
+  v = await view(); await p.keyboard.press('PageUp'); await wait(200);
+  ok((await view()).top < v.top, 'PageUp 直接滚历史视图');
+  got = ''; await p.keyboard.press('Control+End'); await wait(300);
+  ok(!(await view()) && got === '' && await p.evaluate(() => document.activeElement.id) === 'dInput', 'Ctrl+End → 回到实时画面，焦点回到输入框，没有发给终端: ' + JSON.stringify(got));
+  await overTerm(); await p.mouse.wheel(0, -100); await wait(1000);
+  got = ''; await p.keyboard.press('End'); await wait(300);
+  ok(!(await view()) && got === '', 'End → 回到实时画面');
+  await overTerm(); await p.mouse.wheel(0, -100); await wait(1000);
+  await p.keyboard.press('PageDown'); await wait(200);
+  ok(!!(await view()), '还没到底时 PageDown 只往下滚');
+  await p.evaluate(() => { const pre = document.querySelector('.term.active .ls-body'); pre.scrollTop = pre.scrollHeight; });
+  await p.keyboard.press('PageDown'); await wait(300);
+  ok(!(await view()), '到底了再按 PageDown → 回到实时画面');
+  // 滚到底再往下 → 返回
+  const ex0 = execs.length;
+  await overTerm(); await p.mouse.wheel(0, -100); await wait(1000);
+  ok(!!(await view()) && execs.length === ex0 + 1, '再往上滚 → 重新抓一次最新历史');
   await p.evaluate(() => { const pre = document.querySelector('.term.active .ls-body'); pre.scrollTop = pre.scrollHeight; });
   await wait(200); await p.mouse.wheel(0, 200); await wait(300);
   ok(!(await view()), '滚到最底下再往下滚 → 回到实时画面');
@@ -160,6 +177,13 @@ const WHEEL_UP = '\x1b[<64;';
   await p.screenshot({ path: shot('copymode.png') });
   got = ''; await p.click('.term.active .tmux-exit'); await wait(700);
   ok(got === 'q' && await p.isHidden('.term.active .tmux-exit'), '点它发送 q 退出复制模式，按钮消失');
+  const clickTermGoesDesk = async () => {
+    await p.locator('.term.active .xterm-helper-textarea').focus();
+    const b = await p.locator('.term.active .xterm-screen').boundingBox();
+    await p.mouse.click(b.x + 200, b.y + 120); await wait(300);
+    return p.evaluate(() => document.activeElement.id === 'dInput');
+  };
+  ok(await clickTermGoesDesk(), '退出复制模式发的 q 不算打进输入框的字：之后点终端光标照常回到下方输入框 (以前一直留在终端)');
   // 在复制模式里直接从输入框发送：先自动退出复制模式 (发 q)，消息照常发出去 (以前被复制模式吃掉)
   await overTerm(); await p.mouse.wheel(0, -100); await wait(900);
   ok(await p.isVisible('.term.active .tmux-exit'), '再往上滚又进了复制模式');
@@ -168,6 +192,14 @@ const WHEEL_UP = '\x1b[<64;';
   ok(got === 'q继续\r' && await p.isHidden('.term.active .tmux-exit'), '复制模式里从输入框发送 → 先发 q 退出复制模式，消息照常发出: ' + JSON.stringify(got));
   got = ''; await p.keyboard.type('再来'); await p.keyboard.press('Enter'); await wait(500);
   ok(got === '再来\r', '已经回到实时画面时照常发送，不多发 q: ' + JSON.stringify(got));
+  // 复制模式里按 Ctrl+End (tmux 不认，以前按了没反应)：换成 q 退出
+  await overTerm(); await p.mouse.wheel(0, -100); await wait(900);
+  await p.focus('#dInput'); got = ''; await p.keyboard.press('Control+End'); await wait(700);
+  ok(got === 'q' && await p.isHidden('.term.active .tmux-exit'), '复制模式里按 Ctrl+End → 发 q 退出复制模式: ' + JSON.stringify(got));
+  ok(await clickTermGoesDesk(), 'Ctrl+End 退出复制模式后，点终端光标照常回到下方输入框');
+  await p.focus('#dInput');
+  got = ''; await p.keyboard.press('Control+End'); await wait(300);
+  ok(got === '\x1b[1;5F', '不在复制模式时 Ctrl+End 照常发给程序: ' + JSON.stringify(got));
   // 在复制模式里打 / 进命令模式：也先退出 (不然 / 是复制模式里的搜索)
   await overTerm(); await p.mouse.wheel(0, -100); await wait(900);
   await p.focus('#dInput'); got = ''; await p.keyboard.type('/'); await wait(500);

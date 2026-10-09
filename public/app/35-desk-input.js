@@ -31,7 +31,7 @@
   function leaveTmuxCopyMode(s) {
     if (!s?.sid || Date.now() - (s.copyExitAt || 0) < 1500 || !tmuxInCopyMode(s)) return;
     s.copyExitAt = Date.now();
-    send(s, { type: 'data', data: 'q' });
+    send(s, { type: 'data', data: 'q', tmux: true });
   }
 
   // 回车和文字分开写进终端 (程序一次读到会当成粘贴、不提交)：文字标上 echo、回车标上 gap 一起马上发出，

@@ -64,7 +64,7 @@
     const lh = (screen && screen.clientHeight / s.term.rows) || 17;
     const v = document.createElement('div');
     v.className = 'lscroll';
-    v.innerHTML = '<button class="ls-close" title="Esc / 滚到最底下再往下 / 打字 也可以返回">回到实时画面 ✕</button><pre class="ls-body"></pre>';
+    v.innerHTML = '<button class="ls-close" title="Esc / 滚到最底下再往下 / 打字 也可以返回">回到实时画面 ✕</button><pre class="ls-body" tabindex="-1"></pre>';
     const pre = v.querySelector('.ls-body');
     Object.assign(pre.style, {
       fontFamily: s.term.options.fontFamily, fontSize: s.term.options.fontSize + 'px', lineHeight: lh + 'px',
@@ -76,6 +76,7 @@
     s.lsLine = lh;
     syncLsBars();
     pre.scrollTop = pre.scrollHeight - pre.clientHeight - up * 3 * lh; // 和滚轮一样往回看几行
+    pre.focus({ preventScroll: true }); // 输入框藏起来了，焦点放这里：PageUp / PageDown / Home / 方向键直接滚历史
     v.querySelector('.ls-close').addEventListener('click', () => closeLocalScroll(s));
     // 电脑：在最底下还往下滚 = 回到实时画面
     pre.addEventListener('wheel', (e) => {
@@ -164,7 +165,11 @@
       s.copyBtn.className = 'ls-close tmux-exit';
       s.copyBtn.textContent = '回到实时画面 ✕';
       s.copyBtn.addEventListener('mousedown', (e) => e.preventDefault());
-      s.copyBtn.addEventListener('click', () => { send(s, { type: 'data', data: EXIT_KEYS[s.copyBtn.dataset.mode][0] }); focusTerm(s); });
+      s.copyBtn.addEventListener('click', () => {
+        const mode = s.copyBtn.dataset.mode;
+        send(s, { type: 'data', data: EXIT_KEYS[mode][0], tmux: mode === 'tmux' }); // q 是给 tmux 的，不算打进输入框的字
+        focusTerm(s);
+      });
       s.box.appendChild(s.copyBtn);
     }
     if (!s.copyBtn) return;
@@ -182,9 +187,18 @@
       closeLocalScroll(active);
       return;
     }
+    // Ctrl+End / End = 回到实时画面 (以前只把历史视图滚到底，还要再往下滚一下才回去)；已经在最底下再按 PageDown 也是，同滚轮
+    const inInput = e.target.closest?.('input, textarea, [contenteditable]');
+    const pre = active.scrollView.querySelector('.ls-body');
+    if ((e.key === 'End' && !e.shiftKey && (e.ctrlKey || !inInput)) || (e.key === 'PageDown' && !inInput && atBottom(pre))) {
+      e.preventDefault();
+      e.stopPropagation();
+      closeLocalScroll(active);
+      return;
+    }
     // 输入框藏起来了，焦点不在任何输入框上时直接打字：回到实时画面，焦点回到输入框，这个字照常打进去
     const typing = !e.ctrlKey && !e.metaKey && !e.altKey && (e.key.length === 1 || e.key === 'Enter' || e.key === 'Backspace');
-    if (typing && !e.target.closest?.('input, textarea, [contenteditable]')) closeLocalScroll(active);
+    if (typing && !inInput) closeLocalScroll(active);
   }, true);
 
   // tmux capture-pane -e 的颜色 (SGR) 转成 HTML；其他控制序列丢掉

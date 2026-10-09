@@ -78,6 +78,8 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   await p.click('#dInput');
   // 连按两下 Alt 进终端直接打字，这时点终端不拉回来
   await p.keyboard.press('Alt'); await p.keyboard.press('Alt'); await wait(200);
+  ok(await p.evaluate(() => getComputedStyle(document.querySelector('.term.active .term-box'), '::after').content !== 'none'), '连按两下 Alt 进终端：终端描边，看得出光标在终端里');
+  await p.screenshot({ path: shot('desk-termfocus.png') });
   await p.locator('.term.active .term-box').click({ position: { x: 200, y: 100 } }); await wait(200);
   got = ''; await p.keyboard.type('pwd'); await wait(300);
   ok(got === 'pwd', '连按两下 Alt 进终端后，点终端照样直接在终端打字');
@@ -85,11 +87,13 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   await p.click('#dInput'); await wait(100);
   await p.locator('.term.active .term-box').click({ position: { x: 200, y: 100 } }); await wait(200);
   ok(await p.evaluate(() => document.activeElement.id) === 'dInput', '光标回到输入框以后，再点终端又会回到输入框');
+  ok(await p.evaluate(() => !(getComputedStyle(document.querySelector('.term.active .term-box'), '::after').content !== 'none')), '光标在下方输入框时终端不描边');
   // 输入框关掉时，点终端照旧直接打字
   await p.click('#dHide'); await wait(200);
   await p.locator('.term.active .term-box').click({ position: { x: 200, y: 100 } }); await wait(200);
   got = ''; await p.keyboard.type('ls'); await wait(300);
   ok(got === 'ls', '下方输入框关掉时，点终端照旧直接在终端打字');
+  ok(await p.evaluate(() => !(getComputedStyle(document.querySelector('.term.active .term-box'), '::after').content !== 'none')), '下方输入框关掉时光标本来就在终端，不描边');
   await p.click('#btnInput'); await wait(200);
   // 草稿按标签保存
   await p.click('#dInput'); await p.keyboard.type('draft1');

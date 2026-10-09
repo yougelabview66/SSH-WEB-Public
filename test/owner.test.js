@@ -3,13 +3,13 @@
 const { Server } = require('ssh2');
 const { BASE, ok, wait, launch, addHost, run, hostKey, devices } = require('./helpers');
 
-let size = null;
+let size = null; let changes = [];
 new Server({ hostKeys: [hostKey()] }, (c) => {
   c.on('authentication', (ctx) => ctx.accept());
   c.on('ready', () => c.on('session', (acc) => {
     const s = acc();
     s.on('pty', (a, r, info) => { size = { cols: info.cols, rows: info.rows }; a(); });
-    s.on('window-change', (a, r, info) => { size = { cols: info.cols, rows: info.rows }; a && a(); });
+    s.on('window-change', (a, r, info) => { size = { cols: info.cols, rows: info.rows }; changes.push(size); a && a(); });
     s.on('shell', (a) => { a().write('$ '); });
   }));
 }).listen(2277, '127.0.0.1');
@@ -43,6 +43,12 @@ run(async () => {
   await d.evaluate(() => { delete document.hasFocus; window.dispatchEvent(new Event('focus')); }); await wait(1200);
   ok(size.cols > 100, `回到电脑上用：按电脑排版 ${s()}`);
 
+  // 手机开着时电脑刷新页面：尺寸不来回换 (以前旧页面一关就换成手机的、新页面连上又换回来，
+  // Claude Code 整屏重打两遍，打开页面时画面跳来跳去、闪过历史记录)
+  changes = [];
+  await d.reload(); await d.waitForSelector('.tab.active .dot.ok'); await wait(2000);
+  ok(changes.length === 0 && size.cols > 100, `手机开着时电脑刷新页面：终端尺寸一次都没改 (${changes.map((c) => c.cols + '×' + c.rows).join(', ') || '无'})`);
+
   // 电脑用过之后，手机刷新页面：按手机排版 (反馈的问题)
   await m.reload(); await m.waitForSelector('.tab'); await wait(2500);
   ok(size.cols === phone.cols && size.rows === phone.rows, `电脑用过之后手机刷新页面：按手机排版 ${s()}`);
@@ -67,8 +73,10 @@ run(async () => {
   ok(size.cols === tablet.cols, `平板刷新页面：按平板 ${s()}`);
   await t.context().close(); await wait(1000);
 
-  // 正在用的手机关掉页面：换成还开着的电脑的尺寸
+  // 正在用的设备关掉页面：等一会儿 (可能只是在刷新) 没人接管，再换成还开着的电脑的尺寸
   await m.context().close(); await wait(1000);
-  ok(size.cols > 100, `手机关掉页面后：换成电脑的排版 ${s()}`);
+  ok(size.cols === tablet.cols, `正在用的平板关掉页面后先不换 (刷新的话马上就回来了) ${s()}`);
+  await wait(10000);
+  ok(size.cols > 100, `等了 10 秒没人接管：换成还开着的电脑的排版 ${s()}`);
   await browser.close();
 });

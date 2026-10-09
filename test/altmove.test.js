@@ -92,6 +92,9 @@ claudeServer(2253); claudeServer(2254, true); claudeServer(2256, false, 'sgr'); 
   const typeInTerm = async (keys) => { await p.locator('.term.active .xterm-helper-textarea').focus(); for (const k of keys) await p.keyboard.press(k); await wait(200); await p.click('#dInput'); };
   await clickRow(3); // 前面在终端里打了 typed in cli
   ok(await inTerm(), '在终端的输入框里打过字：点 Claude Code 的输入框，光标留在终端，方便修改');
+  const lockTip = await p.evaluate(() => document.querySelector('.term.active .font-toast')?.textContent || '');
+  ok(lockTip.includes('连按两下 Alt'), '留在终端时提示为什么、怎么回去: ' + lockTip);
+  ok(await p.evaluate(() => getComputedStyle(document.querySelector('.term.active .term-box'), '::after').content !== 'none'), '光标在终端里：终端描边 (Claude Code 把终端光标藏起来了，不然看不出光标在哪)');
   await p.click('#dInput'); await clickRow(0);
   ok(await inTerm(), '打过字还没发送时，点终端别处也留在终端');
   await typeInTerm(['Control+l']); await clickRow(3);
