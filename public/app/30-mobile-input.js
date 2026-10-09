@@ -1,5 +1,103 @@
   // ------------------------------------------------------------ 手机输入栏
   const mInput = $('#mInput');
+  // 手机输入框是可编辑的 div (contenteditable)，不是 <textarea>：手机浏览器和系统的密码管理会在
+  // 每个表单输入框弹键盘时，在输入法上方加一条「密码填充」栏 (autocomplete="off" 也挡不住)，
+  // 可编辑的 div 不算表单输入框。这里给它补上 textarea 的 value / selectionStart / selectionEnd /
+  // setSelectionRange / select，下面的逻辑照旧当 textarea 用
+  makeTextbox(mInput);
+
+  function makeTextbox(el) {
+    // 不支持 plaintext-only 的浏览器 (旧 Firefox) 用 true，粘贴时自己只插纯文字
+    if (el.contentEditable !== 'plaintext-only') {
+      el.contentEditable = 'true';
+      el.addEventListener('paste', (e) => {
+        e.preventDefault();
+        document.execCommand('insertText', false, e.clipboardData.getData('text/plain'));
+      });
+    }
+    // 纯文字：文字节点；<br>、块元素 (浏览器自己插入的) 算换行；最后那个 <br> 只是让空的最后一行有高度
+    const textOf = (root) => {
+      let out = '';
+      const walk = (node) => {
+        for (let n = node.firstChild; n; n = n.nextSibling) {
+          if (n.nodeType === Node.TEXT_NODE) out += n.data;
+          else if (n.nodeName === 'BR') { if (n !== root.lastChild || root !== el) out += '\n'; }
+          else {
+            if ((n.nodeName === 'DIV' || n.nodeName === 'P') && out && !out.endsWith('\n')) out += '\n';
+            walk(n);
+          }
+        }
+      };
+      walk(root);
+      return out;
+    };
+    // 选区在文字里的位置；不在输入框里时用最后一次的 (同 textarea 失去焦点后还记得光标)
+    let last = [0, 0];
+    const offsets = () => {
+      const sel = getSelection();
+      if (!sel?.rangeCount) return null;
+      const r = sel.getRangeAt(0);
+      if (!el.contains(r.startContainer) || !el.contains(r.endContainer)) return null;
+      const pre = document.createRange();
+      pre.selectNodeContents(el);
+      pre.setEnd(r.startContainer, r.startOffset);
+      const a = textOf(pre.cloneContents()).length;
+      pre.setEnd(r.endContainer, r.endOffset);
+      return (last = [a, textOf(pre.cloneContents()).length]);
+    };
+    document.addEventListener('selectionchange', offsets);
+    // 文字位置 → DOM 位置
+    const point = (pos) => {
+      let left = pos;
+      const find = (node) => {
+        for (let n = node.firstChild; n; n = n.nextSibling) {
+          if (n.nodeType === Node.TEXT_NODE) {
+            if (left <= n.data.length) return [n, left];
+            left -= n.data.length;
+          } else if (n.nodeName === 'BR') {
+            if (left === 0) return [node, [...node.childNodes].indexOf(n)];
+            left -= 1;
+          } else {
+            const p = find(n);
+            if (p) return p;
+          }
+        }
+        return null;
+      };
+      return find(el) || [el, el.childNodes.length];
+    };
+    const select = (a, b) => {
+      const sel = getSelection();
+      if (!sel) return;
+      const r = document.createRange();
+      r.setStart(...point(a));
+      r.setEnd(...point(Math.max(a, b)));
+      sel.removeAllRanges();
+      sel.addRange(r);
+      last = [a, Math.max(a, b)];
+    };
+    const syncEmpty = () => el.classList.toggle('empty', !textOf(el).replace(/\u200b/g, ''));
+    el.addEventListener('input', syncEmpty);
+    Object.defineProperties(el, {
+      value: {
+        get: () => textOf(el),
+        set: (v) => {
+          el.textContent = v;
+          if (v.endsWith('\n')) el.appendChild(document.createElement('br')); // 显示出最后的空行
+          last = [v.length, v.length];
+          if (document.activeElement === el) select(v.length, v.length);
+          syncEmpty();
+        },
+      },
+      selectionStart: { get: () => (offsets() || last)[0] },
+      selectionEnd: { get: () => (offsets() || last)[1] },
+      setSelectionRange: { value: (a, b) => (document.activeElement === el ? select(a, b) : (last = [a, b])) },
+      select: { value: () => { el.focus({ preventScroll: true }); select(0, textOf(el).length); } },
+    });
+    // 聚焦时光标回到上次的位置 (可编辑的 div 默认放在最前面)，点到哪里就以点的位置为准
+    el.addEventListener('focus', () => { if (!offsets()) select(...last); });
+    syncEmpty();
+  }
   const dInput = $('#dInput');
   let termDirect = false; // 连按两下 Alt 进了终端直接打字：点终端时不把光标拉回下方输入框，光标回到输入框后恢复
   dInput.addEventListener('focus', () => { termDirect = false; });
@@ -89,6 +187,11 @@
   let composing = false;
 
   const mText = () => mInput.value.split(SENTINEL).join('');
+  // 光标不停在哨兵前面 (点输入框最左边时可编辑的 div 会把光标放在那里，打的字就跑到哨兵前面了)
+  document.addEventListener('selectionchange', () => {
+    if (document.activeElement !== mInput || composing) return;
+    if (mInput.selectionStart === 0 && mInput.selectionEnd === 0 && mInput.value.startsWith(SENTINEL)) mInput.setSelectionRange(1, 1);
+  });
 
   function setMobileText(text, caret = text.length) {
     mInput.value = SENTINEL + text;

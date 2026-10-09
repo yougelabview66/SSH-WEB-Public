@@ -242,8 +242,15 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 .mkeys button.on { background: var(--accent2); border-color: var(--accent2); color: #fff; }
 .mline { display: flex; align-items: flex-end; gap: 6px; padding: 0 6px 6px; }
 /* 16px 以上避免 iOS 聚焦时自动放大页面 */
-.mline textarea { margin: 0; font: inherit; font-size: 16px; line-height: 22px; padding: 8px 10px; resize: none;
-  overflow-y: hidden; max-height: 30vh; }
+/* 手机输入框是可编辑的 div (见 30-mobile-input.js)，样子同 textarea */
+#mInput { position: relative; flex: 1; min-width: 0; width: 100%; margin: 0; padding: 8px 10px;
+  background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px;
+  font: inherit; font-size: 16px; line-height: 22px; overflow-y: hidden; max-height: 30vh; cursor: text;
+  white-space: pre-wrap; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
+#mInput:focus { outline: none; border-color: var(--accent); }
+/* 提示文字：不占位置 (光标在最前面)，太长换行时照样把空输入框撑高，同 textarea 的 placeholder */
+#mInput.empty::before { content: attr(data-placeholder); position: absolute; left: 10px; right: 10px;
+  color: var(--muted); pointer-events: none; }
 .mline button { flex-shrink: 0; width: 48px; height: 40px; font-size: 16px; touch-action: manipulation; }
 
 /* 电脑输入栏 */

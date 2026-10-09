@@ -31,7 +31,10 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   // 多行：文字满一行自动换行、输入框变高
   const mh = () => m.evaluate(() => { const t = document.getElementById('mInput'); return { h: t.offsetHeight, ov: getComputedStyle(t).overflowY, tag: t.tagName }; });
   const h1 = await mh();
-  ok(h1.tag === 'TEXTAREA' && h1.h <= 44, `一开始一行高 (${h1.h}px)`);
+  ok(h1.tag === 'DIV' && h1.h <= 44, `一开始一行高 (${h1.h}px)`);
+  // 不是表单输入框：手机浏览器 / 系统密码管理不会在输入法上方挂「密码填充」栏
+  ok(await m.evaluate(() => !document.querySelector('#mobileBar input, #mobileBar textarea') && /^(plaintext-only|true)$/.test(document.getElementById('mInput').contentEditable)),
+    '手机输入框是可编辑的 div，不是表单输入框 (不会弹「密码填充」栏)');
   got = ''; await m.keyboard.type('这是一段很长的中文说明文字，用来测试手机输入框在文字满了之后会不会自动换行变高'); await wait(200);
   const h2 = await mh();
   ok(h2.h > h1.h + 15 && h2.ov === 'hidden' && got === '', `文字满一行后自动换行、输入框变高 ${h1.h} → ${h2.h}px，没有滚动条，也没发送`);
