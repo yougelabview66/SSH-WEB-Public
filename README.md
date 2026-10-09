@@ -260,6 +260,30 @@ npm install
 AUTH_PASSWORD=test npm start
 ```
 
+代码结构：
+
+```
+server.js              入口：组装各部分、启动服务、定时清理后台会话
+lib/
+  config.js            环境变量配置
+  auth.js              SECRET、主机密码加解密、登录凭证签名 / 校验 / 作废、登录限流
+  store.js             data/ 下的 JSON 文件：主机、已信任指纹、历史命令、收藏、界面设置
+  ssh-target.js        连接参数整理 (已保存主机读加密凭据)、ALLOWED_HOSTS 白名单、主机公钥指纹
+  http.js              网页和前端资源、登录 / 退出、挂载各接口
+  api-data.js          主机 / 指纹 / 历史 / 设置 / 收藏接口
+  api-sessions.js      后台会话列表、标签顺序、开启 tmux 鼠标、关闭会话
+  ws.js                WebSocket：握手校验、浏览器消息分发、心跳
+  events.js            通知所有打开的页面 (新建会话、标签顺序)
+  session/             后台会话 (SSH 连接由服务端持有，浏览器只是挂载上来)
+    index.js           核心：挂载 / 画面快照 / 输出转发 / 流控 / 主机状态 / 通知
+    input.js           写入按键 (输入栏发送时回车等回显、终端输入框内容同步)
+    size.js            终端尺寸听正在用的设备
+    ssh.js             建立 / 断开 SSH 连接 (直连 / Cloudflare 隧道、指纹校验、验证码)
+    remote.js          在目标主机上测延迟、抓 tmux 历史
+  sftp.js monitor.js push.js status.js cli-input.js echo-wait.js   文件管理、性能监控、推送、主机状态判断、终端输入框模拟、回显判断
+public/app/            前端，按编号顺序拼成 app.js (见下)
+```
+
 前端代码按功能拆在 `public/app/*.js`（文件名带编号），服务端启动时按顺序拼成一个 `app.js`：各部分共用同一个函数作用域，所以新增的部分要按依赖顺序编号；改前端代码后重启服务生效。
 
 自动化测试（浏览器 + 模拟 SSH 服务器，不会连接真实主机）：
