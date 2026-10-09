@@ -25,9 +25,19 @@
     return data;
   }
 
+  // ------------------------------------------------------------ 密码框
+  // 页面上只要有密码框，手机 (iPhone / 安卓) 点任何输入框 —— 包括下方的手机输入栏 —— 都会在输入法上方弹出「密码」填充栏。
+  // 所以登录框、主机对话框里的密码框平时是普通文本框、不带自动填充提示 (data-pw / data-ac 记着本来的)，
+  // 打开时才变成密码框，关掉后变回来
+  function armPasswords(el, on) {
+    for (const x of el.querySelectorAll('[data-pw]')) x.type = on ? 'password' : 'text';
+    for (const x of el.querySelectorAll('[data-pw], [data-ac]')) x.autocomplete = on ? x.dataset.pw || x.dataset.ac : 'off';
+  }
+
   // ------------------------------------------------------------ 登录
   function showLogin() {
     app.classList.add('hidden');
+    armPasswords($('#loginForm'), true);
     $('#login').classList.remove('hidden');
     $('#loginForm [name=username]').focus();
   }
@@ -39,6 +49,8 @@
     try {
       await api('POST', '/api/login', { username: fd.get('username'), password: fd.get('password') });
       $('#login').classList.add('hidden');
+      e.target.reset();
+      armPasswords(e.target, false);
       boot();
     } catch (err) {
       $('#loginErr').textContent = err.message;
@@ -243,11 +255,18 @@
     $('#secretHint').textContent = tips.join('；');
     $('#formErr').textContent = '';
     syncFormMode();
+    armPasswords(form, true);
     $('#modal').classList.remove('hidden');
     (h ? (F.authType.value === 'key' ? F.privateKey : F.password) : F.host).focus();
   }
 
-  function closeModal() { $('#modal').classList.add('hidden'); }
+  // 关掉时清掉填过的密码、私钥 (不留在页面里)，密码框变回普通文本框 (见 armPasswords)
+  function closeModal() {
+    if ($('#modal').classList.contains('hidden')) return; // 任何地方按 Esc 都会来 (比如在输入框里打断 Claude Code)
+    $('#modal').classList.add('hidden');
+    for (const n of ['password', 'privateKey', 'passphrase', 'cfClientSecret']) F[n].value = '';
+    armPasswords(form, false);
+  }
 
   function formData() {
     const d = Object.fromEntries(new FormData(form).entries());

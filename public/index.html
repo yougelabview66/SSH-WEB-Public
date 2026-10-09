@@ -21,8 +21,8 @@
   <div id="login" class="overlay hidden">
     <form id="loginForm" class="card">
       <h2>&gt;_ SSH-WEB</h2>
-      <label>用户名<input name="username" autocomplete="username" required></label>
-      <label>密码<input name="password" type="password" autocomplete="current-password" required></label>
+      <label>用户名<input name="username" autocomplete="off" data-ac="username" required></label>
+      <label>密码<input name="password" type="text" autocomplete="off" data-pw="current-password" required></label>
       <div class="err" id="loginErr"></div>
       <button class="primary" type="submit">登录</button>
     </form>
@@ -172,7 +172,7 @@
         <label class="grow">CF-Access-Client-Id<input name="cfClientId" placeholder="xxxx.access（可选）" autocomplete="off"></label>
       </div>
       <div class="row cf-only">
-        <label class="grow">CF-Access-Client-Secret<input name="cfClientSecret" type="password" placeholder="可选" autocomplete="new-password"></label>
+        <label class="grow">CF-Access-Client-Secret<input name="cfClientSecret" type="text" placeholder="可选" autocomplete="off" data-pw="new-password"></label>
       </div>
 
       <label>用户名<input name="username" required autocomplete="off"></label>
@@ -182,13 +182,13 @@
         <label><input type="radio" name="authType" value="key"> 私钥</label>
       </div>
 
-      <label class="auth-password">密码<input name="password" type="password" autocomplete="new-password"></label>
+      <label class="auth-password">密码<input name="password" type="text" autocomplete="off" data-pw="new-password"></label>
       <div class="auth-key">
         <label>私钥 (OpenSSH / PEM)
           <textarea name="privateKey" rows="5" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"></textarea>
         </label>
         <input type="file" id="keyFile">
-        <label>私钥密码<input name="passphrase" type="password" placeholder="可选" autocomplete="new-password"></label>
+        <label>私钥密码<input name="passphrase" type="text" placeholder="可选" autocomplete="off" data-pw="new-password"></label>
       </div>
 
       <div class="hint" id="secretHint"></div>

@@ -24,6 +24,9 @@
         f.onsubmit = null;
         document.removeEventListener('keydown', onKey, true);
         resolve({ value, form: f, dismissed });
+        // 调用方读完填的值后清掉内容：验证码 / 密码不留在页面里，密码框也不留 (手机上页面里有密码框时，
+        // 点任何输入框都会弹「密码」填充栏)；已经打开了下一个对话框就不动
+        setTimeout(() => { if (!curDialog) $('#dialogBody').innerHTML = ''; });
       };
       curDialog = { tag, dismiss: () => finish(null, true) };
       const onKey = (e) => {

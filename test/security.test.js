@@ -55,8 +55,11 @@ run(async () => {
   p.on('console', (m) => { if (/Content Security Policy|Refused to/i.test(m.text())) cspErrs.push(m.text()); });
   p.on('pageerror', (e) => errors.push(e.message));
   await p.goto(BASE + '/'); await p.waitForSelector('#login:not(.hidden)');
+  const pw = () => p.evaluate(() => { const x = document.querySelector('#loginForm [name=password]'); return x.type + ' ' + x.autocomplete; });
+  ok(await pw() === 'password current-password', '登录页：密码框是密码框，带自动填充提示 (浏览器能记住、填入登录密码)');
   await p.fill('#loginForm [name=username]', 'admin'); await p.fill('#loginForm [name=password]', 'test-pass-123');
   await p.click('#loginForm button[type=submit]'); await p.waitForSelector('#app:not(.hidden)');
+  ok(await pw() === 'text off' && await p.inputValue('#loginForm [name=password]') === '', '登录后：登录框的密码清掉、变回普通文本框 (手机点输入栏不弹「密码」填充栏)');
   await p.click('#btnNew'); await wait(300);
   await p.fill('#hostForm [name=host]', '127.0.0.1'); await p.fill('#hostForm [name=port]', '2255');
   await p.fill('#hostForm [name=username]', 'u'); await p.fill('#hostForm [name=password]', 'x');
