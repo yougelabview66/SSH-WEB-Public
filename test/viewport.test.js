@@ -29,8 +29,9 @@ run(async () => {
   const full = await layout(); const rows0 = rows;
   ok(full.style === '' && Math.abs(full.appH - full.winH) < 2 && Math.abs(full.barBottom - full.winH) < 2, `正常：页面占满屏幕，输入栏在最底下 (${full.appH} / ${full.winH})`);
 
-  // 模拟键盘弹出：可视区域变矮
+  // 模拟键盘弹出：光标在输入栏里，可视区域变矮 (光标不在输入框里时键盘不可能开着，见 mobheight 测试)
   await m.evaluate(() => {
+    document.getElementById('mInput').focus();
     Object.defineProperty(window.visualViewport, 'height', { configurable: true, get: () => 400 });
     window.visualViewport.dispatchEvent(new Event('resize'));
   });

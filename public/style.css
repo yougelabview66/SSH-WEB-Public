@@ -449,6 +449,13 @@ body.no-select { user-select: none; -webkit-user-select: none; }
   border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 10px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 #emptyLoading { text-align: center; color: var(--muted); }
+/* 别的设备正在用这个会话 (见 42-owner.js) */
+.owner-notice { position: absolute; inset: 0; z-index: 6; display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, .45); cursor: pointer; }
+.owner-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; max-width: 80%;
+  text-align: center; box-shadow: 0 4px 20px var(--shadow); }
+.owner-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+.owner-sub { color: var(--muted); font-size: 13px; margin-bottom: 12px; }
 .restoring { position: absolute; inset: 0; z-index: 4; display: flex; flex-direction: column; align-items: center;
   justify-content: center; background: var(--term-bg); color: var(--muted); font-size: 14px; }
 

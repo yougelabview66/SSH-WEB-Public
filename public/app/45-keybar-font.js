@@ -198,16 +198,21 @@
     const vv = window.visualViewport;
     const onVV = () => {
       const h = Math.round(vv.height), full = document.documentElement.clientHeight;
-      // 双指放大页面 (电脑触控板、手机) 时可视区域也会变小，那不是键盘弹出，不固定高度
-      const want = h > 0 && h < full - 1 && vv.scale <= 1.01 ? h + 'px' : '';
+      // 双指放大页面 (电脑触控板、手机) 时可视区域也会变小，那不是键盘弹出，不固定高度。
+      // 焦点不在输入框里时键盘不可能开着，也不固定：刚打开页面时地址栏伸缩，可视区域会短暂比页面矮，
+      // 以前被当成键盘弹出，界面停在矮的高度上 (没占满屏幕，要点一下输入框再收起键盘才恢复)
+      const typing = !!document.activeElement?.matches?.('input, textarea, [contenteditable]');
+      const want = typing && h > 0 && h < full - 1 && vv.scale <= 1.01 ? h + 'px' : '';
       if (app.style.height !== want) app.style.height = want;
       window.scrollTo(0, 0);
-      if (active) {
+      if (active && !active.scrollView) { // 历史视图打开时不重排 (见 55-local-scroll.js)
         active.fit.fit();
         active.term.refresh(0, active.term.rows - 1);
       }
     };
     vv.addEventListener('resize', onVV);
+    // 离开输入框 (键盘收起)：浏览器有时不报可视区域变化，过一会儿自己再算一次；焦点只是换到另一个输入框时照旧固定
+    if (isTouch) document.addEventListener('focusout', () => setTimeout(onVV, 300));
     // 从后台回来 / 旋转屏幕：键盘可能在后台收起了，浏览器却没通知 (或报的是过时的高度)，
     // 主动重新算几次 (有的浏览器回到前台后过一会儿才更新可视区域)
     // 最后按这台设备的尺寸同步一次：你回到这台设备上用了，排版就按它的

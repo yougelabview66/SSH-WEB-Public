@@ -3,7 +3,7 @@
   // restore: 服务端已有的后台会话信息 (刷新 / 重新打开浏览器时恢复)
   function openSession(params, title, connType, restore) {
     $('#empty').classList.add('hidden');
-    const s = { id: Math.random().toString(36).slice(2), params, title, connType, cli: CliInput.create() };
+    const s = { id: Math.random().toString(36).slice(2), params, title, connType, cli: CliInput.create(), fresh: true };
     if (restore) {
       s.remoteId = restore.id;
       s.histHost = restore.histHost;
@@ -79,7 +79,7 @@
     s.term.onResize(({ cols, rows }) => {
       predClear(s, false);
       if (s.pred) { s.pred.sure = false; s.pred.next = null; }
-      send(s, { type: 'resize', cols, rows, claim: userHere() });
+      sendSize(s, cols, rows);
     });
     // 旧式鼠标编码 (X10 等) 的上报走 onBinary，需要按原始字节发送
     s.term.onBinary((data) => {
@@ -155,9 +155,8 @@
   // OSC 颜色查询的回答 (10/11/12/4 …)、DCS 回答 (XTGETTCAP 等)
   const TERM_REPLY_RE = /^(?:\x1b\[[?>]?[\d;]*c|\x1b\[\??[\d;]*[Rn]|\x1b\[\??[\d;]*\$y|\x1b\[[IO]|\x1b\][\d;]+[^\x07\x1b]*(?:\x07|\x1b\\)|\x1bP[^\x1b]*\x1b\\)+$/;
 
-  // 用户是不是正在这台设备上：页面在前台而且有焦点。只有这样发出的尺寸才会改变终端排版
-  // (别的设备正在用时，后台设备自动重连 / 恢复画面发出的尺寸服务端只记下来不生效)
-  const userHere = () => !document.hidden && document.hasFocus();
+  // 这台设备是什么 (别的设备上提示「正在 手机 上使用」)
+  const deviceName = isTouch ? (Math.min(screen.width, screen.height) < 600 ? '手机' : '平板') : '电脑';
 
   function send(s, obj) {
     if (!s.ws || s.ws.readyState !== WebSocket.OPEN) return;
@@ -192,11 +191,18 @@
     const ws = new WebSocket(`${proto}://${location.host}/ws`);
     ws.binaryType = 'arraybuffer';
     s.ws = ws;
-    const size = s.box.clientWidth ? { cols: s.term.cols, rows: s.term.rows } : {};
-    size.claim = userHere();
 
     ws.onopen = () => {
       s.retries = 0;
+      // 连上时的尺寸。要不要当使用者 (终端按这台设备排版)：刚打开 / 刷新页面的第一次连接 (页面在前台)，
+      // 或者断线前就是使用者；断线自动重连不抢 (不然口袋里的手机一重连就把电脑上的排版换掉)
+      const size = s.box.clientWidth ? { cols: s.term.cols, rows: s.term.rows } : {};
+      size.claim = (s.fresh && !document.hidden) || !!s.mine;
+      // 还没显示出来 (恢复标签时后台的标签量不出尺寸)：等量出尺寸再接管 (见 syncSize)
+      s.wantClaim = size.claim && !size.cols;
+      if (s.fresh && document.hidden) s.claimOnShow = true; // 在后台打开的：切过来看时再接管 (见 42-owner.js)
+      s.fresh = false;
+      size.device = deviceName;
       if (s.remoteId) {
         // offset: 已收到的输出字节数，断线重连时服务端只补发缺的部分
         ws.send(JSON.stringify({ type: 'attach', id: s.remoteId, offset: s.offset, ...size }));
@@ -269,6 +275,10 @@
         });
       } else if (m.type === 'tmux-history') {
         onTmuxHistory(s, m);
+      } else if (m.type === 'owner') {
+        s.mine = m.mine; // 是不是这台设备在用 (终端按它排版)
+        s.ownerGone = !!m.gone; // 用着的设备刚关掉页面，现在没人在用
+        updateOwnerNotice(s, m.device);
       } else if (m.type === 'cli') {
         s.cli.set(m); // 服务器算的终端输入框内容 (包括别的设备上打的字)
       } else if (m.type === 'state') {
@@ -329,7 +339,14 @@
   function syncSize(s) {
     if (!s.box.clientWidth) return;
     if (!s.scrollView) s.fit.fit();
-    send(s, { type: 'resize', cols: s.term.cols, rows: s.term.rows, claim: userHere() });
+    sendSize(s, s.term.cols, s.term.rows);
+  }
+
+  // 告诉服务端这台设备的终端尺寸。不是使用者时只记下来，不改排版 (要接管见 claimSize)
+  function sendSize(s, cols, rows) {
+    if (!s.ws || s.ws.readyState !== WebSocket.OPEN) return; // 还没连上：连上时会带上尺寸
+    send(s, { type: 'resize', cols, rows, claim: !!s.mine || !!s.wantClaim || !!s.ownerGone });
+    s.wantClaim = false;
   }
 
   function showReconnect(s, text) {
