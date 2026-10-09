@@ -123,8 +123,8 @@
     if (!active || !active.sid) return;
     closeHistory();
     sendKeys(cmd);
-    // 等命令回显后再回车，这样也会记入历史 (次数 +1、移到最前)
-    if (op === 'run') setTimeout(() => { beginCapture(active); sendKeys('\r'); }, 50);
+    // 执行：回车马上发出，由服务端隔开 ENTER_GAP 再写进终端 (同 submitText)；回显到了会记入历史 (次数 +1、移到最前)
+    if (op === 'run') { beginCapture(active); send(active, { type: 'data', data: '\r', gap: ENTER_GAP }); }
   }
 
   async function toggleFav(cmd) {

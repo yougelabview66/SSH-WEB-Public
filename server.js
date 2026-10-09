@@ -959,9 +959,24 @@ class Session {
     this.broadcast({ type: 'status', status, sid: status === 'connected' ? this.id : null });
   }
 
+  // gap：这一段至少要比上一次写入晚这么多毫秒 (网页从输入栏发送时回车要和前面的文字隔开，不然程序一次读到
+  // 文字和回车会当成粘贴、不提交)。间隔在这里掐而不是在网页里等：网页那边的计时会被浏览器正忙 (发送后输入栏变矮、
+  // 终端重新排版) 拖长，网络抖动也可能把两条挤到一起。等的期间后面来的内容排在它后面，顺序不变
+  write(data, autoFrom, fromWs, gap = 0) {
+    if (this.writeQueue) { this.writeQueue.push([data, autoFrom, fromWs]); return; }
+    const wait = gap > 0 ? (this.lastWriteAt || 0) + Math.min(gap, 500) - Date.now() : 0;
+    if (wait <= 0) return this.writeNow(data, autoFrom, fromWs);
+    this.writeQueue = [[data, autoFrom, fromWs]];
+    setTimeout(() => {
+      const q = this.writeQueue;
+      this.writeQueue = null;
+      for (const [d, a, w] of q) this.writeNow(d, a, w);
+    }, wait);
+  }
+
   // autoFrom：终端自动应答来自哪个浏览器 (不是用户打的字)。几台设备同时开着时每台都会回答同一个询问，
   // 0.5 秒内来自不同设备的相同应答只转发一次；自动应答不算输入，不影响主机状态
-  write(data, autoFrom, fromWs) {
+  writeNow(data, autoFrom, fromWs) {
     if (!this.stream) return;
     // 有人在这台设备上打字：它就是使用者，按它的尺寸
     if (fromWs && !autoFrom && this.owner !== fromWs && fromWs.size) {
@@ -976,6 +991,7 @@ class Session {
       return;
     }
     this.stream.write(data);
+    this.lastWriteAt = Date.now();
     if (this.cli.feed(data, { running: this.state.cls === 'run' })) this.broadcast({ type: 'cli', ...this.cli.get() });
     this.tracker.onInput(Date.now(), true); // 有人往这个标签发了内容：回显不算运行中，「完成」算已经看到了
     this.scheduleState();
@@ -1431,7 +1447,7 @@ wss.on('connection', (ws, req) => {
         break;
       }
       case 'data':
-        if (sess && typeof msg.data === 'string') sess.write(msg.data, msg.auto === true ? ws : null, ws);
+        if (sess && typeof msg.data === 'string') sess.write(msg.data, msg.auto === true ? ws : null, ws, Number(msg.gap) || 0);
         break;
       case 'resize':
         if (sess) sess.resize(msg.cols, msg.rows, ws, msg.claim !== false);

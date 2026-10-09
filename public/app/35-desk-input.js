@@ -34,6 +34,24 @@
     send(s, { type: 'data', data: 'q' });
   }
 
+  // 发送时暂缓终端尺寸变化：发出去后输入栏清空变矮 (多行 / 折行的长消息)，终端跟着变高，尺寸变化会正好夹在
+  // 文字和回车之间发给程序 —— Claude Code 收到尺寸变化要把整段对话重画一遍 (对话长时一秒多)，回车要等它画完才处理，
+  // 发一条消息要等好久。所以从发出文字到回车被处理 (回车后 RESIZE_AFTER_ENTER) 期间，尺寸变化先记下，之后再补发
+  const RESIZE_AFTER_ENTER = 200; // 回车写进终端 (ENTER_GAP) 后再留一点给程序处理
+  const ENTER_GAP = 50;
+  function holdResize(s) {
+    s.resizeHold = (s.resizeHold || 0) + 1;
+  }
+  function releaseResize(s) {
+    setTimeout(() => {
+      if (--s.resizeHold > 0) return; // 期间又发了一条，等最后一条
+      s.resizeHold = 0;
+      const r = s.heldResize;
+      s.heldResize = null;
+      if (r) send(s, { type: 'resize', cols: r.cols, rows: r.rows, claim: userHere() });
+    }, RESIZE_AFTER_ENTER);
+  }
+
   // 把输入栏里编辑好的一段文字发给终端并回车 (电脑 / 手机输入栏共用)
   function submitText(s, text) {
     if (!s || !s.sid) return;
@@ -42,15 +60,20 @@
     let data = text.replace(/\r?\n/g, '\r');
     // 多行内容按粘贴发送 (Claude Code 等支持括号粘贴的程序不会把中间的换行当回车)
     if (data.includes('\r') && s.term.modes.bracketedPasteMode) data = '\x1b[200~' + data + '\x1b[201~';
+    holdResize(s);
     send(s, { type: 'data', data });
-    // 文字和回车分开发，避免被当成一次粘贴而不提交；也等回显后再记历史
-    setTimeout(() => { if (s.sid) { beginCapture(s); send(s, { type: 'data', data: '\r' }); } }, 50);
+    // 文字和回车分开发，避免被当成一次粘贴而不提交：回车马上发出，由服务端保证比文字晚 ENTER_GAP 写进终端
+    // (以前在网页里等 50ms，浏览器正忙时会被拖到两三百毫秒)。记历史等回显，见 checkCapture
+    beginCapture(s);
+    send(s, { type: 'data', data: '\r', gap: ENTER_GAP });
+    releaseResize(s);
   }
 
   // 命令模式：空输入框里打 / 后，输入逐字直接发给终端，Claude Code 的 / 命令候选列表会在终端里弹出，
   // ↑ ↓ 选择、Tab 补全、Enter 执行；Enter / Esc / Ctrl+C 或退格删光后回到本地编辑
   let cmdMode = null; // { s: 所在标签, n: 已发出的字数 (退格删光时退出) }
-  // 提示文字：一行放得下就用完整的，放不下换短的 (空输入框最低只有一行高，不让提示文字撑高)；再放不下就折行完整显示
+  // 提示文字：一行放得下就用完整的，放不下换短的；再放不下就截短加省略号 —— 提示文字折行会把空输入框撑高，
+  // 打字 / 发送时输入框高度来回变，每次都让终端改尺寸、程序整屏重画
   const DESK_PH = [dInput.placeholder, 'Enter 发送 · Shift+Enter 换行'];
   const CMD_PH = ['命令模式：直接输入到终端，Enter 执行，Esc 退出', '命令模式 · Enter 执行 · Esc 退出'];
   const phCtx = document.createElement('canvas').getContext('2d');
@@ -59,7 +82,14 @@
     const cs = getComputedStyle(dInput);
     const room = dInput.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - 2;
     phCtx.font = cs.font;
-    const ph = room > 0 ? list.find((t) => phCtx.measureText(t).width <= room) || list.at(-1) : list[0];
+    const fits = (t) => phCtx.measureText(t).width <= room;
+    let ph = room > 0 ? list.find(fits) : list[0];
+    if (!ph) { // 最短的也放不下：截短
+      const short = list.at(-1);
+      let n = short.length - 1;
+      while (n > 1 && !fits(short.slice(0, n) + '…')) n--;
+      ph = short.slice(0, n) + '…';
+    }
     if (dInput.placeholder !== ph) dInput.placeholder = ph;
   }
   // 宽度变了 (窗口大小、侧边栏开关)：重新挑提示文字、重新算高度

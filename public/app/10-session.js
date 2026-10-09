@@ -182,6 +182,7 @@
     s.term.onResize(({ cols, rows }) => {
       predClear(s, false);
       if (s.pred) { s.pred.sure = false; s.pred.next = null; }
+      if (s.resizeHold) { s.heldResize = { cols, rows }; return; } // 正在从输入栏发送：回车被处理后再告诉程序 (见 holdResize)
       send(s, { type: 'resize', cols, rows, claim: userHere() });
     });
     // 旧式鼠标编码 (X10 等) 的上报走 onBinary，需要按原始字节发送
