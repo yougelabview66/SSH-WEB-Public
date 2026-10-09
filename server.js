@@ -23,6 +23,7 @@ const registerSftp = require('./lib/sftp');
 const registerMonitor = require('./lib/monitor');
 const createPush = require('./lib/push');
 const CliInput = require('./lib/cli-input');
+const echoWait = require('./lib/echo-wait');
 const { StatusTracker } = require('./lib/status');
 const { Terminal: HeadlessTerminal } = require('@xterm/headless');
 const { SerializeAddon } = require('@xterm/addon-serialize');
@@ -56,6 +57,11 @@ const USER_INPUT_TIMEOUT = 5 * 60 * 1000;
 // 终端输出流控: 几毫秒内的零碎输出合并成一帧发送；
 // 浏览器积压超过 HIGH (网速慢 + 大量输出) 时暂停读取 SSH，降到 LOW 以下再继续，避免数据堆在服务端内存
 const OUTPUT_FLUSH_MS = 4;
+// 输入栏发送的回车等文字显示出来再写 (见 Session.write)：没有输出时最多等这么久 (同以前的固定间隔)，有输出最多等这么久
+const ECHO_SILENT_MS = 50;
+const ECHO_QUIET_MS = 150; // 有过输出、又停了这么久：程序这一轮处理完了 (认不出显示的样子时兜底，不用等到最长)
+const ECHO_MAX_MS = 1500;
+const RESIZE_AFTER_ENTER = 150; // 回车写进去后，终端尺寸变化再晚这么久 (留给程序处理回车)
 const WS_HIGH = 1024 * 1024;
 const WS_LOW = 256 * 1024;
 const TERM_HIGH = 4 * 1024 * 1024; // 无界面终端来不及解析的数据上限
@@ -817,7 +823,8 @@ class Session {
     this.replayLen += len;
     while (this.replayLen - this.replay[0].length >= REPLAY_MAX) this.replayLen -= this.replay.shift().length;
     this.termPending += len;
-    this.term.write(buf, () => { this.termPending -= len; });
+    if (this.echoWait) { this.echoWait.out = true; this.echoWait.lastOut = Date.now(); }
+    this.term.write(buf, () => { this.termPending -= len; if (this.echoWait && this.writeQueue) this.checkEcho(); });
     // 连接过程中的提示、远端欢迎信息、tmux 首次重画不算「运行中」
     if (this.status === 'connected' && Date.now() - this.connectedAt > 1500) {
       this.tracker.onOutput(Date.now());
@@ -959,19 +966,62 @@ class Session {
     this.broadcast({ type: 'status', status, sid: status === 'connected' ? this.id : null });
   }
 
-  // gap：这一段至少要比上一次写入晚这么多毫秒 (网页从输入栏发送时回车要和前面的文字隔开，不然程序一次读到
-  // 文字和回车会当成粘贴、不提交)。间隔在这里掐而不是在网页里等：网页那边的计时会被浏览器正忙 (发送后输入栏变矮、
-  // 终端重新排版) 拖长，网络抖动也可能把两条挤到一起。等的期间后面来的内容排在它后面，顺序不变
-  write(data, autoFrom, fromWs, gap = 0) {
-    if (this.writeQueue) { this.writeQueue.push([data, autoFrom, fromWs]); return; }
-    const wait = gap > 0 ? (this.lastWriteAt || 0) + Math.min(gap, 500) - Date.now() : 0;
-    if (wait <= 0) return this.writeNow(data, autoFrom, fromWs);
-    this.writeQueue = [[data, autoFrom, fromWs]];
-    setTimeout(() => {
-      const q = this.writeQueue;
-      this.writeQueue = null;
-      for (const [d, a, w] of q) this.writeNow(d, a, w);
-    }, wait);
+  // 网页从输入栏发送：文字 (echo) 和回车 (gap) 分两条发来，回车要和文字分开写进终端 —— 程序一次读到两样会当成粘贴，
+  // 回车变成换行、消息发不出去。回车先排队，等程序把文字显示出来 (说明已经读走了) 马上写 (见 lib/echo-wait.js)：
+  //   - 显示出来了：马上写 (程序空闲时几毫秒，比固定等 50ms 快)
+  //   - 写完文字 ECHO_SILENT_MS 内程序一点输出都没有 (输密码这类本来就不显示的)：按 gap 写，同以前
+  //   - 有输出但还没显示 (正忙着重画、流式输出)：接着等，最多 ECHO_MAX_MS —— 以前固定等 50ms，这时最容易被当成粘贴；
+  //     输出停下来 ECHO_QUIET_MS 了还认不出来 (程序显示的样子和原文不一样)：它这一轮已经处理完了，写
+  // 网页那边不计时 (浏览器正忙会把计时拖长，网络抖动也可能把两条挤到一起)。等的期间后面来的内容排在回车后面，顺序不变；
+  // 终端尺寸变化也排到回车之后 (见 resize)
+  write(data, autoFrom, fromWs, { gap = 0, echo = false } = {}) {
+    // 终端自动应答 (程序问光标位置之类) 不排队：程序可能正等着这个回答才能把文字显示出来
+    if (this.writeQueue && !autoFrom) { this.writeQueue.push([data, autoFrom, fromWs]); return; }
+    if (gap > 0 && !autoFrom) {
+      const e = this.echoWait;
+      const wait = e ? 0 : (this.lastWriteAt || 0) + Math.min(gap, 500) - Date.now();
+      if (e || wait > 0) {
+        this.writeQueue = [[data, autoFrom, fromWs]];
+        this.enterGap = Math.min(gap, 500);
+        if (e) this.checkEcho();
+        else this.queueTimer = setTimeout(() => this.releaseQueue(), wait);
+        return;
+      }
+    }
+    const key = echo && !autoFrom ? echoWait.echoKey(data) : null;
+    const base = key ? echoWait.echoMarks(this.term, key) : null;
+    if (!autoFrom && !gap && this.echoWait) { clearTimeout(this.echoWait.timer); this.echoWait = null; } // 打了别的：上一段的回显不用等了
+    this.writeNow(data, autoFrom, fromWs);
+    if (gap > 0) this.enterAt = Date.now();
+    if (key) {
+      clearTimeout(this.echoWait?.timer);
+      this.echoWait = { key, base, at: Date.now(), out: false, timer: null };
+    }
+  }
+
+  // 排着队的回车能不能写了 (输出写进无界面终端后、计时到了都会来问)
+  checkEcho() {
+    const e = this.echoWait;
+    if (!e || !this.writeQueue) return;
+    const age = Date.now() - e.at;
+    const gap = this.enterGap || ECHO_SILENT_MS;
+    const quiet = e.out ? Date.now() - e.lastOut : 0;
+    if (age >= ECHO_MAX_MS || echoWait.echoed(this.term, e.key, e.base) || (!e.out && age >= gap)
+      || (e.out && quiet >= ECHO_QUIET_MS)) return this.releaseQueue();
+    clearTimeout(e.timer);
+    // 下一次检查：一直没输出就到 gap 为止；有输出了到「停了 ECHO_QUIET_MS」为止 (期间来了新输出会再来问)，最多到 ECHO_MAX_MS
+    e.timer = setTimeout(() => this.checkEcho(), Math.min(e.out ? ECHO_QUIET_MS - quiet : gap - age, ECHO_MAX_MS - age));
+  }
+
+  releaseQueue() {
+    clearTimeout(this.queueTimer);
+    clearTimeout(this.echoWait?.timer);
+    this.echoWait = null;
+    const q = this.writeQueue || [];
+    this.writeQueue = null;
+    for (const [d, a, w] of q) this.writeNow(d, a, w);
+    this.enterAt = Date.now();
+    this.applyHeldResize();
   }
 
   // autoFrom：终端自动应答来自哪个浏览器 (不是用户打的字)。几台设备同时开着时每台都会回答同一个询问，
@@ -1004,12 +1054,30 @@ class Session {
     cols = clampSize(cols, 0);
     rows = clampSize(rows, 0);
     if (!cols || !rows) return;
+    // 输入栏刚发送 (回车还在排队，或刚写进去)：发送后输入栏变矮、终端变高，这个尺寸变化要排在回车之后，
+    // 再留 RESIZE_AFTER_ENTER 给程序处理回车 —— 不然 Claude Code 先整屏重画 (对话长时一秒多) 才处理回车
+    const hold = this.writeQueue ? Infinity : (this.enterAt || 0) + RESIZE_AFTER_ENTER - Date.now();
+    if (hold > 0) {
+      (this.heldResize ||= new Map()).set(ws || null, [cols, rows, claim]);
+      if (hold !== Infinity) { clearTimeout(this.resizeTimer); this.resizeTimer = setTimeout(() => this.applyHeldResize(), hold); }
+      return;
+    }
     if (ws) {
       ws.size = { cols, rows };
       if (!claim && this.owner && this.owner !== ws && this.clients.has(this.owner)) return;
       this.owner = ws;
     }
     this.applySize(cols, rows);
+  }
+
+  applyHeldResize() {
+    clearTimeout(this.resizeTimer);
+    if (!this.heldResize || this.writeQueue) return; // 回车还在排队：写进去时 (releaseQueue) 再来
+    const wait = (this.enterAt || 0) + RESIZE_AFTER_ENTER - Date.now();
+    if (wait > 0) { this.resizeTimer = setTimeout(() => this.applyHeldResize(), wait); return; }
+    const held = this.heldResize;
+    this.heldResize = null;
+    for (const [ws, [cols, rows, claim]] of held) if (!ws || this.clients.has(ws)) this.resize(cols, rows, ws, claim);
   }
 
   applySize(cols, rows) {
@@ -1447,7 +1515,7 @@ wss.on('connection', (ws, req) => {
         break;
       }
       case 'data':
-        if (sess && typeof msg.data === 'string') sess.write(msg.data, msg.auto === true ? ws : null, ws, Number(msg.gap) || 0);
+        if (sess && typeof msg.data === 'string') sess.write(msg.data, msg.auto === true ? ws : null, ws, { gap: Number(msg.gap) || 0, echo: msg.echo === true });
         break;
       case 'resize':
         if (sess) sess.resize(msg.cols, msg.rows, ws, msg.claim !== false);

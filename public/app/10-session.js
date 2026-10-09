@@ -182,7 +182,6 @@
     s.term.onResize(({ cols, rows }) => {
       predClear(s, false);
       if (s.pred) { s.pred.sure = false; s.pred.next = null; }
-      if (s.resizeHold) { s.heldResize = { cols, rows }; return; } // 正在从输入栏发送：回车被处理后再告诉程序 (见 holdResize)
       send(s, { type: 'resize', cols, rows, claim: userHere() });
     });
     // 旧式鼠标编码 (X10 等) 的上报走 onBinary，需要按原始字节发送
@@ -272,7 +271,10 @@
     }
     // 大段粘贴分块发送，避免单条消息超过服务端 1MB 上限导致连接被断开
     if (obj.type === 'data' && typeof obj.data === 'string' && obj.data.length > 32768) {
-      for (let i = 0; i < obj.data.length; i += 32768) s.ws.send(JSON.stringify({ type: 'data', data: obj.data.slice(i, i + 32768) }));
+      for (let i = 0; i < obj.data.length; i += 32768) {
+        const last = i + 32768 >= obj.data.length;
+        s.ws.send(JSON.stringify({ ...(last ? obj : { type: 'data' }), data: obj.data.slice(i, i + 32768) })); // echo / gap 标在最后一块上
+      }
       return;
     }
     s.ws.send(JSON.stringify(obj));

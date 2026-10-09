@@ -1,11 +1,14 @@
 'use strict';
-// 输入栏回车发送：回车和文字隔开 50ms (不然程序一次读到会当成粘贴、不提交)，间隔由服务端掐 ——
-// 以前在网页里等，发送多行 / 折行的长消息后输入栏变矮、终端重新排版，浏览器正忙会把回车拖到两三百毫秒；
-// 而且终端尺寸变化正好夹在文字和回车之间，Claude Code 要先整屏重画完才处理回车，发一条要等好久。
-// 现在尺寸变化推迟到回车之后
+// 输入栏回车发送：程序一次读到「文字 + 回车」会当成粘贴、不提交，所以回车要和文字分开写进终端。
+// 服务端等程序把文字显示出来 (说明已经读走了) 马上写回车：空闲时几毫秒 (比以前固定等 50ms 快)；
+// 正忙 (先输出别的、过一会儿才显示) 时等它显示出来再写 (以前 50ms 一到就写，最容易被当成粘贴)；
+// 不显示的输入 (密码) 没有任何输出，50ms 后照写。发送后输入栏变矮引起的终端尺寸变化排在回车之后
+// (以前夹在文字和回车之间，Claude Code 要先整屏重画完才处理回车，发一条要等好久)
 const { BASE, ok, wait, launch, hostKey } = require('./helpers');
 const { Server } = require('ssh2');
 let log = [];
+let mode = 'echo'; // 模拟的程序：echo 马上显示 / busy 先输出别的 300ms 后才显示 / silent 不显示 / pasted 多行显示成占位 / ask 先问光标位置、收到回答才显示
+let shell = null;
 new Server({ hostKeys: [hostKey()] }, (c) => {
   c.on('authentication', (ctx) => ctx.accept());
   c.on('ready', () => c.on('session', (acc) => {
@@ -13,9 +16,24 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
     s.on('pty', (a) => a());
     s.on('window-change', (a) => { log.push({ t: Date.now(), resize: true }); a && a(); });
     s.on('shell', (a) => {
-      const st = a();
+      const st = a(); shell = st;
       st.write('\x1b[?2004h$ '); // 同 Claude Code：开着括号粘贴
-      st.on('data', (d) => { log.push({ t: Date.now(), d: String(d) }); st.write(String(d).replace(/\r/g, '\r\n')); });
+      let asked = '';
+      st.on('data', (buf) => {
+        const d = String(buf);
+        log.push({ t: Date.now(), d });
+        if (d === '\r') return st.write('\r\n$ ');
+        if (/^\x1b\[\d+;\d+R$/.test(d)) { if (asked) { st.write(asked); asked = ''; } return; } // 收到光标位置的回答才显示
+        const text = d.replace(/\x1b\[20[01]~/g, '');
+        if (mode === 'echo') st.write(text);
+        else if (mode === 'busy') {
+          st.write('\x1b7\x1b[10;1Hworking.\x1b8');
+          const t = setInterval(() => st.write('\x1b7\x1b[10;1Hworking..\x1b8'), 60);
+          setTimeout(() => { clearInterval(t); st.write(text); }, 300);
+        } else if (mode === 'pasted') st.write('[Pasted text #1 +2 lines]');
+        else if (mode === 'ask') { asked = text; st.write('\x1b[6n'); }
+        // silent：不显示 (输密码)
+      });
     });
   }));
 }).listen(2246, '127.0.0.1');
@@ -29,35 +47,47 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   await p.goto(BASE + '/'); await p.waitForSelector('#app:not(.hidden)');
   await p.locator('.host', { hasText: 'G' }).click(); await wait(1500);
 
-  const sendAndLog = async (type) => {
+  const sendAndLog = async (m, type, settle = 900) => {
+    mode = m;
+    shell.write('\x1b[H\x1b[2J$ '); // 清屏，免得上一轮的文字还在画面上
     await p.click('#dInput');
     await type();
-    await wait(400);
+    await wait(300);
     log = [];
     await p.keyboard.press('Enter');
-    await wait(800);
-    const text = log.find((e) => e.d && e.d !== '\r');
+    await wait(settle);
+    const text = log.find((e) => e.d && e.d !== '\r' && !/^\x1b\[\d+;\d+R$/.test(e.d));
     const enter = log.find((e) => e.d === '\r');
     const resize = log.find((e) => e.resize);
-    return { text, enter, resize, gap: text && enter ? enter.t - text.t : -1 };
+    return { text, enter, resize, gap: text && enter ? enter.t - text.t : -1, merged: log.some((e) => e.d && e.d.length > 1 && e.d.endsWith('\r')) };
   };
+  const word = (w) => () => p.keyboard.type(w);
 
-  // 多行消息：发出去后输入栏从三行变回一行，终端变高
-  const multi = await sendAndLog(async () => {
+  const r1 = await sendAndLog('echo', word('hello world'));
+  ok(r1.text?.d === 'hello world' && r1.gap >= 0 && r1.gap < 40 && !r1.merged, `程序空闲、马上显示：回车 ${r1.gap}ms 后就写进去 (以前固定等 50ms)，文字和回车分开`);
+
+  const r2 = await sendAndLog('busy', word('second message'));
+  ok(r2.gap >= 290 && r2.gap < 600 && !r2.merged, `程序正忙 (先输出别的，300ms 后才显示文字)：回车等显示出来才写 (${r2.gap}ms；以前 50ms 一到就写，会被当成粘贴)`);
+
+  const r3 = await sendAndLog('silent', word('secret'));
+  ok(r3.gap >= 45 && r3.gap < 150 && !r3.merged, `不显示的输入 (密码，没有任何输出)：照旧 50ms 后写回车 (${r3.gap}ms)`);
+
+  const r4 = await sendAndLog('pasted', async () => {
     await p.keyboard.type('line1'); await p.keyboard.press('Shift+Enter');
     await p.keyboard.type('line2'); await p.keyboard.press('Shift+Enter'); await p.keyboard.type('line3');
   });
-  ok(multi.text && multi.text.d === '\x1b[200~line1\rline2\rline3\x1b[201~', '多行按括号粘贴发送: ' + JSON.stringify(multi.text?.d));
-  ok(multi.gap >= 45 && multi.gap < 150, `多行：回车比文字晚 ${multi.gap}ms 写进终端 (约 50ms，以前浏览器正忙时会拖到两三百毫秒)`);
-  ok(multi.resize && multi.resize.t > multi.enter.t, `输入栏变矮引起的终端尺寸变化推迟到回车之后 (回车后 ${multi.resize ? multi.resize.t - multi.enter.t : '?'}ms)`);
+  ok(r4.text?.d === '\x1b[200~line1\rline2\rline3\x1b[201~', '多行按括号粘贴发送: ' + JSON.stringify(r4.text?.d));
+  ok(r4.gap >= 0 && r4.gap < 40, `多行内容显示成「[Pasted text #1 +2 lines]」也算显示出来了：回车 ${r4.gap}ms 后写`);
+  ok(r4.resize && r4.resize.t > r4.enter.t, `输入栏变矮引起的终端尺寸变化排在回车之后 (回车后 ${r4.resize ? r4.resize.t - r4.enter.t : '?'}ms)`);
 
-  // 单行消息：间隔一样
-  const single = await sendAndLog(() => p.keyboard.type('hello world'));
-  ok(single.text?.d === 'hello world' && single.gap >= 45 && single.gap < 150, `单行：文字和回车分两次、隔 ${single.gap}ms`);
-  ok(!single.resize, '单行消息发送不改终端尺寸');
+  const r5 = await sendAndLog('ask', word('query first'));
+  ok(r5.gap >= 0 && r5.gap < 200, `程序先问光标位置、收到回答才显示：终端的自动回答不排在回车后面，不会卡到最长等待 (${r5.gap}ms)`);
+
+  const r6 = await sendAndLog('echo', word('short'));
+  ok(!r6.resize, '单行消息发送不改终端尺寸');
 
   // 窄窗口：提示文字放不下也不折行撑高输入框 (不然打字 / 发送时输入框高度来回变，终端反复改尺寸)
-  await p.setViewportSize({ width: 520, height: 800 }); await wait(600);
+  await p.setViewportSize({ width: 420, height: 800 }); await wait(600);
   const hEmpty = await p.evaluate(() => document.getElementById('dInput').offsetHeight);
   await p.click('#dInput'); await p.keyboard.type('a'); await wait(200);
   const hTyped = await p.evaluate(() => document.getElementById('dInput').offsetHeight);

@@ -34,23 +34,9 @@
     send(s, { type: 'data', data: 'q' });
   }
 
-  // 发送时暂缓终端尺寸变化：发出去后输入栏清空变矮 (多行 / 折行的长消息)，终端跟着变高，尺寸变化会正好夹在
-  // 文字和回车之间发给程序 —— Claude Code 收到尺寸变化要把整段对话重画一遍 (对话长时一秒多)，回车要等它画完才处理，
-  // 发一条消息要等好久。所以从发出文字到回车被处理 (回车后 RESIZE_AFTER_ENTER) 期间，尺寸变化先记下，之后再补发
-  const RESIZE_AFTER_ENTER = 200; // 回车写进终端 (ENTER_GAP) 后再留一点给程序处理
+  // 回车和文字分开写进终端 (程序一次读到会当成粘贴、不提交)：文字标上 echo、回车标上 gap 一起马上发出，
+  // 服务端等程序把文字显示出来再写回车 (没输出时最多等 ENTER_GAP)，发送后终端尺寸变化也由服务端排到回车之后 (见 server.js Session.write)
   const ENTER_GAP = 50;
-  function holdResize(s) {
-    s.resizeHold = (s.resizeHold || 0) + 1;
-  }
-  function releaseResize(s) {
-    setTimeout(() => {
-      if (--s.resizeHold > 0) return; // 期间又发了一条，等最后一条
-      s.resizeHold = 0;
-      const r = s.heldResize;
-      s.heldResize = null;
-      if (r) send(s, { type: 'resize', cols: r.cols, rows: r.rows, claim: userHere() });
-    }, RESIZE_AFTER_ENTER);
-  }
 
   // 把输入栏里编辑好的一段文字发给终端并回车 (电脑 / 手机输入栏共用)
   function submitText(s, text) {
@@ -60,13 +46,9 @@
     let data = text.replace(/\r?\n/g, '\r');
     // 多行内容按粘贴发送 (Claude Code 等支持括号粘贴的程序不会把中间的换行当回车)
     if (data.includes('\r') && s.term.modes.bracketedPasteMode) data = '\x1b[200~' + data + '\x1b[201~';
-    holdResize(s);
-    send(s, { type: 'data', data });
-    // 文字和回车分开发，避免被当成一次粘贴而不提交：回车马上发出，由服务端保证比文字晚 ENTER_GAP 写进终端
-    // (以前在网页里等 50ms，浏览器正忙时会被拖到两三百毫秒)。记历史等回显，见 checkCapture
-    beginCapture(s);
+    send(s, { type: 'data', data, echo: true });
+    beginCapture(s); // 记历史等回显，见 checkCapture
     send(s, { type: 'data', data: '\r', gap: ENTER_GAP });
-    releaseResize(s);
   }
 
   // 命令模式：空输入框里打 / 后，输入逐字直接发给终端，Claude Code 的 / 命令候选列表会在终端里弹出，
