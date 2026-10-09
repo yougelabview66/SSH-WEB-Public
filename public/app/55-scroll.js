@@ -341,7 +341,7 @@
           lastY = null; // 本次触摸不再滚动
           s.longPressed = true;
           navigator.vibrate?.(15);
-          openCopyPanel(s);
+          openCopyPanel(s, { x: pressX, y: pressY });
         }, 500);
       }
     }, { passive: true });

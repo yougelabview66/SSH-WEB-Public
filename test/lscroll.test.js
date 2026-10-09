@@ -180,7 +180,7 @@ const WHEEL_UP = '\x1b[<64;';
   ok(!!mv && !got.includes(WHEEL_UP), '手机：在终端上往下滑 → 打开本地历史视图，滑动没有发给 tmux');
   ok(await m.isHidden('#mobileBar'), '手机：历史视图打开时输入栏 (连同按键栏) 藏起来');
   await m.screenshot({ path: shot('lscroll-mobile.png') });
-  // 在历史视图里长按复制：复制的是历史，面板停在正在看的那一行 (不是终端当前那一屏)
+  // 在历史视图里长按复制：复制的是历史 (不是终端当前那一屏)，按住的那一行在复制面板里就在手指底下
   // 有折行的长行、有中文 (后备字体行更高)：按文字找到第 1501 行，把它滚到历史视图最上面
   const seen = await m.evaluate(() => {
     const pre = document.querySelector('.term.active .ls-body'), w = document.createTreeWalker(pre, NodeFilter.SHOW_TEXT);
@@ -194,23 +194,31 @@ const WHEEL_UP = '\x1b[<64;';
     return pre.textContent.split('\n')[1500];
   });
   const lb = await m.locator('.term.active .ls-body').boundingBox();
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: lb.x + 100, y: lb.y + 150 }] }); await wait(700);
+  const px = lb.x + 100, py = Math.round(lb.y + lb.height * 0.6); // 复制面板的文本框盖得到的高度
+  const pressed = await m.evaluate(([x, y]) => { // 手指下面是哪一行 (按文字)
+    const pre = document.querySelector('.term.active .ls-body'), rg = document.caretRangeFromPoint(x, y), r = document.createRange();
+    r.setStart(pre, 0); r.setEnd(rg.startContainer, rg.startOffset);
+    return pre.textContent.split('\n')[(r.toString().match(/\n/g) || []).length];
+  }, [px, py]);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: px, y: py }] }); await wait(700);
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await wait(800); // 等面板过一会儿的再次对齐
-  const cp = await m.evaluate(() => {
+  const cp = await m.evaluate((y) => {
     const ta = document.getElementById('copyText'), lines = ta.value.split('\n'), full = ta.value, st = ta.scrollTop;
-    // 复制面板最上面是哪一行：前 k 行在这个文本框里实际多高，正好等于滚动位置的那个 k
-    const pb = parseFloat(getComputedStyle(ta).paddingBottom);
-    const h = (k) => { ta.value = full.split('\n', k).join('\n'); return ta.scrollHeight - pb; };
+    // 复制面板里手指高度是哪一行：前 k 行在这个文本框里实际多高 (量出来的，中文行更高)，找到盖住手指的那一行
+    const target = y - ta.getBoundingClientRect().top - ta.clientTop + st;
+    const pb = parseFloat(getComputedStyle(ta).paddingBottom), pad = ta.style.paddingBottom;
     ta.style.flex = 'none'; ta.style.height = ta.style.minHeight = '0px';
-    let top = '';
-    for (let k = 1; k < lines.length; k++) if (Math.abs(h(k) - st) < 2) { top = lines[k]; break; } else if (k % 100 === 0 && h(k + 100) < st) k += 99;
-    ta.value = full; ta.style.flex = ta.style.height = ta.style.minHeight = ''; ta.scrollTop = st;
+    const h = (k) => { ta.value = full.split('\n', k).join('\n'); return k ? ta.scrollHeight - pb : 0; };
+    let lo = 0, hi = lines.length - 1;
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (h(mid) <= target) lo = mid; else hi = mid - 1; }
+    ta.value = full; ta.style.flex = ta.style.height = ta.style.minHeight = ''; ta.style.paddingBottom = pad; ta.scrollTop = st;
+    const top = lines[lo];
     return { shown: !document.getElementById('copyPanel').classList.contains('hidden'), n: lines.length, top,
       info: document.getElementById('copyInfo').textContent, hasOld: ta.value.includes('line 1 普通输出'), hasNew: ta.value.includes('ERROR line 3000') };
-  });
+  }, py);
   ok(cp.shown && cp.hasOld && cp.hasNew && cp.n >= 3000 && cp.info.includes('tmux 历史'), `手机：在历史视图里长按 → 复制面板里是整段 tmux 历史 (${cp.n} 行，${cp.info})，不是终端当前那一屏`);
   const num = (t) => +(/line (\d+)/.exec(t || '') || [])[1];
-  ok(num(cp.top) === num(seen), `复制面板停在正在看的那一行 (历史视图最上面「${seen}」，复制面板最上面「${cp.top}」)`);
+  ok(num(pressed) > num(seen) && num(cp.top) === num(pressed), `按住的那一行在复制面板里就在手指底下 (按住「${pressed}」，面板里手指处「${cp.top}」)`);
   await m.screenshot({ path: shot('lscroll-copy.png') });
   await m.evaluate(() => document.getElementById('copyPanel').classList.add('hidden'));
   await m.locator('.term.active .ls-close').tap(); await wait(400);
