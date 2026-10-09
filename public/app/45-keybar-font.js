@@ -166,9 +166,10 @@
   $('#fontDec').addEventListener('click', () => setFontSize(fontSize - 1));
   $('#fontInc').addEventListener('click', () => setFontSize(fontSize + 1));
 
-  function fontToast(s, text, ms) {
-    let t = s.box.querySelector('.font-toast');
-    if (!t) { t = document.createElement('div'); t.className = 'font-toast'; s.box.appendChild(t); }
+  // 终端中间的小提示；el：放在哪里 (默认终端，历史视图盖在终端上，要放进历史视图里)
+  function fontToast(s, text, ms, el = s.box) {
+    let t = el.querySelector(':scope > .font-toast');
+    if (!t) { t = document.createElement('div'); t.className = 'font-toast'; el.appendChild(t); }
     t.textContent = text;
     clearTimeout(t.timer);
     t.timer = setTimeout(() => t.remove(), ms || 800);

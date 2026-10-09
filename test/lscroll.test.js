@@ -115,8 +115,23 @@ const WHEEL_UP = '\x1b[<64;';
   await overTerm(); await p.mouse.wheel(0, -100); await wait(1000);
   await p.keyboard.press('Alt'); await p.keyboard.press('Alt'); await wait(300);
   ok(!(await view()) && await p.isVisible('#deskBar') && await p.evaluate(() => document.activeElement.id) === 'dInput', '历史视图打开时连按两下 Alt：回到实时画面，光标在下方输入框');
-  // 按钮 → 返回
+  // 选中即复制：在历史视图里拖动选中，松开鼠标就复制到剪贴板 (不用按 Ctrl+C)，选区还在
+  await p.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await p.evaluate(() => navigator.clipboard.writeText('旧内容'));
   await overTerm(); await p.mouse.wheel(0, -100); await wait(1000);
+  const lb0 = await p.locator('.term.active .ls-body').boundingBox();
+  got = '';
+  await p.mouse.move(lb0.x + 20, lb0.y + 40); await p.mouse.down();
+  await p.mouse.move(lb0.x + 300, lb0.y + 100, { steps: 5 }); await p.mouse.up(); await wait(400);
+  const sel = await p.evaluate(() => getSelection().toString());
+  const clip = await p.evaluate(() => navigator.clipboard.readText());
+  const toastT = await p.evaluate(() => document.querySelector('.term.active .lscroll .font-toast')?.textContent || '');
+  ok(sel.length > 10 && clip === sel && got === '', `历史视图里选中文字松开就复制到剪贴板 (${clip.length} 个字符)，没有发给终端`);
+  ok(toastT === `已复制 ${sel.length} 个字符` && !!(await view()), '提示「' + toastT + '」，历史视图不关');
+  await p.screenshot({ path: shot('lscroll-copysel.png') });
+  await p.mouse.click(lb0.x + 20, lb0.y + 40); await wait(300); // 单击 (没选中文字) 不复制
+  ok(await p.evaluate(() => navigator.clipboard.readText()) === clip, '单击不复制');
+  // 按钮 → 返回
   await p.click('.term.active .ls-close'); await wait(300);
   ok(!(await view()), '点「回到实时画面」返回');
   // 往下滚不触发

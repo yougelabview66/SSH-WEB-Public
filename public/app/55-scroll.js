@@ -81,6 +81,21 @@
     pre.addEventListener('wheel', (e) => {
       if (e.deltaY > 0 && atBottom(pre)) { e.preventDefault(); closeLocalScroll(s); }
     }, { passive: false });
+    // 电脑：选中文字松开鼠标就自动复制 (同终端里 tmux 开鼠标后的选中即复制)
+    pre.addEventListener('mouseup', (e) => {
+      if (e.button !== 0) return;
+      setTimeout(async () => { // 等浏览器把选区定下来 (双击选词、三击选行)
+        const sel = getSelection();
+        if (!sel?.rangeCount || sel.isCollapsed || !pre.contains(sel.anchorNode) || !pre.contains(sel.focusNode)) return;
+        const text = sel.toString();
+        if (!text.trim()) return;
+        const range = sel.getRangeAt(0).cloneRange();
+        const ok = await copyText(text);
+        // HTTP 下借用临时文本框复制会把选区清掉：选回来，还能接着按 Ctrl+C
+        if (!sel.rangeCount || sel.isCollapsed) { sel.removeAllRanges(); sel.addRange(range); }
+        fontToast(s, ok ? `已复制 ${text.length} 个字符` : '复制失败，请按 Ctrl+C 复制', 1200, v);
+      });
+    });
     // 手机：已经在最底下时再往上推 = 回到实时画面
     let startY = 0, startBottom = false;
     pre.addEventListener('touchstart', (e) => { startY = e.touches[0].clientY; startBottom = atBottom(pre); }, { passive: true });
