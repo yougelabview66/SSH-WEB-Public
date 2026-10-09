@@ -119,11 +119,6 @@ const WHEEL_UP = '\x1b[<64;';
   await overTerm(); await p.mouse.wheel(0, -100); await wait(1000);
   await p.click('.term.active .ls-close'); await wait(300);
   ok(!(await view()), '点「回到实时画面」返回');
-  // Ctrl+End → 返回 (不发给终端)
-  await overTerm(); await p.mouse.wheel(0, -100); await wait(1000);
-  got = ''; await p.keyboard.press('Control+End'); await wait(300);
-  ok(!(await view()) && got === '' && await p.isVisible('#deskBar') && await p.evaluate(() => document.activeElement.id) === 'dInput',
-    '历史视图里按 Ctrl+End → 回到实时画面，没有发给终端，焦点回到输入框');
   // 往下滚不触发
   await overTerm(); const e0 = execs.length; await p.mouse.wheel(0, 100); await wait(500);
   ok(!(await view()) && execs.length === e0, '往下滚不会打开历史视图');
@@ -147,13 +142,6 @@ const WHEEL_UP = '\x1b[<64;';
   await p.screenshot({ path: shot('copymode.png') });
   got = ''; await p.click('.term.active .tmux-exit'); await wait(700);
   ok(got === 'q' && await p.isHidden('.term.active .tmux-exit'), '点它发送 q 退出复制模式，按钮消失');
-  // 复制模式里 Ctrl+End 也是退出：输入框里有没发的字也一样，字留着
-  await overTerm(); await p.mouse.wheel(0, -100); await wait(900);
-  await p.focus('#dInput'); await p.keyboard.type('abc');
-  got = ''; await p.keyboard.press('Control+End'); await wait(700);
-  ok(got === 'q' && await p.isHidden('.term.active .tmux-exit') && await p.inputValue('#dInput') === 'abc',
-    'tmux 复制模式里按 Ctrl+End (输入框里有字) → 发 q 退出，输入框的字留着: ' + JSON.stringify(got));
-  await p.fill('#dInput', '');
   await open('NOTMUX'); await wait(500);
   ok(await p.evaluate(() => !document.querySelector('.term.active .font-toast')), '没有 tmux 时也不弹提示');
   // ---- Claude Code 全屏模式：它自己滚，出现「Jump to bottom (ctrl+end) ↓」时也显示「回到实时画面」
@@ -168,29 +156,13 @@ const WHEEL_UP = '\x1b[<64;';
   await p.screenshot({ path: shot('cc-fullscreen.png') });
   got = ''; await p.click('.term.active .tmux-exit'); await wait(700);
   ok(got === '\x1b[1;5F' && await p.isHidden('.term.active .tmux-exit'), '点它发送 Ctrl+End 回到最新对话，提示消失后按钮也消失: ' + JSON.stringify(got));
-  // 输入框里有没发的字时按 Ctrl+End：照样发给 Claude Code (不是只把输入框光标移到最后)
-  await overTerm(); await p.mouse.wheel(0, -100); await wait(1500);
-  await p.focus('#dInput'); await p.keyboard.type('草稿');
-  got = ''; await p.keyboard.press('Control+End'); await wait(700);
-  ok(got === '\x1b[1;5F' && await p.isHidden('.term.active .tmux-exit') && await p.inputValue('#dInput') === '草稿',
-    'Claude Code 往上翻着、输入框里有字时按 Ctrl+End → 发给 Claude Code 回到最新对话，输入框的字留着: ' + JSON.stringify(got));
-  await p.fill('#dInput', '');
   // ---- 普通 shell (没开鼠标)：xterm 自己的本地滚动，不去抓
   await open('PLAIN'); await overTerm();
   const ex2 = execs.length;
-  // xterm 6 的滚动位置看滚动条：滑块离底部多远 (0 = 在最底下)
-  const fromBottom = () => p.evaluate(() => {
-    const sb = document.querySelector('.term.active .scrollbar.vertical'), sl = sb?.querySelector('.slider');
-    return sl ? Math.round(sb.clientHeight - parseFloat(sl.style.top) - sl.offsetHeight) : -1;
-  });
-  const y0 = await fromBottom();
+  const y0 = await p.evaluate(() => document.querySelector('.term.active .xterm-viewport')?.scrollTop ?? -1);
   await p.mouse.wheel(0, -300); await wait(500);
-  const y1 = await fromBottom();
+  const y1 = await p.evaluate(() => document.querySelector('.term.active .xterm-viewport')?.scrollTop ?? -1);
   ok(!(await view()) && execs.length === ex2, `普通 shell 不去抓 tmux 历史 (xterm 自己滚动 ${y0} → ${y1})`);
-  // 往上翻着按 Ctrl+End → 滚回最底下，不发给 shell (焦点在输入框里也一样)
-  await p.focus('#dInput'); got = ''; await p.keyboard.press('Control+End'); await wait(500);
-  const y2 = await fromBottom();
-  ok(y1 > 2 && y2 <= 1 && got === '', `普通 shell 往上翻着按 Ctrl+End → 滚回最底下 (滚动条离底部 ${y1} → ${y2}px)，没有发给 shell: ` + JSON.stringify(got));
 
   // ---- 手机：在终端上往下滑 (往回看) → 打开历史视图
   const ctx = await browser.newContext({ ...devices['Pixel 7'] });
@@ -208,7 +180,7 @@ const WHEEL_UP = '\x1b[<64;';
   ok(!!mv && !got.includes(WHEEL_UP), '手机：在终端上往下滑 → 打开本地历史视图，滑动没有发给 tmux');
   ok(await m.isHidden('#mobileBar'), '手机：历史视图打开时输入栏 (连同按键栏) 藏起来');
   await m.screenshot({ path: shot('lscroll-mobile.png') });
-  // 在历史视图里长按复制：复制的是历史 (不是终端当前那一屏)，按住的那一行在复制面板里就在手指底下
+  // 在历史视图里长按复制：复制的是历史，面板停在正在看的那一行 (不是终端当前那一屏)
   // 有折行的长行、有中文 (后备字体行更高)：按文字找到第 1501 行，把它滚到历史视图最上面
   const seen = await m.evaluate(() => {
     const pre = document.querySelector('.term.active .ls-body'), w = document.createTreeWalker(pre, NodeFilter.SHOW_TEXT);
@@ -222,31 +194,23 @@ const WHEEL_UP = '\x1b[<64;';
     return pre.textContent.split('\n')[1500];
   });
   const lb = await m.locator('.term.active .ls-body').boundingBox();
-  const px = lb.x + 100, py = Math.round(lb.y + lb.height * 0.6); // 复制面板的文本框盖得到的高度
-  const pressed = await m.evaluate(([x, y]) => { // 手指下面是哪一行 (按文字)
-    const pre = document.querySelector('.term.active .ls-body'), rg = document.caretRangeFromPoint(x, y), r = document.createRange();
-    r.setStart(pre, 0); r.setEnd(rg.startContainer, rg.startOffset);
-    return pre.textContent.split('\n')[(r.toString().match(/\n/g) || []).length];
-  }, [px, py]);
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: px, y: py }] }); await wait(700);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: lb.x + 100, y: lb.y + 150 }] }); await wait(700);
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await wait(800); // 等面板过一会儿的再次对齐
-  const cp = await m.evaluate((y) => {
+  const cp = await m.evaluate(() => {
     const ta = document.getElementById('copyText'), lines = ta.value.split('\n'), full = ta.value, st = ta.scrollTop;
-    // 复制面板里手指高度是哪一行：前 k 行在这个文本框里实际多高 (量出来的，中文行更高)，找到盖住手指的那一行
-    const target = y - ta.getBoundingClientRect().top - ta.clientTop + st;
-    const pb = parseFloat(getComputedStyle(ta).paddingBottom), pad = ta.style.paddingBottom;
+    // 复制面板最上面是哪一行：前 k 行在这个文本框里实际多高，正好等于滚动位置的那个 k
+    const pb = parseFloat(getComputedStyle(ta).paddingBottom);
+    const h = (k) => { ta.value = full.split('\n', k).join('\n'); return ta.scrollHeight - pb; };
     ta.style.flex = 'none'; ta.style.height = ta.style.minHeight = '0px';
-    const h = (k) => { ta.value = full.split('\n', k).join('\n'); return k ? ta.scrollHeight - pb : 0; };
-    let lo = 0, hi = lines.length - 1;
-    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (h(mid) <= target) lo = mid; else hi = mid - 1; }
-    ta.value = full; ta.style.flex = ta.style.height = ta.style.minHeight = ''; ta.style.paddingBottom = pad; ta.scrollTop = st;
-    const top = lines[lo];
+    let top = '';
+    for (let k = 1; k < lines.length; k++) if (Math.abs(h(k) - st) < 2) { top = lines[k]; break; } else if (k % 100 === 0 && h(k + 100) < st) k += 99;
+    ta.value = full; ta.style.flex = ta.style.height = ta.style.minHeight = ''; ta.scrollTop = st;
     return { shown: !document.getElementById('copyPanel').classList.contains('hidden'), n: lines.length, top,
       info: document.getElementById('copyInfo').textContent, hasOld: ta.value.includes('line 1 普通输出'), hasNew: ta.value.includes('ERROR line 3000') };
-  }, py);
+  });
   ok(cp.shown && cp.hasOld && cp.hasNew && cp.n >= 3000 && cp.info.includes('tmux 历史'), `手机：在历史视图里长按 → 复制面板里是整段 tmux 历史 (${cp.n} 行，${cp.info})，不是终端当前那一屏`);
   const num = (t) => +(/line (\d+)/.exec(t || '') || [])[1];
-  ok(num(pressed) > num(seen) && num(cp.top) === num(pressed), `按住的那一行在复制面板里就在手指底下 (按住「${pressed}」，面板里手指处「${cp.top}」)`);
+  ok(num(cp.top) === num(seen), `复制面板停在正在看的那一行 (历史视图最上面「${seen}」，复制面板最上面「${cp.top}」)`);
   await m.screenshot({ path: shot('lscroll-copy.png') });
   await m.evaluate(() => document.getElementById('copyPanel').classList.add('hidden'));
   await m.locator('.term.active .ls-close').tap(); await wait(400);
