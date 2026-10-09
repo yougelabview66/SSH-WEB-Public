@@ -127,12 +127,23 @@
     if (s === active) focusTerm(s);
   }
 
-  // 用不了本地滚动时滚轮交给 tmux，进入 tmux 自己的复制模式 (pane 右上角有 [5/300] 这样的位置标记)：
-  // 同样显示「回到实时画面」，点了发 q 退出复制模式
-  function tmuxInCopyMode(s) {
+  // 用不了本地滚动时滚轮交给 tmux，进入 tmux 自己的复制模式 (pane 右上角有 [5/300] 这样的位置标记，
+  // 第一个数是离最底下几行)：同样显示「回到实时画面」，点了发 q 退出复制模式。
+  // 返回离最底下的行数，不在复制模式返回 -1
+  function tmuxCopyOffset(s) {
     const b = s.term.buffer.active;
-    if (b.type !== 'alternate' || s.scrollView) return false;
-    return /\[\d+\/\d+\]\s*$/.test(b.getLine(b.viewportY)?.translateToString(true) || '');
+    if (b.type !== 'alternate' || s.scrollView) return -1;
+    const m = /\[(\d+)\/\d+\]\s*$/.exec(b.getLine(b.viewportY)?.translateToString(true) || '');
+    return m ? +m[1] : -1;
+  }
+  // 在复制模式里 (不管停在哪)：发送前要先退出，不然发的字被复制模式吃掉 (见 leaveTmuxCopyMode)
+  const tmuxInCopyMode = (s) => tmuxCopyOffset(s) >= 0;
+  // 在看历史 (显示「回到实时画面」)：tmux 开鼠标时拖动选字也是进复制模式实现的 (松开就复制并退出)，
+  // 停在当前画面、位置是 [0/N] —— 那是在选字不是在看历史，不显示 (以前选字时这个按钮会闪一下)。
+  // 只看位置不够：滚轮刚滚第一格 (只进复制模式还没滚)、Ctrl+B [ 手动进的也是 [0/N]，所以 [0/N] 时看是不是正在拖动选字
+  function tmuxScrolledUp(s) {
+    const off = tmuxCopyOffset(s);
+    return off > 0 || (off === 0 && !selectingText());
   }
   // Claude Code 全屏模式 (/tui fullscreen) 自己接管滚轮，往上翻时输入框上方显示
   // 「Jump to bottom (ctrl+end) ↓」/「3 new messages (ctrl+end) ↓」：同样显示「回到实时画面」，点了发 Ctrl+End
@@ -147,7 +158,7 @@
   }
   const EXIT_KEYS = { tmux: ['q', '退出 tmux 复制模式 (发送 q)'], claude: ['\x1b[1;5F', '回到 Claude Code 最新的对话 (发送 Ctrl+End)'] };
   function updateCopyModeBtn(s) {
-    const mode = !s.sid ? null : tmuxInCopyMode(s) ? 'tmux' : claudeScrolledUp(s) ? 'claude' : null;
+    const mode = !s.sid ? null : tmuxScrolledUp(s) ? 'tmux' : claudeScrolledUp(s) ? 'claude' : null;
     if (mode && !s.copyBtn) {
       s.copyBtn = document.createElement('button');
       s.copyBtn.className = 'ls-close tmux-exit';

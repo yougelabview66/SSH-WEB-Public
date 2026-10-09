@@ -6,6 +6,7 @@ const { BASE, ok, wait, launch, hostKey } = require('./helpers');
 const { Server } = require('ssh2');
 let got = '';
 let cols = 80;
+let shell = null;
 let osc52 = false; // 收到松开鼠标的上报时，回一条 OSC 52 设置剪贴板 (同 tmux 拖动选字松开后的复制)
 new Server({ hostKeys: [hostKey()] }, (c) => {
   c.on('authentication', (ctx) => ctx.accept());
@@ -14,7 +15,7 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
     s.on('pty', (a, r, info) => { cols = info.cols; a(); });
     s.on('window-change', (a, r, info) => { cols = info.cols; a && a(); });
     s.on('shell', (a) => {
-      const st = a();
+      const st = a(); shell = st;
       st.write('\x1b[?1002h\x1b[?1006h$ '); // 同 tmux mouse on：按键 + 按住移动上报，SGR 编码
       st.on('data', (d) => {
         got += d;
@@ -47,10 +48,31 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   ok(await p.evaluate(() => document.activeElement.id) === 'dInput', '点完光标回到下方输入框');
 
   // 真拖动：挪够了照常上报
-  got = '';
+  await wait(600); got = '';
   await p.mouse.move(x0, y0); await p.mouse.down();
   await p.mouse.move(x0 + cellW * 6, y0, { steps: 6 }); await p.mouse.up(); await wait(400);
   ok(motion() >= 3, `真拖动 (6 个字宽) 照常上报移动 (${motion()} 次)，拖动选字不受影响`);
+
+  // 连点两下 / 三下：tmux 会当成双击选词 / 三击选行 (并复制)。实时画面里不要：间隔太短的那几下不交给 tmux
+  const presses = () => (got.match(/\x1b\[<0;\d+;\d+M/g) || []).length;
+  const releases = () => (got.match(/\x1b\[<0;\d+;\d+m/g) || []).length;
+  await wait(600);
+  got = ''; await p.mouse.dblclick(x0, y0); await wait(400);
+  ok(presses() === 1 && releases() === 1, `双击：tmux 只收到一次按下 / 松开 (${presses()} / ${releases()})，不会双击选词`);
+  ok(await p.evaluate(() => document.activeElement.id) === 'dInput', '双击后光标照样回到下方输入框');
+  await wait(600);
+  got = ''; await p.mouse.click(x0, y0, { clickCount: 3 }); await wait(400);
+  ok(presses() === 1 && releases() === 1, `三击：tmux 只收到一次按下 / 松开 (${presses()} / ${releases()})`);
+  await wait(600);
+  got = ''; await p.mouse.click(x0, y0); await wait(700); await p.mouse.click(x0 + cellW * 3, y0); await wait(300);
+  ok(presses() === 2 && releases() === 2, `间隔够长 (0.7 秒) 的两次单击都交给 tmux (${presses()} / ${releases()})`);
+  // 点一下马上拖动选字：第二下先扣着，拖动起来后补发按下，拖动照常交给 tmux
+  await wait(600);
+  got = ''; await p.mouse.click(x0, y0); await wait(100);
+  await p.mouse.down(); await p.mouse.move(x0 + cellW * 6, y0, { steps: 6 }); await p.mouse.up(); await wait(400);
+  const pressAt = [...got.matchAll(/\x1b\[<0;\d+;\d+M/g)].map((m) => m.index);
+  ok(presses() === 2 && motion() >= 3 && releases() === 2 && pressAt[1] < got.indexOf('\x1b[<32;'),
+    `点一下马上拖动：先补发按下再上报移动，拖动照常交给 tmux (按下 ${presses()}、移动 ${motion()}、松开 ${releases()})`);
 
   // 松开后远端发来 OSC 52 复制；没有剪贴板权限 → writeText 被拒 → 改用临时文本框复制 (异步)，焦点要还给输入框
   const copied = await p.evaluate(() => {
@@ -65,6 +87,28 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   const r = await p.evaluate(() => ({ copied: window.__copied, active: document.activeElement.id || document.activeElement.tagName }));
   ok(copied && r.copied.includes('hello'), '远端的 OSC 52 复制改用临时文本框完成: ' + JSON.stringify(r.copied));
   ok(r.active === 'dInput', '临时文本框复制完焦点还给下方输入框 (以前落到 ' + r.active + ')');
+
+  // tmux 开鼠标时拖动选字也是进复制模式实现的：停在当前画面，右上角位置标记是 [0/N]，松开就复制并退出 ——
+  // 在选字不是在看历史，不显示「回到实时画面」(以前选字时这个按钮会闪一下)
+  const mark = (t) => shell.write(`\x1b7\x1b[1;${cols - t.length + 1}H${t}\x1b8`);
+  const btn = () => p.isVisible('.term.active .tmux-exit');
+  shell.write('\x1b[?1049h\x1b[H\x1b[2J$ '); // tmux 用的是备用屏幕
+  await p.mouse.move(x0, y0); await p.mouse.down();
+  await p.mouse.move(x0 + cellW * 6, y0, { steps: 6 }); mark('[0/40]'); await wait(800);
+  ok(!await btn(), '拖动选字中 (复制模式 [0/40]) 不显示「回到实时画面」');
+  await p.mouse.up(); await wait(150); mark('      '); await wait(800); // tmux 复制完退出复制模式，标记消失
+  ok(!await btn(), '松开、tmux 退出复制模式的过程中也不闪');
+  // 不是选字时停在 [0/N]：滚轮刚滚第一格 (只进了复制模式还没滚)、Ctrl+B [ 手动进的 —— 照常显示
+  await wait(1600); mark('[0/40]'); await wait(800);
+  ok(await btn(), '没在选字时的复制模式 [0/40] (滚轮第一格 / Ctrl+B [) 照常显示「回到实时画面」');
+  got = ''; await p.fill('#dInput', 'hi'); await p.press('#dInput', 'Enter'); await wait(400);
+  ok(got.startsWith('qhi'), '复制模式里从输入框发送，照样先发 q 退出: ' + JSON.stringify(got));
+  await wait(1600);
+  // 往上翻着看历史时再拖动选字：还是在历史里，按钮不藏
+  await p.mouse.move(x0, y0); await p.mouse.down();
+  await p.mouse.move(x0 + cellW * 6, y0, { steps: 6 }); mark('[3/40]'); await wait(800);
+  ok(await btn(), '往上翻着 ([3/40]) 拖动选字时按钮照常显示');
+  await p.mouse.up(); await wait(300);
 
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
   await browser.close(); process.exit();
