@@ -161,6 +161,26 @@
     if (typing && !e.target.closest?.('input, textarea, [contenteditable]')) closeLocalScroll(active);
   }, true);
 
+  // Ctrl+End = 回到实时画面 (终端软件、Claude Code 都是这个习惯)，焦点在哪里都一样：
+  // 历史视图 → 关掉；终端往上翻着 → 滚到最底下 (不发给程序)；tmux 复制模式 → 发 q 退出；
+  // Claude Code 往上翻着 → 发 Ctrl+End (输入框里有字时，浏览器会拿它把输入框光标移到最后，发不出去)。
+  // 都不是时照常：空输入框 / 终端里按 = 发给程序，有字的输入框里 = 光标移到最后
+  window.addEventListener('keydown', (e) => {
+    if (e.key !== 'End' || !e.ctrlKey || e.shiftKey || e.altKey || e.metaKey) return;
+    const s = active;
+    if (!s || tmuxPrefix || document.querySelector('.overlay:not(.hidden)')) return;
+    const b = s.term.buffer.active;
+    let act;
+    if (s.scrollView) act = () => closeLocalScroll(s);
+    else if (b.viewportY < b.baseY) act = () => s.term.scrollToBottom();
+    else if (s.sid && tmuxInCopyMode(s)) act = () => send(s, { type: 'data', data: EXIT_KEYS.tmux[0] });
+    else if (s.sid && claudeScrolledUp(s)) act = () => send(s, { type: 'data', data: EXIT_KEYS.claude[0] });
+    if (!act) return;
+    e.preventDefault();
+    e.stopPropagation();
+    act();
+  }, true);
+
   // tmux capture-pane -e 的颜色 (SGR) 转成 HTML；其他控制序列丢掉
   const ANSI_RE = /\x1b\[[0-9;:?]*[A-Za-z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Za-z0-9]|\x1b./g;
   const XTERM_ANSI = ['#2e3436', '#cc0000', '#4e9a06', '#c4a000', '#3465a4', '#75507b', '#06989a', '#d3d7cf',

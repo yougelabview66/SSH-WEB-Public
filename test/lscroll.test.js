@@ -119,6 +119,11 @@ const WHEEL_UP = '\x1b[<64;';
   await overTerm(); await p.mouse.wheel(0, -100); await wait(1000);
   await p.click('.term.active .ls-close'); await wait(300);
   ok(!(await view()), '点「回到实时画面」返回');
+  // Ctrl+End → 返回 (不发给终端)
+  await overTerm(); await p.mouse.wheel(0, -100); await wait(1000);
+  got = ''; await p.keyboard.press('Control+End'); await wait(300);
+  ok(!(await view()) && got === '' && await p.isVisible('#deskBar') && await p.evaluate(() => document.activeElement.id) === 'dInput',
+    '历史视图里按 Ctrl+End → 回到实时画面，没有发给终端，焦点回到输入框');
   // 往下滚不触发
   await overTerm(); const e0 = execs.length; await p.mouse.wheel(0, 100); await wait(500);
   ok(!(await view()) && execs.length === e0, '往下滚不会打开历史视图');
@@ -142,6 +147,13 @@ const WHEEL_UP = '\x1b[<64;';
   await p.screenshot({ path: shot('copymode.png') });
   got = ''; await p.click('.term.active .tmux-exit'); await wait(700);
   ok(got === 'q' && await p.isHidden('.term.active .tmux-exit'), '点它发送 q 退出复制模式，按钮消失');
+  // 复制模式里 Ctrl+End 也是退出：输入框里有没发的字也一样，字留着
+  await overTerm(); await p.mouse.wheel(0, -100); await wait(900);
+  await p.focus('#dInput'); await p.keyboard.type('abc');
+  got = ''; await p.keyboard.press('Control+End'); await wait(700);
+  ok(got === 'q' && await p.isHidden('.term.active .tmux-exit') && await p.inputValue('#dInput') === 'abc',
+    'tmux 复制模式里按 Ctrl+End (输入框里有字) → 发 q 退出，输入框的字留着: ' + JSON.stringify(got));
+  await p.fill('#dInput', '');
   await open('NOTMUX'); await wait(500);
   ok(await p.evaluate(() => !document.querySelector('.term.active .font-toast')), '没有 tmux 时也不弹提示');
   // ---- Claude Code 全屏模式：它自己滚，出现「Jump to bottom (ctrl+end) ↓」时也显示「回到实时画面」
@@ -156,13 +168,29 @@ const WHEEL_UP = '\x1b[<64;';
   await p.screenshot({ path: shot('cc-fullscreen.png') });
   got = ''; await p.click('.term.active .tmux-exit'); await wait(700);
   ok(got === '\x1b[1;5F' && await p.isHidden('.term.active .tmux-exit'), '点它发送 Ctrl+End 回到最新对话，提示消失后按钮也消失: ' + JSON.stringify(got));
+  // 输入框里有没发的字时按 Ctrl+End：照样发给 Claude Code (不是只把输入框光标移到最后)
+  await overTerm(); await p.mouse.wheel(0, -100); await wait(1500);
+  await p.focus('#dInput'); await p.keyboard.type('草稿');
+  got = ''; await p.keyboard.press('Control+End'); await wait(700);
+  ok(got === '\x1b[1;5F' && await p.isHidden('.term.active .tmux-exit') && await p.inputValue('#dInput') === '草稿',
+    'Claude Code 往上翻着、输入框里有字时按 Ctrl+End → 发给 Claude Code 回到最新对话，输入框的字留着: ' + JSON.stringify(got));
+  await p.fill('#dInput', '');
   // ---- 普通 shell (没开鼠标)：xterm 自己的本地滚动，不去抓
   await open('PLAIN'); await overTerm();
   const ex2 = execs.length;
-  const y0 = await p.evaluate(() => document.querySelector('.term.active .xterm-viewport')?.scrollTop ?? -1);
+  // xterm 6 的滚动位置看滚动条：滑块离底部多远 (0 = 在最底下)
+  const fromBottom = () => p.evaluate(() => {
+    const sb = document.querySelector('.term.active .scrollbar.vertical'), sl = sb?.querySelector('.slider');
+    return sl ? Math.round(sb.clientHeight - parseFloat(sl.style.top) - sl.offsetHeight) : -1;
+  });
+  const y0 = await fromBottom();
   await p.mouse.wheel(0, -300); await wait(500);
-  const y1 = await p.evaluate(() => document.querySelector('.term.active .xterm-viewport')?.scrollTop ?? -1);
+  const y1 = await fromBottom();
   ok(!(await view()) && execs.length === ex2, `普通 shell 不去抓 tmux 历史 (xterm 自己滚动 ${y0} → ${y1})`);
+  // 往上翻着按 Ctrl+End → 滚回最底下，不发给 shell (焦点在输入框里也一样)
+  await p.focus('#dInput'); got = ''; await p.keyboard.press('Control+End'); await wait(500);
+  const y2 = await fromBottom();
+  ok(y1 > 2 && y2 <= 1 && got === '', `普通 shell 往上翻着按 Ctrl+End → 滚回最底下 (滚动条离底部 ${y1} → ${y2}px)，没有发给 shell: ` + JSON.stringify(got));
 
   // ---- 手机：在终端上往下滑 (往回看) → 打开历史视图
   const ctx = await browser.newContext({ ...devices['Pixel 7'] });
