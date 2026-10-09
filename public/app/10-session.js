@@ -43,6 +43,31 @@
   });
   systemLight.addEventListener('change', () => { if (themeMode() === 'auto') applyTheme(); });
 
+  // 点击时手抖：tmux 开着鼠标时，按下到松开之间鼠标哪怕只挪过一个字符格的边界，也会被 tmux 当成拖动 ——
+  // 进复制模式选中一两个字、松开就复制 (覆盖剪贴板里原来的内容，右下角闪一下「回到实时画面」)。
+  // 加一个拖动阈值 (同系统的拖动判定)：按住左键后挪动不到 DRAG_PX 时不上报移动，tmux 看到的就是一次单击；
+  // 挪够了才算拖动，之后照常上报 (起点只差不到一个字)
+  const DRAG_PX = 5;
+  let mousePress = null; // 左键按在终端里：{ x, y, moved }
+  window.addEventListener('mousedown', (e) => {
+    mousePress = e.button === 0 && e.target.closest?.('.term-box') ? { x: e.clientX, y: e.clientY, moved: false } : null;
+  }, true);
+  // 捕获阶段：xterm 在自己的 mousemove 里同步发出上报，这里要先把「挪够了没有」算好
+  window.addEventListener('mousemove', (e) => {
+    if (mousePress && !mousePress.moved && Math.hypot(e.clientX - mousePress.x, e.clientY - mousePress.y) >= DRAG_PX) mousePress.moved = true;
+  }, true);
+  window.addEventListener('mouseup', (e) => { if (e.button === 0) mousePress = null; }, true);
+  // 左键按住时的移动上报：SGR 编码 ESC[<按键;列;行M，按键值带 32 (移动) 且低两位是 0 (左键)
+  const leftDragCode = (cb) => (cb & 32) !== 0 && (cb & 3) === 0;
+  const jitterReport = (data) => {
+    if (!mousePress || mousePress.moved) return false;
+    const m = /^\x1b\[<(\d+);\d+;\d+M$/.exec(data);
+    return !!m && leftDragCode(+m[1]);
+  };
+  // 旧式编码 (X10 / UTF-8 以外)：ESC [ M 后面三个字节，第一个是 32 + 按键值
+  const jitterReportBinary = (data) => !!mousePress && !mousePress.moved
+    && data.length === 6 && data.startsWith('\x1b[M') && leftDragCode(data.charCodeAt(3) - 32);
+
   // restore: 服务端已有的后台会话信息 (刷新 / 重新打开浏览器时恢复)
   function openSession(params, title, connType, restore) {
     $('#empty').classList.add('hidden');
@@ -109,6 +134,7 @@
     s.ro = new ResizeObserver(() => { if (active === s && !s.scrollView) s.fit.fit(); });
     s.ro.observe(s.box);
     s.term.onData((data) => {
+      if (jitterReport(data)) return; // 点击时手抖的移动，不让 tmux 当成拖动选字 (见 DRAG_PX)
       // 终端对程序询问的自动应答 (不是用户打的字)：服务端不算输入，不影响主机状态和打字预测
       if (TERM_REPLY_RE.test(data)) return send(s, { type: 'data', data, auto: true });
       if (data === '\r') beginCapture(s);
@@ -121,6 +147,7 @@
     });
     // 旧式鼠标编码 (X10 等) 的上报走 onBinary，需要按原始字节发送
     s.term.onBinary((data) => {
+      if (jitterReportBinary(data)) return;
       if (s.ws && s.ws.readyState === WebSocket.OPEN) s.ws.send(Uint8Array.from(data, (c) => c.charCodeAt(0) & 255));
     });
     // 复制粘贴快捷键

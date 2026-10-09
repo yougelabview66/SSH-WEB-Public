@@ -126,7 +126,10 @@
         return true;
       }
     } catch {}
-    // HTTP 下没有剪贴板接口，用临时文本框 + execCommand 复制
+    // HTTP 下没有剪贴板接口 (或剪贴板接口拒绝写入)，用临时文本框 + execCommand 复制。
+    // 临时文本框会抢走焦点，删掉后焦点落到页面上 (下方输入框没了光标)：复制完还给原来的元素。
+    // 要在这里还：接口被拒时这段在 await 之后才跑，调用方同步还焦点的代码早就跑完了
+    const had = document.activeElement;
     const tmp = document.createElement('textarea');
     tmp.value = text;
     tmp.setAttribute('readonly', '');
@@ -137,6 +140,7 @@
     let ok = false;
     try { ok = document.execCommand('copy'); } catch {}
     tmp.remove();
+    if (had && had !== document.body && had.isConnected && document.activeElement !== had) had.focus({ preventScroll: true });
     return ok;
   }
 
