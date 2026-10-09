@@ -160,6 +160,19 @@ const WHEEL_UP = '\x1b[<64;';
   await p.screenshot({ path: shot('copymode.png') });
   got = ''; await p.click('.term.active .tmux-exit'); await wait(700);
   ok(got === 'q' && await p.isHidden('.term.active .tmux-exit'), '点它发送 q 退出复制模式，按钮消失');
+  // 在复制模式里直接从输入框发送：先自动退出复制模式 (发 q)，消息照常发出去 (以前被复制模式吃掉)
+  await overTerm(); await p.mouse.wheel(0, -100); await wait(900);
+  ok(await p.isVisible('.term.active .tmux-exit'), '再往上滚又进了复制模式');
+  await p.focus('#dInput'); await p.keyboard.type('继续'); got = '';
+  await p.keyboard.press('Enter'); await wait(700);
+  ok(got === 'q继续\r' && await p.isHidden('.term.active .tmux-exit'), '复制模式里从输入框发送 → 先发 q 退出复制模式，消息照常发出: ' + JSON.stringify(got));
+  got = ''; await p.keyboard.type('再来'); await p.keyboard.press('Enter'); await wait(500);
+  ok(got === '再来\r', '已经回到实时画面时照常发送，不多发 q: ' + JSON.stringify(got));
+  // 在复制模式里打 / 进命令模式：也先退出 (不然 / 是复制模式里的搜索)
+  await overTerm(); await p.mouse.wheel(0, -100); await wait(900);
+  await p.focus('#dInput'); got = ''; await p.keyboard.type('/'); await wait(500);
+  ok(got === 'q/' && await p.isHidden('.term.active .tmux-exit'), '复制模式里打 / → 先退出复制模式再进命令模式: ' + JSON.stringify(got));
+  await p.keyboard.press('Escape'); await wait(300);
   await open('NOTMUX'); await wait(500);
   ok(await p.evaluate(() => !document.querySelector('.term.active .font-toast')), '没有 tmux 时也不弹提示');
   // ---- Claude Code 全屏模式：它自己滚，出现「Jump to bottom (ctrl+end) ↓」时也显示「回到实时画面」

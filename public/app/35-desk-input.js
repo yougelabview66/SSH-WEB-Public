@@ -25,9 +25,19 @@
     submitText(active, text);
   }
 
+  // tmux 复制模式 (往上翻历史时 tmux 自己的查看模式，右下角有「回到实时画面」) 里发的字会被复制模式
+  // 当成按键吃掉 (j k 移动、回车复制并退出、/ 搜索…)，到不了程序：先发 q 退出 (同点「回到实时画面」)，
+  // tmux 按顺序处理，紧跟着的内容就进了程序。退出后 tmux 重画要一个来回，期间画面还像在复制模式，不重复发 q
+  function leaveTmuxCopyMode(s) {
+    if (!s?.sid || Date.now() - (s.copyExitAt || 0) < 1500 || !tmuxInCopyMode(s)) return;
+    s.copyExitAt = Date.now();
+    send(s, { type: 'data', data: 'q' });
+  }
+
   // 把输入栏里编辑好的一段文字发给终端并回车 (电脑 / 手机输入栏共用)
   function submitText(s, text) {
     if (!s || !s.sid) return;
+    leaveTmuxCopyMode(s);
     if (!text) { beginCapture(s); send(s, { type: 'data', data: '\r' }); return; }
     let data = text.replace(/\r?\n/g, '\r');
     // 多行内容按粘贴发送 (Claude Code 等支持括号粘贴的程序不会把中间的换行当回车)
@@ -62,6 +72,7 @@
   }).observe(dInput);
 
   function setCmdMode(on) {
+    if (on) leaveTmuxCopyMode(active); // 不然 / 会变成复制模式里的搜索
     cmdMode = on ? { s: active, n: 0 } : null;
     $('#deskBar').classList.toggle('cmd', on);
     $('#mobileBar').classList.toggle('cmd', on);
