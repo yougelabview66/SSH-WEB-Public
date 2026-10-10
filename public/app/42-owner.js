@@ -49,9 +49,12 @@
     requestAnimationFrame(scale); // 改行列后渲染器下一帧才更新大小
   }
 
-  // 这个标签被别的设备锁住了：输入不发出去，晃一下提示，告诉怎么接管
+  // 这个标签被别的设备锁住了 (正在别的设备上用)
+  const isLocked = (s) => !!s && s.mine === false && !!s.ownerNotice;
+
+  // 锁住时输入不发出去，晃一下提示，告诉怎么接管
   function inputLocked(s) {
-    if (!s || s.mine !== false || !s.ownerNotice) return false;
+    if (!isLocked(s)) return false;
     const el = s.ownerNotice;
     el.classList.remove('nudge');
     void el.offsetWidth; // 连按时重新播放动画

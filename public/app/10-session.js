@@ -86,7 +86,7 @@
     // 旧式鼠标编码 (X10 等) 的上报走 onBinary，需要按原始字节发送
     s.term.onBinary((data) => {
       data = filterMouse(data, true);
-      if (!data) return;
+      if (!data || inputLocked(s)) return; // 别的设备在用 (见 42-owner.js)
       if (s.ws && s.ws.readyState === WebSocket.OPEN) s.ws.send(Uint8Array.from(data, (c) => c.charCodeAt(0) & 255));
     });
     // 复制粘贴快捷键
@@ -198,9 +198,11 @@
     ws.onopen = () => {
       s.retries = 0;
       // 连上时的尺寸。要不要当使用者 (终端按这台设备排版)：最先用的客户端锁定标签，别人只能点「在本机继续」接管 ——
-      // 这里只在没人用时才当 ('auto')；原来就是这台在用的 (同一个页面重连、同一个浏览器刷新)，服务端认得出 (pageId / deviceId)，还是它
-      s.mine = null; // 断线期间别的设备可能接管了：等服务端重新告诉 (连上时会发)，不然下面同步尺寸时还当自己是使用者、抢回来
-      const size = s.box.clientWidth ? { cols: s.term.cols, rows: s.term.rows } : {};
+      // 这里只在没人用时才当 ('auto')；原来就是这台在用的 (同一个页面重连、同一个浏览器刷新)，服务端认得出 (pageId / deviceId)，还是它。
+      // 是不是这台在用 (s.mine) 先照旧，服务端连上就会重新告诉：锁着的断线重连期间也锁着，打的字不会发出去
+      // 镜像显示的是使用者的行列，报这台设备自己放得下的 (见 sendSize)
+      const own = s.mine === false && s.box.clientWidth ? s.fit.proposeDimensions() : null;
+      const size = !s.box.clientWidth ? {} : own?.cols ? { cols: own.cols, rows: own.rows } : { cols: s.term.cols, rows: s.term.rows };
       size.claim = document.hidden ? false : 'auto';
       // 还没显示出来 (恢复标签时后台的标签量不出尺寸)：等量出尺寸再接管 (见 syncSize)
       s.wantClaim = size.cols ? false : size.claim;
@@ -310,7 +312,11 @@
         // 在其他设备上关闭了这个标签
         closeSession(s, true);
       } else if (m.type === 'gone') {
+        if (m.closed) return closeSession(s, true); // 断线期间 (锁屏) 在别的设备上关掉了
         doneRestoring(s);
+        s.mine = null; // 会话没了：撤掉「正在 xx 上使用」(重新连接是新会话，这台就是使用者)
+        updateOwnerNotice(s);
+        if (active === s && s.box.clientWidth && !s.scrollView) s.fit.fit();
         // 服务端没有这个会话了 (服务重启过)
         s.remoteId = null;
         s.offset = undefined;

@@ -84,6 +84,8 @@
 
   async function boot() {
     app.classList.remove('hidden');
+    // 登录过期后重新登录：标签都还在 (连接也没断)，只和服务端对一下账、补上别的设备新开的；以前全部重开一遍，每个标签多出一个
+    if (sessions.length) { syncTabs(); startEvents(); loadHosts().catch(() => {}); return; }
     showEmpty('loading');
     // 主机列表与后台会话同时加载，尽快恢复标签
     const [list] = await Promise.all([fetchSessions(), loadHosts().catch(() => {}), loadKeybar()]);

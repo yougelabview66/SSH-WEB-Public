@@ -133,6 +133,7 @@
   // 把输入框里的文字立即发给终端并清空 (命令模式、修饰键，或按特殊键前保持先后顺序)
   function flushInput() {
     const text = mText();
+    if (text && inputLocked(active)) return; // 别的设备在用：字留在输入框里
     setMobileText('');
     if (!text) return;
     if (cmdMode) cmdMode.n += [...text].length;
@@ -157,7 +158,7 @@
       return;
     }
     if (cmdMode) return flushInput();
-    if (text === '/' && active?.sid) { setCmdMode(true); return flushInput(); }
+    if (text === '/' && active?.sid && !isLocked(active)) { setCmdMode(true); return flushInput(); }
     if (active) active.draft = text;
   }
 
@@ -251,6 +252,7 @@
     if (cmdMode && (['esc', 'escesc', 'enter', '^c'].includes(k) || (k === 'bs' && --cmdMode.n <= 0))) setCmdMode(false);
     if (b.dataset.seq != null) { clearMods(); return sendKeys(b.dataset.seq); }
     if (k === 'paste') {
+      if (inputLocked(active)) return; // 别的设备在用：不弹粘贴框 (粘贴的内容也发不出去)
       let text = '';
       try { text = await navigator.clipboard.readText(); } catch {}
       if (!text) text = prompt('粘贴内容（浏览器不允许直接读取剪贴板时在这里粘贴）：') || '';

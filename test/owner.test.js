@@ -51,6 +51,8 @@ run(async () => {
   got = '';
   await m.tap('#mInput'); await m.keyboard.type('hi'); await m.keyboard.press('Enter'); await wait(800);
   ok(got === '' && size.cols === desk.cols, `锁住的手机上发送：没发出去 (${JSON.stringify(got)})，排版不变`);
+  await m.tap('#mobileBar [data-k=tab]'); await wait(500); // 有字时按 Tab：以前先把字发出去 (被拦下) 再清掉，字就丢了
+  ok(got === '' && (await m.evaluate(() => document.querySelector('#mInput').value.replace(/\u200b/g, ''))) === 'hi', '锁住时按键栏的 Tab：字还留在输入框里');
 
   // 手机点「在本机继续」：按手机排版，电脑锁住、镜像手机的画面
   await m.tap('.term.active .owner-notice button'); await wait(1200);
@@ -68,6 +70,10 @@ run(async () => {
   ok(await d.evaluate(() => document.querySelector('.term.active .owner-notice').classList.contains('nudge')), '提示晃一下');
   await d.locator('#dInput').focus(); await d.keyboard.type('hello'); await d.keyboard.press('Enter'); await wait(600);
   ok(got === '' && await d.inputValue('#dInput') === 'hello', '下方输入框按回车：没发出去，字留在输入框里');
+  await d.fill('#dInput', ''); await d.locator('#dInput').focus(); await d.keyboard.type('/help'); await wait(500);
+  ok(got === '' && await d.inputValue('#dInput') === '/help' && !(await d.evaluate(() => document.querySelector('#deskBar').classList.contains('cmd'))),
+    `锁住时打 / ：不进命令模式，字留在输入框里 (${JSON.stringify(await d.inputValue('#dInput'))})`);
+  await d.fill('#dInput', '');
 
   // 电脑：窗口大小变了、切回窗口、刷新页面都不抢 (手机还在用)
   await d.setViewportSize({ width: 1200, height: 780 }); await wait(800);

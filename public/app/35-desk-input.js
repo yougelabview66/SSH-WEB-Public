@@ -93,7 +93,7 @@
 
   function flushCmd() {
     const text = dInput.value;
-    if (!cmdMode || !text) return;
+    if (!cmdMode || !text || inputLocked(active)) return; // 别的设备在用：字留在输入框里
     setDeskText('');
     cmdMode.n += [...text].length;
     sendKeys(text);
@@ -167,7 +167,7 @@
   dInput.addEventListener('input', (e) => {
     if (!e.isComposing && active?.sid) {
       if (cmdMode) return flushCmd();
-      if (dInput.value === '/') { setCmdMode(true); return flushCmd(); }
+      if (dInput.value === '/' && !isLocked(active)) { setCmdMode(true); return flushCmd(); }
     }
     if (active) active.draft = dInput.value;
     autosizeDesk();

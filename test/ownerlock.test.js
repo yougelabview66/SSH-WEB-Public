@@ -68,5 +68,12 @@ run(async () => {
   await m.evaluate(() => { delete document.hidden; window.__block = false; });
   ok(await reconnected(m), '(手机重连上了)');
   ok(size === desk && (await notice(m)).includes('正在电脑上使用'), `手机回来：电脑在用，手机锁着「${await notice(m)}」`);
+
+  // 手机锁屏期间电脑关掉了这个标签：手机回来直接关掉标签 (以前显示「后台会话已不存在 (服务可能重启过)」+「重新连接」)
+  await lock(m); await wait(800);
+  await d.click('.tab.active .x'); await wait(800);
+  await m.evaluate(() => { delete document.hidden; window.__block = false; });
+  for (let i = 0; i < 30 && await m.locator('.tab').count(); i++) await wait(500);
+  ok(await m.locator('.tab').count() === 0 && !(await m.evaluate(() => document.body.textContent.includes('服务可能重启过'))), '锁屏期间标签在电脑上被关掉：手机回来直接关掉这个标签');
   await browser.close();
 });

@@ -122,6 +122,7 @@
   function useCommand(cmd, op) {
     if (!active || !active.sid) return;
     closeHistory();
+    if (inputLocked(active)) return; // 别的设备在用 (见 42-owner.js)
     // 执行：回车和命令一起马上发出，服务端等命令显示出来再写回车 (同 submitText)；回显到了会记入历史 (次数 +1、移到最前)
     send(active, { type: 'data', data: cmd, echo: op === 'run' });
     if (op === 'run') { beginCapture(active); send(active, { type: 'data', data: '\r', gap: ENTER_GAP }); }
