@@ -30,14 +30,16 @@
     requestAnimationFrame(() => s.fit.fit());
   });
 
-  // 只为「页面可见 + 当前标签 + 面板打开 + 已连接」的会话采集，其他暂停
+  // 只为「页面可见 + 当前标签 + 面板打开 + 已连接」的会话采集，其他暂停。
+  // 每次开始采集换一个编号：上一次的采集还没回来时停了又开始 (切走又切回标签)，旧的回来后不再接着采
+  // (以前会多出一条采集循环，采集频率翻倍)
   function syncMonitor(s) {
     const m = s.mon;
     if (!m) return;
     const want = m.open && s === active && !!s.sid && !s.closed && !document.hidden;
     if (want && !m.running) {
       m.running = true;
-      m.poll();
+      m.poll(++m.gen);
     } else if (!want && m.running) {
       m.running = false;
       clearTimeout(m.timer);
@@ -53,25 +55,27 @@
       <div class="sub m-up"></div>
       <div class="m-body"><div class="note" style="margin-top:14px">正在采集…</div></div>
       <div class="err m-err"></div>`;
-    const m = { el, open: false, running: false, timer: null, hist: [], iface: '', procSort: 'cpu', last: null };
+    const m = { el, open: false, running: false, gen: 0, timer: null, hist: [], iface: '', procSort: 'cpu', last: null };
 
     el.querySelector('[data-a=close]').onclick = () => $('#btnMon').click();
 
-    m.poll = async () => {
-      if (!m.running) return;
+    const live = (gen) => m.running && gen === m.gen;
+    m.poll = async (gen) => {
+      if (!live(gen)) return;
       const sid = s.sid;
       try {
         const d = await api('GET', '/api/monitor/' + sid);
-        if (!m.running || sid !== s.sid) return;
+        if (!live(gen) || sid !== s.sid) return;
         $('.m-err', el).textContent = '';
         m.last = d;
         m.hist.push({ t: d.time, ifaces: d.ifaces });
         if (m.hist.length > MON_POINTS) m.hist.shift();
         render(d);
       } catch (e) {
+        if (!live(gen)) return;
         $('.m-err', el).textContent = e.message;
       }
-      if (m.running) m.timer = setTimeout(m.poll, MON_INTERVAL);
+      if (live(gen)) m.timer = setTimeout(() => m.poll(gen), MON_INTERVAL);
     };
 
     function netOf(ifaces) {
