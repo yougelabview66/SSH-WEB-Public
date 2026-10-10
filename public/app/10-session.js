@@ -52,8 +52,9 @@
     if (isTouch) {
       // 触屏：xterm 的隐藏输入框在手机输入法下会丢字 / 重复，改用底部输入栏
       s.term.textarea.setAttribute('readonly', 'readonly');
-      s.term.textarea.addEventListener('focus', () => mInput.focus());
-      s.box.addEventListener('click', () => { if (s.longPressed) { s.longPressed = false; return; } mInput.focus(); });
+      // 别的设备在用 (锁住，见 42-owner.js)：点终端不弹键盘 (打了也发不出去)，要写字点下面的输入栏
+      s.term.textarea.addEventListener('focus', () => { if (!isLocked(s)) mInput.focus(); });
+      s.box.addEventListener('click', () => { if (s.longPressed) { s.longPressed = false; return; } if (!isLocked(s)) mInput.focus(); });
     } else {
       // 电脑：下方输入框开着时，点终端后光标回到下方输入框；点击本身照常交给 tmux / Claude Code。
       // 不抢的情况：选中了文字 (方便复制)、连按两下 Alt 进终端直接打字、
@@ -130,10 +131,10 @@
     $('.title', s.tab).textContent = title;
     s.tab.title = title;
     s.tab.addEventListener('click', (e) => {
-      if (e.target.classList.contains('x')) closeSession(s);
+      if (e.target.classList.contains('x')) askClose(s); // 别的设备在用时先确认 (见 42-owner.js)
       else activate(s);
     });
-    s.tab.addEventListener('auxclick', (e) => { if (e.button === 1) closeSession(s); });
+    s.tab.addEventListener('auxclick', (e) => { if (e.button === 1) askClose(s); });
     $('#tabs').appendChild(s.tab);
 
     if (restore) {
@@ -208,8 +209,10 @@
       s.wantClaim = size.cols ? false : size.claim;
       size.device = deviceName;
       if (s.remoteId) {
+        // 打开页面时在后台、还没看过的标签：先只要状态，不要画面 (最多 5000 行的快照)，切过来时再要 (见 activate)
+        s.lite = !s.shown && s !== active;
         // offset: 已收到的输出字节数，断线重连时服务端只补发缺的部分
-        ws.send(JSON.stringify({ type: 'attach', id: s.remoteId, offset: s.offset, pageId, deviceId, ...size }));
+        ws.send(JSON.stringify({ type: 'attach', id: s.remoteId, offset: s.offset, pageId, deviceId, lite: s.lite, ...size }));
       } else {
         ws.send(JSON.stringify({ type: 'connect', ...s.params, title: s.baseTitle, n: s.n, histHost: s.histHost, pageId, deviceId, ...size }));
       }

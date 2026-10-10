@@ -23,7 +23,8 @@
       s.box.appendChild(el);
       s.ownerNotice = el;
     }
-    const name = m.device || '另一台设备';
+    const name = s.ownerName = m.device || '另一台设备';
+    s.ownerOnline = m.online !== false;
     s.ownerNotice.querySelector('.owner-title').textContent = m.online === false ? `${name}已断开` : `正在${name}上使用`;
   }
 
@@ -60,6 +61,15 @@
     void el.offsetWidth; // 连按时重新播放动画
     el.classList.add('nudge');
     return true;
+  }
+
+  // 关掉标签会断开 SSH，在用的那台设备上的这个标签也一起没了：锁住时 (别的设备在用) 先问一下
+  function askClose(s) {
+    if (isLocked(s)) {
+      const who = s.ownerOnline ? `正在${s.ownerName}上使用` : `是${s.ownerName}在用的 (现在断开了)`;
+      if (!confirm(`这个标签${who}，关掉会断开 SSH 连接，${s.ownerName}上的这个标签也会一起关掉。确定关闭？`)) return;
+    }
+    closeSession(s);
   }
 
   // 在本机继续：按这台设备的尺寸排版

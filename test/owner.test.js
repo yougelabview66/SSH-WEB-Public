@@ -53,6 +53,9 @@ run(async () => {
   ok(got === '' && size.cols === desk.cols, `锁住的手机上发送：没发出去 (${JSON.stringify(got)})，排版不变`);
   await m.tap('#mobileBar [data-k=tab]'); await wait(500); // 有字时按 Tab：以前先把字发出去 (被拦下) 再清掉，字就丢了
   ok(got === '' && (await m.evaluate(() => document.querySelector('#mInput').value.replace(/\u200b/g, ''))) === 'hi', '锁住时按键栏的 Tab：字还留在输入框里');
+  await m.evaluate(() => document.activeElement?.blur()); await wait(200);
+  await m.tap('.term.active .term-box', { position: { x: 30, y: 150 } }); await wait(500);
+  ok(await m.evaluate(() => document.activeElement?.id !== 'mInput'), '锁住的手机点终端：不弹键盘 (光标不去输入栏)');
 
   // 手机点「在本机继续」：按手机排版，电脑锁住、镜像手机的画面
   await m.tap('.term.active .owner-notice button'); await wait(1200);
@@ -105,5 +108,13 @@ run(async () => {
   ok((await notice(t)).includes('正在电脑上使用') && size.cols > 100, `平板打开：锁着「${await notice(t)}」`);
   await d2.close(); await wait(1500);
   ok((await notice(t)).includes('电脑已断开'), `电脑关掉页面：平板上「${await notice(t)}」，还锁着`);
+  // 锁住时关标签：先确认 (关掉会断开 SSH，在用的设备上也没了)；取消就不关
+  let asked = '';
+  t.once('dialog', (dl) => { asked = dl.message(); dl.dismiss(); });
+  await t.tap('.tab.active .x'); await wait(800);
+  ok(asked.includes('电脑') && await t.locator('.tab').count() === 1, `锁住时关标签：先问「${asked.slice(0, 30)}…」，取消就不关`);
+  t.once('dialog', (dl) => dl.accept());
+  await t.tap('.tab.active .x'); await wait(1000);
+  ok(await t.locator('.tab').count() === 0, '确定：关掉了');
   await browser.close();
 });

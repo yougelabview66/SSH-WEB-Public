@@ -133,6 +133,9 @@
   function activate(s) {
     const prev = active;
     active = s;
+    s.shown = true;
+    // 还没看过的后台标签 (只收了状态，见 10-session.js)：现在要画面
+    if (s.lite && s.ws?.readyState === WebSocket.OPEN) { s.lite = false; send(s, { type: 'sync', offset: s.offset }); }
     sessions.forEach((x) => {
       x.el.classList.toggle('active', x === s);
       x.tab.classList.toggle('active', x === s);
