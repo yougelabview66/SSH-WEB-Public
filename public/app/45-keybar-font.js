@@ -193,10 +193,11 @@
   }
 
   // iOS 键盘弹出时不会缩小页面，用 visualViewport 调整高度，让输入栏始终在键盘上方
-  // 只在键盘弹出 (可视区域比页面矮) 时固定高度，其余时候交回给 CSS 的 100%，不会停在过时的高度上
-  if (window.visualViewport) {
+  // 只在键盘弹出 (可视区域比页面矮) 时固定高度，其余时候交回给 CSS 的 100%，不会停在过时的高度上。
+  // 之后重新量终端区域、整屏重画 (键盘收起、切标签后都要，见 activate)
+  function relayout() {
     const vv = window.visualViewport;
-    const onVV = () => {
+    if (vv) {
       const h = Math.round(vv.height), full = document.documentElement.clientHeight;
       // 双指放大页面 (电脑触控板、手机) 时可视区域也会变小，那不是键盘弹出，不固定高度。
       // 焦点不在输入框里时键盘不可能开着，也不固定：刚打开页面时地址栏伸缩，可视区域会短暂比页面矮，
@@ -205,11 +206,15 @@
       const want = typing && h > 0 && h < full - 1 && vv.scale <= 1.01 ? h + 'px' : '';
       if (app.style.height !== want) app.style.height = want;
       window.scrollTo(0, 0);
-      if (active && !active.scrollView) { // 历史视图打开时不重排 (见 55-local-scroll.js)
-        active.fit.fit();
-        active.term.refresh(0, active.term.rows - 1);
-      }
-    };
+    }
+    if (active && !active.scrollView) { // 历史视图打开时不重排 (见 55-local-scroll.js)
+      active.fit.fit();
+      active.term.refresh(0, active.term.rows - 1);
+    }
+  }
+  if (window.visualViewport) {
+    const vv = window.visualViewport;
+    const onVV = relayout;
     vv.addEventListener('resize', onVV);
     // 离开输入框 (键盘收起)：浏览器有时不报可视区域变化，过一会儿自己再算一次；焦点只是换到另一个输入框时照旧固定
     if (isTouch) document.addEventListener('focusout', () => setTimeout(onVV, 300));

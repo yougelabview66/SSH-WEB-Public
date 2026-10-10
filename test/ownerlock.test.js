@@ -1,6 +1,6 @@
 'use strict';
-// 正在用的设备断线 (手机锁屏 / 切到后台，浏览器会断开连接)：其他设备一直锁着 (提示「手机已断开」)、排版不变，点了才换；
-// 它在后台重连回来还是使用者；别的设备在这期间接管了的话，它在后台重连不抢，回到前台重连才算最后连上的
+// 正在用的设备断线 (手机锁屏，浏览器会断开连接)：其他设备上提示「手机已断开」，5 秒内回来还是它在用 (网络抖一下)，
+// 没回来就换给正在看的设备；它亮屏重连回来时别人在用，它锁着 (先来先用)，点了才接管
 const { Server } = require('ssh2');
 const { BASE, ok, wait, launch, addHost, run, hostKey, devices } = require('./helpers');
 
@@ -48,35 +48,31 @@ run(async () => {
   const mctx = await browser.newContext({ ...devices['Pixel 7'] });
   await mctx.addInitScript(ctl);
   const m = await mctx.newPage();
-  await m.goto(BASE + '/'); await m.waitForSelector('.tab.active .dot.ok'); await wait(2000);
+  await m.goto(BASE + '/'); await m.waitForSelector('.tab.active .dot.ok'); await wait(1500);
+  await m.tap('.term.active .owner-notice button'); await wait(1000);
   const phone = size;
-  ok(phone !== desk && (await notice(d)).includes('正在手机上使用'), `手机打开：按手机排版 ${phone}，电脑上提示「正在手机上使用」`);
+  ok(phone !== desk && (await notice(d)).includes('正在手机上使用'), `手机接管：按手机排版 ${phone}，电脑锁着`);
 
-  // 手机锁屏断线：电脑上的提示一直留着，排版不变 (以前提示马上消失、10 秒后自动换成电脑的)
-  await lock(m); await wait(500);
-  ok(!(await m.evaluate(() => !!document.querySelector('.tab.active .dot.ok'))), '(手机断开了)');
-  ok((await notice(d)).includes('手机已断开'), `手机锁屏断线：电脑上还锁着，提示「${await notice(d)}」`);
-  await wait(11500);
-  ok(size === phone && (await notice(d)).includes('手机已断开'), `过了 12 秒：排版还是手机的 ${size}，电脑上还锁着`);
+  // 网络抖一下 (页面在前台，断开 1.5 秒又连上)：还是手机在用
+  await m.evaluate(() => { window.__block = true; window.__ws.forEach((w) => w.close()); });
+  await wait(500);
+  ok((await notice(d)).includes('手机已断开'), `手机断线：电脑上提示「${await notice(d)}」`);
+  await wait(1000); await m.evaluate(() => { window.__block = false; });
+  ok(await reconnected(m), '(手机重连上了)');
+  await wait(4000);
+  ok(size === phone && (await notice(m)) === '' && (await notice(d)).includes('正在手机上使用'), `手机断线几秒又连上：还是它在用 ${size}，电脑上提示改回「${await notice(d)}」`);
 
-  // 手机在后台重连回来 (还没亮屏)：还是使用者，手机上不提示
-  await m.evaluate(() => { window.__block = false; });
-  ok(await reconnected(m), '(手机在后台重连上了)');
-  ok(size === phone && (await notice(m)) === '' && (await notice(d)).includes('正在手机上使用'), `手机在后台重连：还是它在用 ${size}，手机上不提示，电脑上提示改回「${await notice(d)}」`);
+  // 手机锁屏 (页面到后台、连接断开、一直连不上)：5 秒后换给正在看的电脑
+  await lock(m); await wait(1000);
+  ok(size === phone && (await notice(d)).includes('手机已断开'), `手机锁屏：先不换 ${size}，电脑上提示「${await notice(d)}」`);
+  await wait(5000);
+  ok(size === desk && (await notice(d)) === '', `5 秒后换给电脑：按电脑排版 ${size}，电脑解锁`);
 
-  // 手机又锁屏，这期间电脑点「在本机继续」
-  await lock(m); await wait(800);
-  await d.click('.term.active .owner-notice button'); await wait(1000);
-  ok(size === desk && (await notice(d)) === '', `手机锁屏时电脑点「在本机继续」：按电脑排版 ${size}`);
-  // 手机在后台重连：不抢，手机上提示「正在电脑上使用」
-  await m.evaluate(() => { window.__block = false; });
-  ok(await reconnected(m), '(手机在后台重连上了)');
-  ok(size === desk && (await notice(m)).includes('正在电脑上使用'), `手机在后台重连：不抢 ${size}，手机上提示「正在电脑上使用」`);
-
-  // 手机亮屏后才重连上 (锁屏时一直连不上)：它是最后连上的，按手机排版，电脑上提示
-  await lock(m); await wait(1500);
+  // 手机亮屏重连：电脑在用，手机锁着 (先来先用)；点了才接管
   await m.evaluate(() => { delete document.hidden; window.__block = false; });
   ok(await reconnected(m), '(手机亮屏后重连上了)');
-  ok(size === phone && (await notice(m)) === '' && (await notice(d)).includes('正在手机上使用'), `手机亮屏重连：按手机排版 ${size}，电脑上提示「正在手机上使用」`);
+  ok(size === desk && (await notice(m)).includes('正在电脑上使用'), `手机亮屏重连：电脑在用，手机锁着「${await notice(m)}」，还是电脑的排版`);
+  await m.tap('.term.active .owner-notice button'); await wait(1000);
+  ok(size === phone && (await notice(d)).includes('正在手机上使用'), `手机点「在本机继续」：按手机排版 ${size}`);
   await browser.close();
 });

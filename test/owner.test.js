@@ -1,7 +1,7 @@
 'use strict';
-// 终端尺寸听使用者的：最后连上的设备 (打开 / 刷新页面、页面在前台时断线重连) 马上按它排版，其他设备上一直显示
-// 「正在 xx 上使用 · 在本机继续」，它们的尺寸不再改排版，也不能输入 (打的字不发出去)；点那个提示才换回来。
-// 页面在后台时断线重连、切回窗口都不抢；使用者关掉页面也不自动换 (断线 / 锁屏的情况见 ownerlock.test.js)
+// 一个标签同一时间只有一台设备在用，其他设备锁住 (先来先用)：
+// 别的设备打开时使用者还在用 → 那台锁住，镜像只看 (按使用者的行列缩放显示)、不能输入，点「在本机继续」才接管；
+// 使用者确定不在用了 (页面到后台 / 关掉页面) → 5 秒后自动换给正在看的设备 (断线 / 锁屏见 ownerlock.test.js，切标签见 tabsw.test.js)
 const { Server } = require('ssh2');
 const { BASE, ok, wait, shot, launch, addHost, run, hostKey, devices } = require('./helpers');
 
@@ -12,89 +12,88 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
     const s = acc();
     s.on('pty', (a, r, info) => { size = { cols: info.cols, rows: info.rows }; a(); });
     s.on('window-change', (a, r, info) => { size = { cols: info.cols, rows: info.rows }; changes.push(size); a && a(); });
-    s.on('shell', (a) => { const st = a(); st.write('$ '); st.on('data', (d) => { got += d; }); });
+    s.on('shell', (a) => { const st = a(); for (let i = 1; i <= 30; i++) st.write(`line ${i} ` + '一二三四五六七八九十'.repeat(3) + '\r\n'); st.write('$ '); st.on('data', (d) => { got += d; }); });
   }));
 }).listen(2277, '127.0.0.1');
+
+const notice = (pg) => pg.evaluate(() => document.querySelector('.term.active .owner-notice')?.textContent || '');
+// 镜像显示：终端按使用者的行列排、整体缩放
+const mirror = (pg) => pg.evaluate(() => {
+  const x = document.querySelector('.term.active .xterm');
+  return { on: document.querySelector('.term.active .term-box').classList.contains('mirror'), scale: x.style.transform, w: x.getBoundingClientRect().width, bw: document.querySelector('.term.active .term-box').clientWidth };
+});
+// 页面到后台 / 回到前台 (浏览器切到别的标签、最小化、手机锁屏)
+const setHidden = (pg, h) => pg.evaluate((h) => {
+  if (h) Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+  else delete document.hidden;
+  document.dispatchEvent(new Event('visibilitychange'));
+}, h);
 
 run(async () => {
   await addHost('OW', 2277);
   const browser = await launch();
-  const trackWs = () => { window.__ws = []; const W = window.WebSocket; window.WebSocket = class extends W { constructor(...a) { super(...a); window.__ws.push(this); } }; };
-  const dctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
-  await dctx.addInitScript(trackWs);
-  const d = await dctx.newPage();
+  const d = await (await browser.newContext({ viewport: { width: 1280, height: 800 } })).newPage();
   await d.goto(BASE + '/'); await d.waitForSelector('#app:not(.hidden)');
   await d.locator('.host', { hasText: 'OW' }).click(); await d.waitForSelector('.tab.active .dot.ok'); await wait(1000);
   const desk = { ...size };
   const s = () => `${size.cols}×${size.rows}`;
-  const notice = (pg) => pg.evaluate(() => { const n = document.querySelector('.term.active .owner-notice'); return n ? n.textContent : ''; });
-  ok(await notice(d) === '', '只有一台设备：不显示「正在别的设备上使用」');
+  ok(await notice(d) === '', '只有一台设备：不锁');
 
-  // 手机打开同一个标签：马上按手机排版，电脑上提示被手机占用
+  // 电脑在用时手机打开：手机锁住，镜像只看，排版还是电脑的
   const m = await (await browser.newContext({ ...devices['Pixel 7'] })).newPage();
-  await m.goto(BASE + '/'); await m.waitForSelector('.tab'); await wait(2000);
+  await m.goto(BASE + '/'); await m.waitForSelector('.tab.active .dot.ok'); await wait(2000);
+  ok(size.cols === desk.cols && (await notice(m)).includes('正在电脑上使用'), `电脑在用时手机打开：手机锁住「${await notice(m)}」，还是电脑的排版 ${s()}`);
+  let mm = await mirror(m);
+  ok(mm.on && /scale/.test(mm.scale) && mm.w <= mm.bw + 1, `手机上镜像显示电脑的画面：缩放 ${mm.scale}，宽 ${Math.round(mm.w)} / ${mm.bw}`);
+  ok(await m.evaluate(() => document.querySelector('.term.active .xterm-rows, .term.active canvas') !== null), '(终端内容照常显示，不再整块遮住)');
+  await m.screenshot({ path: shot('owner-phone.png') });
+  // 锁住时发送：发不出去，字留着
+  got = '';
+  await m.tap('#mInput'); await m.keyboard.type('hi'); await m.keyboard.press('Enter'); await wait(800);
+  ok(got === '' && size.cols === desk.cols, `锁住的手机上发送：没发出去 (${JSON.stringify(got)})，排版不变`);
+
+  // 手机点「在本机继续」：按手机排版，电脑锁住、镜像手机的画面
+  await m.tap('.term.active .owner-notice button'); await wait(1200);
   const phone = { ...size };
-  ok(phone.cols < 80 && desk.cols > 100, `手机打开同一个标签：马上按手机排版 ${s()} (电脑是 ${desk.cols}×${desk.rows})`);
-  ok((await notice(d)).includes('正在手机上使用') && (await notice(m)) === '', '电脑上提示「正在手机上使用」，手机上不提示: ' + await notice(d));
+  ok(phone.cols < 80 && (await notice(m)) === '' && !(await mirror(m)).on, `手机点「在本机继续」：按手机排版 ${s()}，手机解锁`);
+  ok((await notice(d)).includes('正在手机上使用') && (await mirror(d)).on, `电脑锁住「${await notice(d)}」，镜像手机的画面`);
+  await m.tap('#mInput'); await m.keyboard.press('Enter'); await wait(800);
+  ok(got.includes('hi'), `接管后回车：刚才留着的字发出去了 (${JSON.stringify(got)})`);
   await d.screenshot({ path: shot('owner-desk.png') });
 
-  // 电脑：页面在后台时断线重连、窗口大小变了、切回窗口 (获得焦点) 都不抢排版
-  await d.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => true }); window.__ws.forEach((w) => w.close()); }); await wait(3000);
-  ok(await d.evaluate(() => !!document.querySelector('.tab.active .dot.ok')), '(电脑断线后已经自动重连)');
-  ok(size.cols === phone.cols, `电脑页面在后台时断线重连：不改排版，还是手机的 ${s()}`);
-  await d.evaluate(() => { delete document.hidden; });
+  // 锁住的电脑上打字：不发出去，提示晃一下
+  got = '';
+  await d.locator('.term.active .xterm-helper-textarea').focus(); await d.keyboard.type('x'); await wait(600);
+  ok(got === '' && size.cols === phone.cols, `锁住的电脑上在终端里打字：没发出去 (${JSON.stringify(got)})`);
+  ok(await d.evaluate(() => document.querySelector('.term.active .owner-notice').classList.contains('nudge')), '提示晃一下');
+  await d.locator('#dInput').focus(); await d.keyboard.type('hello'); await d.keyboard.press('Enter'); await wait(600);
+  ok(got === '' && await d.inputValue('#dInput') === 'hello', '下方输入框按回车：没发出去，字留在输入框里');
+
+  // 电脑：窗口大小变了、切回窗口、刷新页面都不抢 (手机还在用)
   await d.setViewportSize({ width: 1200, height: 780 }); await wait(800);
-  ok(size.cols === phone.cols, `电脑窗口大小变了：也不改排版 ${s()}`);
-  await d.bringToFront(); await d.evaluate(() => window.dispatchEvent(new Event('focus'))); await wait(1200);
-  ok(size.cols === phone.cols && (await notice(d)).includes('正在手机上使用'), `切回电脑窗口：不抢排版，还是手机的 ${s()}，提示还在`);
-
-  // 电脑上点「在本机继续」：按电脑排版，手机上提示被电脑占用
-  await d.click('.term.active .owner-notice button'); await wait(1000);
-  ok(size.cols > 100 && (await notice(d)) === '', `电脑点「在本机继续」：按电脑排版 ${s()}，提示消失`);
-  ok((await notice(m)).includes('正在电脑上使用'), '手机上提示「正在电脑上使用」');
-  await m.screenshot({ path: shot('owner-phone.png') });
-
-  // 手机开着时电脑刷新页面：尺寸不来回换 (旧页面一关不马上换成手机的，新页面连上还是电脑的)
+  await d.evaluate(() => window.dispatchEvent(new Event('focus'))); await wait(1000);
+  ok(size.cols === phone.cols, `电脑窗口大小变了、切回窗口：不抢 ${s()}`);
   changes = [];
   await d.reload(); await d.waitForSelector('.tab.active .dot.ok'); await wait(2000);
-  ok(changes.length === 0 && size.cols > 100, `电脑刷新页面：终端尺寸一次都没改 (${changes.map((c) => c.cols + '×' + c.rows).join(', ') || '无'})`);
+  ok(changes.length === 0 && (await notice(d)).includes('正在手机上使用'), `电脑刷新页面：还锁着，尺寸一次都没改 (${changes.map((c) => c.cols + '×' + c.rows).join(', ') || '无'})`);
 
-  // 手机刷新页面 = 最新打开的：马上按手机排版
-  await m.reload(); await m.waitForSelector('.tab'); await wait(2500);
-  ok(size.cols === phone.cols && size.rows === phone.rows, `手机刷新页面：马上按手机排版 ${s()}`);
+  // 手机切到后台 (不在用了)：5 秒后自动换给正在看的电脑
+  await setHidden(m, true); await wait(1500);
+  ok(size.cols === phone.cols && (await notice(d)).includes('手机没在用了'), `手机切到后台：先不换 (可能马上回来)，电脑上提示「${await notice(d)}」`);
+  await wait(5000);
+  ok(size.cols > 100 && (await notice(d)) === '' && !(await mirror(d)).on, `5 秒后自动换给电脑：按电脑排版 ${s()}，电脑解锁`);
+  // 手机回到前台：电脑在用，手机锁着
+  await setHidden(m, false); await wait(1500);
+  ok(size.cols > 100 && (await notice(m)).includes('正在电脑上使用'), `手机回到前台：电脑在用，手机锁着「${await notice(m)}」`);
+  // 手机切到后台又马上回来：不换
+  await m.tap('.term.active .owner-notice button'); await wait(1000);
+  await setHidden(m, true); await wait(1500); await setHidden(m, false); await wait(5000);
+  ok(size.cols === phone.cols && (await notice(m)) === '', `手机切到后台 1.5 秒又回来：还是手机在用 ${s()}`);
 
-  // 锁住的电脑上打字：不发出去，提示晃一下，排版不变
-  got = '';
-  await d.locator('.term.active .xterm-helper-textarea').focus(); await d.keyboard.type('x'); await wait(800); // 直接在终端里打字
-  ok(got === '' && size.cols === phone.cols && (await notice(d)).includes('正在手机上使用'), `锁住的电脑上在终端里打字：没发出去 (${JSON.stringify(got)})，还是手机的排版 ${s()}`);
-  ok(await d.evaluate(() => document.querySelector('.term.active .owner-notice').classList.contains('nudge')), '提示晃一下');
-  await d.locator('#dInput').focus(); await d.keyboard.type('hello'); await d.keyboard.press('Enter'); await wait(800);
-  ok(got === '' && await d.inputValue('#dInput') === 'hello', `下方输入框按回车：没发出去，字留在输入框里 (${JSON.stringify(got)})`);
-  // 点「在本机继续」后回车发出去
-  await d.click('.term.active .owner-notice button'); await wait(800);
-  await d.locator('#dInput').focus(); await d.keyboard.press('Enter'); await wait(800);
-  ok(got.includes('hello') && size.cols > 100 && (await notice(d)) === '', `接管后回车：发出去了 (${JSON.stringify(got)})，按电脑排版 ${s()}`);
-  // 手机这时被锁住：发送不出去；点提示接管后发送
-  got = '';
-  await m.tap('#mInput'); await m.keyboard.type('y'); await m.keyboard.press('Enter'); await wait(800);
-  ok(got === '' && size.cols > 100 && (await notice(m)).includes('正在电脑上使用'), `锁住的手机上发送：没发出去 (${JSON.stringify(got)})，还是电脑的排版`);
-  await m.tap('.term.active .owner-notice button'); await wait(800);
-  await m.tap('#mInput'); await m.keyboard.press('Enter'); await wait(800);
-  ok(got.includes('y') && size.cols === phone.cols, `手机点提示接管后发送：发出去了 (${JSON.stringify(got)})，按手机排版 ${s()}`);
-
-  // 第三台设备 (平板) 打开：按平板排版，另外两台都提示被平板占用
-  const t = await (await browser.newContext({ ...devices['iPad Mini'] })).newPage();
-  await t.goto(BASE + '/'); await t.waitForSelector('.tab'); await wait(2000);
-  const tablet = { ...size };
-  ok(tablet.cols !== phone.cols && tablet.cols !== desk.cols, `平板打开：按平板排版 ${s()}`);
-  ok((await notice(d)).includes('正在平板上使用') && (await notice(m)).includes('正在平板上使用'), '电脑、手机都提示「正在平板上使用」');
-  await t.reload(); await t.waitForSelector('.tab'); await wait(2500);
-  ok(size.cols === tablet.cols, `平板刷新页面：还是按平板 ${s()}`);
-
-  // 正在用的设备关掉页面：不自动换，电脑上的提示一直留着，点了才按电脑排版
-  await t.context().close(); await m.context().close(); await wait(12000);
-  ok(size.cols === tablet.cols && (await notice(d)).includes('平板已断开'), `正在用的平板关掉页面：不自动换 ${s()}，电脑上一直锁着，提示「${await notice(d)}」`);
-  await d.click('.term.active .owner-notice button'); await wait(1000);
-  ok(size.cols > 100 && (await notice(d)) === '', `电脑点「在本机继续」：按电脑排版 ${s()}`);
+  // 正在用的设备关掉页面：电脑上提示「手机已断开」，5 秒后换给电脑
+  await m.context().close(); await wait(1000);
+  ok((await notice(d)).includes('手机已断开'), `手机关掉页面：电脑上提示「${await notice(d)}」`);
+  await wait(5000);
+  ok(size.cols > 100 && (await notice(d)) === '', `5 秒后换给电脑：按电脑排版 ${s()}`);
   await browser.close();
 });

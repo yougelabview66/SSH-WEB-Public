@@ -139,15 +139,14 @@ claudeServer(2253); claudeServer(2254, true); claudeServer(2256, false, 'sgr'); 
   const p2 = await (await browser.newContext({ viewport: { width: 1280, height: 800 } })).newPage(); p2.on('pageerror', (e) => errors.push(e.message));
   await p2.goto(BASE + '/'); await p2.waitForSelector('.tab'); await wait(1500);
   await p2.locator('.tab', { hasText: 'CCM' }).first().click(); await wait(800);
+  await p2.click('.term.active .owner-notice button'); await wait(500); // p 在用：p2 锁着，接管后才能打字
   await p2.locator('.term.active .xterm-helper-textarea').focus(); await p2.keyboard.type('from other device'); await wait(600);
   await p.click('#dInput'); await clickRow(3);
   ok(await inTerm(), '在另一台设备的终端输入框里打了字：这台点 Claude Code 的输入框也锁定在终端');
   await p.reload(); await p.waitForSelector('.tab'); await wait(1500);
   await p.click('#dInput'); await clickRow(3);
   ok(await inTerm(), '刷新页面后：记忆还在 (存在服务器上)，点输入框锁定在终端');
-  // p 刷新了 (最后连上的)，p2 被锁住：先点「在本机继续」再发送
-  await p2.click('.term.active .owner-notice button'); await wait(500);
-  await p2.locator('.term.active .xterm-helper-textarea').focus(); await p2.keyboard.press('Enter'); await wait(600);
+  await p2.locator('.term.active .xterm-helper-textarea').focus(); await p2.keyboard.press('Enter'); await wait(600); // p2 在用 (p 刷新后锁着)
   await p.click('.term.active .owner-notice button'); await wait(500);
   await p.click('#dInput'); await clickRow(3);
   ok(await inDesk(), '另一台设备按回车发送后：这台点输入框回到下方输入框');

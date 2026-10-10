@@ -29,6 +29,8 @@
     });
     s.fit = new FitAddon.FitAddon();
     s.term.loadAddon(s.fit);
+    const rawFit = s.fit.fit.bind(s.fit);
+    s.fit.fit = () => mirrorFit(s, rawFit); // 被别的设备锁住时按它的行列镜像显示 (见 42-owner.js)
     s.term.loadAddon(new WebLinksAddon.WebLinksAddon());
     s.term.open(s.box);
     // 远端程序通过 OSC 52 设置剪贴板：tmux 开鼠标后拖动选中、松开即复制，vim 等插件的复制也走这里。
@@ -195,15 +197,13 @@
 
     ws.onopen = () => {
       s.retries = 0;
-      // 连上时的尺寸。要不要当使用者 (终端按这台设备排版)：最后连上的为准 —— 打开 / 刷新页面、断线重连都算，
-      // 但页面要在前台 (口袋里锁屏的手机重连不抢)；断线前就是使用者的，服务端认得出是同一个页面 (pageId)，重连回来还是它
-      const size = s.box.clientWidth ? { cols: s.term.cols, rows: s.term.rows } : {};
-      size.claim = !document.hidden;
+      // 连上时的尺寸。要不要当使用者 (终端按这台设备排版)：先来先用 —— 打开 / 刷新页面、页面在前台时重连，
+      // 原来的使用者不在用了才接管 ('auto'，服务端判断)，还在用就锁着；断线前就是使用者的，服务端认得出是同一个页面 (pageId)，重连回来还是它
       s.mine = null; // 断线期间别的设备可能接管了：等服务端重新告诉 (连上时会发)，不然下面同步尺寸时还当自己是使用者、抢回来
+      const size = s.box.clientWidth ? { cols: s.term.cols, rows: s.term.rows } : {};
+      size.claim = document.hidden ? false : 'auto';
       // 还没显示出来 (恢复标签时后台的标签量不出尺寸)：等量出尺寸再接管 (见 syncSize)
-      s.wantClaim = size.claim && !size.cols;
-      if (s.fresh && document.hidden) s.claimOnShow = true; // 在后台打开的：切过来看时再接管 (见 42-owner.js)
-      s.fresh = false;
+      s.wantClaim = size.cols ? false : size.claim;
       size.device = deviceName;
       if (s.remoteId) {
         // offset: 已收到的输出字节数，断线重连时服务端只补发缺的部分
@@ -279,7 +279,12 @@
         onTmuxHistory(s, m);
       } else if (m.type === 'owner') {
         s.mine = m.mine; // 是不是这台设备在用 (终端按它排版)
-        updateOwnerNotice(s, m.device, m.online);
+        if (m.cols) s.srvSize = { cols: m.cols, rows: m.rows };
+        updateOwnerNotice(s, m);
+        if (active === s && s.box.clientWidth && !s.scrollView) s.fit.fit(); // 锁住：换成镜像；解锁：按本机排版
+      } else if (m.type === 'tsize') {
+        s.srvSize = { cols: m.cols, rows: m.rows }; // 使用者那边尺寸变了，镜像跟着变
+        if (active === s && s.mine === false && s.box.clientWidth && !s.scrollView) s.fit.fit();
       } else if (m.type === 'cli') {
         s.cli.set(m); // 服务器算的终端输入框内容 (包括别的设备上打的字)
       } else if (m.type === 'state') {
@@ -336,18 +341,23 @@
     s.restoring = null;
   }
 
-  // 让服务端终端尺寸与当前显示一致 (其他设备可能改过尺寸)。claim：要当使用者 (切到这个标签)
+  // 让服务端终端尺寸与当前显示一致 (其他设备可能改过尺寸)。claim：'auto' = 切到这个标签，原来的使用者不在用就接管
   function syncSize(s, claim) {
     if (!s.box.clientWidth) return;
-    if (claim) s.wantClaim = true;
+    if (claim) s.wantClaim = claim;
     if (!s.scrollView) s.fit.fit();
     sendSize(s, s.term.cols, s.term.rows);
   }
 
-  // 告诉服务端这台设备的终端尺寸。不是使用者时只记下来，不改排版 (要接管见 claimSize)
+  // 告诉服务端这台设备的终端尺寸。不是使用者时只记下来 (换给它时用)，不改排版 (要接管见 claimSize)
   function sendSize(s, cols, rows) {
     if (!s.ws || s.ws.readyState !== WebSocket.OPEN) return; // 还没连上：连上时会带上尺寸
-    send(s, { type: 'resize', cols, rows, claim: !!s.mine || !!s.wantClaim });
+    if (s.mine === false) { // 镜像显示的是使用者的行列，报告的是这台设备放得下的
+      const d = s.fit.proposeDimensions();
+      if (!d?.cols || !d?.rows) return;
+      cols = d.cols; rows = d.rows;
+    }
+    send(s, { type: 'resize', cols, rows, claim: s.mine ? true : (s.wantClaim || false) });
     s.wantClaim = false;
   }
 

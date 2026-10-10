@@ -129,8 +129,8 @@
     if (active === s) document.title = `${s.title} - SSH-WEB`;
   }
 
-  // claim：切到这个标签 = 在这台设备上用它，终端按这台设备的屏幕排版，其他设备上显示「正在 xx 上使用」(见 42-owner.js)。
-  // 弹出主机密钥 / 验证码对话框时自动切过去的不算 (每台设备都会弹，不然谁都抢)；刚打开页面恢复标签时按 10-session.js 的规则
+  // claim：切到这个标签 = 想在这台设备上用它：原来的使用者不在用了就接管，还在用就镜像只看、点「在本机继续」才接管 (见 42-owner.js)。
+  // 弹出主机密钥 / 验证码对话框时自动切过去的不算 (每台设备都会弹)；刚打开页面恢复标签时按 10-session.js 的规则
   function activate(s, claim = true) {
     const prev = active;
     active = s;
@@ -140,8 +140,19 @@
       if (x !== s) disableWebgl(x);
     });
     enableWebgl(s);
-    claim = claim && !!prev && prev !== s && !document.hidden;
+    claim = claim && !!prev && prev !== s && !document.hidden ? 'auto' : false;
     requestAnimationFrame(() => { syncSize(s, claim); focusTerm(s); });
+    // 刚显示出来的标签：手机上有时只画出一部分 (要点一下输入框再收起键盘才完整)，切过来后照那样重新量一遍、整屏重画；
+    // 新建的 WebGL 渲染器的字形缓存也清掉重画 (藏起来时量的字宽可能不对)
+    if (prev !== s) {
+      const redraw = () => {
+        if (active !== s) return;
+        if (s.webgl) try { s.term.clearTextureAtlas(); } catch {}
+        relayout();
+      };
+      setTimeout(redraw, 100);
+      setTimeout(redraw, 400);
+    }
     revealTab(s.tab);
     s.tab.classList.remove('ring');
     updateSftpBtn();

@@ -76,6 +76,7 @@ run(async () => {
   await wait(300); x = await dl();
   ok(x.style === '' && Math.abs(x.appH - x.winH) < 2, '电脑：触控板双指放大页面 (可视区域变小) 不会被当成键盘弹出');
   await d.evaluate(() => { delete window.visualViewport.height; delete window.visualViewport.scale; });
+  await d.click('.term.active .owner-notice button'); await wait(500); // 手机先开的 (在用)：电脑锁着，接管后才按电脑排版
   const r0 = rows;
   await d.setViewportSize({ width: 1000, height: 600 }); await wait(600);
   await d.evaluate(() => document.dispatchEvent(new Event('visibilitychange'))); await wait(800);

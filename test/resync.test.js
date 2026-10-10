@@ -25,9 +25,10 @@ run(async () => {
   const desk = { ...size };
   ok(desk.cols > 100, `电脑打开：${desk.cols}×${desk.rows}`);
 
-  // 手机也打开同一个标签：尺寸变成手机的
+  // 手机也打开同一个标签、点「在本机继续」：尺寸变成手机的
   const m = await (await browser.newContext({ ...devices['Pixel 7'] })).newPage();
   await m.goto(BASE + '/'); await m.waitForSelector('.tab'); await wait(1500);
+  await m.tap('.term.active .owner-notice button'); await wait(800);
   ok(size.cols < 80, `手机打开同一个标签：服务器尺寸变成手机的 ${size.cols}×${size.rows}`);
   await m.context().close(); await wait(500);
 

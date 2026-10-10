@@ -207,7 +207,8 @@
   function reportWatching() {
     const focused = document.hasFocus() || !!pipWin?.document.hasFocus(); // 焦点在置顶小窗口上也算
     const front = (!document.hidden || !!pipWin) && focused && !idle;
-    for (const x of sessions) send(x, { type: 'watching', watching: !document.hidden && x === active, front });
+    // idle：5 分钟没动 —— 这台是使用者的话算不在用了，正在看的设备可以接管 (见 lib/session/size.js)
+    for (const x of sessions) send(x, { type: 'watching', watching: !document.hidden && x === active, front, idle });
   }
   window.addEventListener('focus', reportWatching);
   window.addEventListener('blur', reportWatching);

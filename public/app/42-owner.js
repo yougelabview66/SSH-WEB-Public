@@ -1,10 +1,11 @@
   // ------------------------------------------------------------ 一个标签同一时间只有一台设备在用，其他设备锁住
-  // 谁在用 (使用者)：最后连上的设备 —— 打开 / 刷新页面、页面在前台时断线重连、切到这个标签、点「在本机继续」、
-  // 点「重新连接」。终端按它的屏幕排版 (见 lib/session/size.js)。
-  // 其他设备锁住：终端上盖一层「正在 xx 上使用 · 在本机继续」，打字、按键、发送都不发出去 (下方输入框里打的字留着，
-  // 接管后按回车再发)，免得两边同时输入、或者忘在一边的设备误触。使用者关掉页面 / 锁屏断线了也一直锁着
-  // (提示改成「xx 已断开」)，点一下就接管
-  function updateOwnerNotice(s, device, online) {
+  // 先来先用 (规则见 lib/session/size.js)：别的设备打开 / 切到这个标签时，使用者还在用，那台就锁着；
+  // 点「在本机继续」、点「重新连接」才接管；使用者确定不在用了 (关掉页面 / 断线锁屏 / 页面到后台 / 切到别的标签 /
+  // 5 分钟没动)，5 秒后自动换给正在看的设备。
+  // 锁住的一端：镜像只看 —— 终端按使用者的行列排、整体缩放放进来，看到的和它一模一样 (不会折乱)，能看进度；
+  // 顶上一条提示 + 「在本机继续」。打字、按键、发送都不发出去 (下方输入框里打的字留着，接管后回车再发)
+  function updateOwnerNotice(s, m = {}) {
+    s.box.classList.toggle('mirror', s.mine === false);
     if (s.mine !== false) {
       s.ownerNotice?.remove();
       s.ownerNotice = null;
@@ -13,8 +14,7 @@
     if (!s.ownerNotice) {
       const el = document.createElement('div');
       el.className = 'owner-notice';
-      el.innerHTML = '<div class="owner-card"><div class="owner-title"></div>'
-        + '<div class="owner-sub">这里的排版按那台设备的屏幕排，也不能输入</div><button class="primary" type="button">在本机继续</button></div>';
+      el.innerHTML = '<span class="owner-title"></span><span class="owner-sub">只能看</span><button class="primary" type="button">在本机继续</button>';
       el.addEventListener('mousedown', (e) => e.preventDefault()); // 不抢走下方输入框的焦点
       el.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true }); // 不当成滑动终端
       el.addEventListener('click', (e) => {
@@ -24,8 +24,32 @@
       s.box.appendChild(el);
       s.ownerNotice = el;
     }
-    const name = device || '另一台设备';
-    s.ownerNotice.querySelector('.owner-title').textContent = online === false ? `${name}已断开 (锁屏或关了页面)` : `正在${name}上使用`;
+    const name = m.device || '另一台设备';
+    s.ownerNotice.querySelector('.owner-title').textContent = m.online === false ? `${name}已断开`
+      : m.busy === false ? `${name}没在用了` : `正在${name}上使用`;
+  }
+
+  // 镜像显示：锁住时终端按使用者的行列排，整体缩小放进这台设备的终端区域 (顶上提示条下面)；没锁住时照常按本机屏幕排 (rawFit)
+  function mirrorFit(s, rawFit) {
+    const el = s.term.element;
+    const m = s.srvSize;
+    if (s.mine !== false || !m?.cols || !el) {
+      if (el?.style.transform) { el.style.transform = ''; el.style.width = ''; el.style.height = ''; }
+      return rawFit();
+    }
+    if (s.term.cols !== m.cols || s.term.rows !== m.rows) s.term.resize(m.cols, m.rows);
+    const scale = () => {
+      const scr = el.querySelector('.xterm-screen');
+      if (!scr || !scr.offsetWidth || s.mine !== false) return;
+      const w = scr.offsetWidth, h = scr.offsetHeight;
+      const top = s.ownerNotice ? s.ownerNotice.offsetTop + s.ownerNotice.offsetHeight + 4 : 0; // 不被提示条挡住
+      const k = Math.min(s.box.clientWidth / w, (s.box.clientHeight - top) / h, 1);
+      el.style.width = w + 'px';
+      el.style.height = h + 'px';
+      el.style.transform = `translateY(${top}px) scale(${k.toFixed(4)})`;
+    };
+    scale();
+    requestAnimationFrame(scale); // 改行列后渲染器下一帧才更新大小
   }
 
   // 这个标签被别的设备锁住了：输入不发出去，晃一下提示，告诉怎么接管
@@ -41,15 +65,11 @@
   // 在本机继续：按这台设备的尺寸排版
   function claimSize(s) {
     if (!s.box.clientWidth) return;
+    s.mine = true; // 先在本地解锁、按本机屏幕排 (服务端收到 claim 一定给，马上会确认)
+    updateOwnerNotice(s);
     if (!s.scrollView) s.fit.fit();
     send(s, { type: 'resize', cols: s.term.cols, rows: s.term.rows, claim: true });
     // 光标去哪同点终端：终端的输入框里有没发送的字 (任何设备上打的都算) 时留在终端，方便接着改
     if (!isTouch && deskOn && s.cli.locked()) s.term.focus();
     else focusTerm(s);
   }
-
-  // 页面是在后台打开的 (比如浏览器恢复上次的标签)：那时不抢排版，等切过来看它时再按这台设备排版
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) return;
-    for (const s of sessions) if (s.claimOnShow) { s.claimOnShow = false; claimSize(s); }
-  });
