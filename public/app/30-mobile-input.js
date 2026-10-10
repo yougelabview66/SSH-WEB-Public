@@ -212,6 +212,7 @@
   });
 
   function mobileEnter() {
+    if (inputLocked(active)) return; // 别的设备在用：字留在输入框里，接管后再发
     if (cmdMode) { flushInput(); setCmdMode(false); }
     const text = mText();
     setMobileText('');

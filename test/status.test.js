@@ -44,7 +44,7 @@ run(async () => {
   // 两个网页同时开着：在一个里发送内容，另一个也变回空闲
   const q = await open(); await wait(1500);
   ok(await chip(q) === '完成', '第二个网页也显示完成');
-  await p.click('#dInput'); await p.keyboard.type('好的'); await p.keyboard.press('Enter'); await wait(1800);
+  await q.click('#dInput'); await q.keyboard.type('好的'); await q.keyboard.press('Enter'); await wait(1800); // q 是后打开的 (在用的)，p 被锁住
   ok(await chip(p) === '空闲' && await chip(q) === '空闲', '在一个网页里发送内容 → 两个网页都变回空闲 (' + await chip(p) + ' / ' + await chip(q) + ')');
 
   // 选择框：待选择

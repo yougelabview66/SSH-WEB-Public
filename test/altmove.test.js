@@ -145,7 +145,10 @@ claudeServer(2253); claudeServer(2254, true); claudeServer(2256, false, 'sgr'); 
   await p.reload(); await p.waitForSelector('.tab'); await wait(1500);
   await p.click('#dInput'); await clickRow(3);
   ok(await inTerm(), '刷新页面后：记忆还在 (存在服务器上)，点输入框锁定在终端');
-  await p2.keyboard.press('Enter'); await wait(600);
+  // p 刷新了 (最后连上的)，p2 被锁住：先点「在本机继续」再发送
+  await p2.click('.term.active .owner-notice button'); await wait(500);
+  await p2.locator('.term.active .xterm-helper-textarea').focus(); await p2.keyboard.press('Enter'); await wait(600);
+  await p.click('.term.active .owner-notice button'); await wait(500);
   await p.click('#dInput'); await clickRow(3);
   ok(await inDesk(), '另一台设备按回车发送后：这台点输入框回到下方输入框');
   await p2.context().close();

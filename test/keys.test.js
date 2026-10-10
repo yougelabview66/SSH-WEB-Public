@@ -54,6 +54,7 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   await wait(500);
   ok(JSON.stringify(await m2.locator('#mobileBar .mkeys button').allTextContents()) === JSON.stringify(now), '设置保存在服务端，另一台设备打开也一样');
   await m2.context().close();
+  await m.tap('.term.active .owner-notice button'); await wait(500); // 另一台手机打开过 (那时它在用)：这台被锁住，点一下接管
   // 恢复默认
   await m.tap('#mobileBar [data-a=kset]'); m.once('dialog', (d) => d.accept()); await m.tap('#keysReset'); await m.tap('#keysSave'); await wait(400);
   ok(JSON.stringify(await labels()) === JSON.stringify(DEF), '「恢复默认」回到原来的按键和顺序');

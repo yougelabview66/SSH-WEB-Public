@@ -20,7 +20,7 @@
 
   function deskSend() {
     const text = dInput.value;
-    if (!active?.sid) return;
+    if (!active?.sid || inputLocked(active)) return; // 别的设备在用：字留在输入框里，接管后再发
     setDeskText('');
     submitText(active, text);
   }
