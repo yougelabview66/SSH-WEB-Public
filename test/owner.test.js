@@ -1,7 +1,7 @@
 'use strict';
-// 一个标签同一时间只有一台设备在用，其他设备锁住 (先来先用)：
-// 别的设备打开时使用者还在用 → 那台锁住，镜像只看 (按使用者的行列缩放显示)、不能输入，点「在本机继续」才接管；
-// 使用者确定不在用了 (页面到后台 / 关掉页面) → 5 秒后自动换给正在看的设备 (断线 / 锁屏见 ownerlock.test.js，切标签见 tabsw.test.js)
+// 一个标签同一时间只有一台设备在用：最先用的客户端锁定这个标签，别的设备打开都锁着 —— 镜像显示 (按使用者的行列缩放)、
+// 不能输入，只有点弹窗里的「在本机继续」才接管；使用者到后台 / 关掉页面也不自动换。使用者自己刷新页面还是它
+// (断线 / 锁屏见 ownerlock.test.js，切标签见 tabsw.test.js)
 const { Server } = require('ssh2');
 const { BASE, ok, wait, shot, launch, addHost, run, hostKey, devices } = require('./helpers');
 
@@ -77,23 +77,27 @@ run(async () => {
   await d.reload(); await d.waitForSelector('.tab.active .dot.ok'); await wait(2000);
   ok(changes.length === 0 && (await notice(d)).includes('正在手机上使用'), `电脑刷新页面：还锁着，尺寸一次都没改 (${changes.map((c) => c.cols + '×' + c.rows).join(', ') || '无'})`);
 
-  // 手机切到后台 (不在用了)：5 秒后自动换给正在看的电脑
-  await setHidden(m, true); await wait(1500);
-  ok(size.cols === phone.cols && (await notice(d)).includes('手机没在用了'), `手机切到后台：先不换 (可能马上回来)，电脑上提示「${await notice(d)}」`);
-  await wait(5000);
-  ok(size.cols > 100 && (await notice(d)) === '' && !(await mirror(d)).on, `5 秒后自动换给电脑：按电脑排版 ${s()}，电脑解锁`);
-  // 手机回到前台：电脑在用，手机锁着
-  await setHidden(m, false); await wait(1500);
-  ok(size.cols > 100 && (await notice(m)).includes('正在电脑上使用'), `手机回到前台：电脑在用，手机锁着「${await notice(m)}」`);
-  // 手机切到后台又马上回来：不换
-  await m.tap('.term.active .owner-notice button'); await wait(1000);
-  await setHidden(m, true); await wait(1500); await setHidden(m, false); await wait(5000);
-  ok(size.cols === phone.cols && (await notice(m)) === '', `手机切到后台 1.5 秒又回来：还是手机在用 ${s()}`);
+  // 手机切到后台、关掉页面：都不自动换，电脑一直锁着，点了才接管
+  await setHidden(m, true); await wait(7000);
+  ok(size.cols === phone.cols && (await notice(d)).includes('正在手机上使用'), `手机切到后台 7 秒：不换 ${s()}，电脑还锁着「${await notice(d)}」`);
+  await setHidden(m, false);
+  await m.context().close(); await wait(7000);
+  ok(size.cols === phone.cols && (await notice(d)).includes('手机已断开'), `手机关掉页面 7 秒：不换 ${s()}，电脑上弹窗「${await notice(d)}」`);
+  await d.click('.term.active .owner-notice button'); await wait(1000);
+  ok(size.cols > 100 && (await notice(d)) === '', `电脑点「在本机继续」：按电脑排版 ${s()}`);
 
-  // 正在用的设备关掉页面：电脑上提示「手机已断开」，5 秒后换给电脑
-  await m.context().close(); await wait(1000);
-  ok((await notice(d)).includes('手机已断开'), `手机关掉页面：电脑上提示「${await notice(d)}」`);
-  await wait(5000);
-  ok(size.cols > 100 && (await notice(d)) === '', `5 秒后换给电脑：按电脑排版 ${s()}`);
+  // 使用者自己刷新页面 / 关掉再打开：还是它，不锁
+  changes = [];
+  await d.reload(); await d.waitForSelector('.tab.active .dot.ok'); await wait(2000);
+  ok((await notice(d)) === '' && changes.length === 0, `电脑 (在用) 刷新页面：还是它在用，不锁，尺寸没改 (${changes.length} 次)`);
+  const d2 = await d.context().newPage(); await d.close();
+  await d2.goto(BASE + '/'); await d2.waitForSelector('.tab.active .dot.ok'); await wait(2000);
+  ok((await notice(d2)) === '', '电脑关掉页面再打开 (同一个浏览器)：还是它在用');
+  // 别的设备打开 (使用者不在线也一样)：锁着
+  const t = await (await browser.newContext({ ...devices['iPad Mini'] })).newPage();
+  await t.goto(BASE + '/'); await t.waitForSelector('.tab.active .dot.ok'); await wait(1500);
+  ok((await notice(t)).includes('正在电脑上使用') && size.cols > 100, `平板打开：锁着「${await notice(t)}」`);
+  await d2.close(); await wait(1500);
+  ok((await notice(t)).includes('电脑已断开'), `电脑关掉页面：平板上「${await notice(t)}」，还锁着`);
   await browser.close();
 });

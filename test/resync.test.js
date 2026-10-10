@@ -32,7 +32,8 @@ run(async () => {
   ok(size.cols < 80, `手机打开同一个标签：服务器尺寸变成手机的 ${size.cols}×${size.rows}`);
   await m.context().close(); await wait(500);
 
-  // SSH 断开，在电脑上点「重新连接」
+  // 电脑点「在本机继续」(手机关了也不自动换)，SSH 断开，在电脑上点「重新连接」
+  await d.click('.term.active .owner-notice button'); await wait(800);
   shells[0].st.end(); await wait(1500);
   await d.click('.term.active .reconnect'); await d.waitForSelector('.tab.active .dot.ok'); await wait(1200);
   ok(shells.length === 2, '重新建立了 SSH 连接 (新的 shell)');

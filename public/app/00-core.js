@@ -10,6 +10,14 @@
   const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
   // 本页面的标识：服务端广播「新建会话 / 标签顺序」时，自己发起的就不用再处理
   const pageId = Math.random().toString(36).slice(2);
+  // 这个浏览器的编号 (存着，刷新 / 重新打开不变)：标签被这台设备锁定 (它是使用者) 时，刷新回来还是它 (见 lib/session/size.js 的 adoptOwner)
+  const deviceId = (() => {
+    try {
+      let v = localStorage.getItem('sshweb.deviceId');
+      if (!v) { v = Math.random().toString(36).slice(2); localStorage.setItem('sshweb.deviceId', v); }
+      return v;
+    } catch { return ''; }
+  })();
 
   // ------------------------------------------------------------ API
   async function api(method, url, body) {

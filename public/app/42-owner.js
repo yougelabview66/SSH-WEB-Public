@@ -1,8 +1,7 @@
   // ------------------------------------------------------------ 一个标签同一时间只有一台设备在用，其他设备锁住
-  // 先来先用 (规则见 lib/session/size.js)：别的设备打开 / 切到这个标签时，使用者还在用，那台就锁着；
-  // 点「在本机继续」、点「重新连接」才接管；使用者确定不在用了 (关掉页面 / 断线锁屏 / 页面到后台 / 切到别的标签 /
-  // 5 分钟没动)，5 秒后自动换给正在看的设备。
-  // 锁住的一端：镜像只看 —— 终端按使用者的行列排、整体缩放放进来，看到的和它一模一样 (不会折乱)，能看进度；
+  // 最先用的客户端锁定这个标签 (规则见 lib/session/size.js)：别的设备打开 / 切到这个标签都锁着，
+  // 只有点弹窗里的「在本机继续」才接管；使用者关掉页面 / 断线了也一直锁着 (弹窗提示「xx 已断开」)。
+  // 锁住的一端：镜像 —— 终端按使用者的行列排、整体缩放放进来，看到的和它一模一样 (不会折乱)，能看进度；
   // 终端中间一个弹窗「正在 xx 上使用 · 在本机继续」。打字、按键、发送都不发出去 (下方输入框里打的字留着，接管后回车再发)
   function updateOwnerNotice(s, m = {}) {
     s.box.classList.toggle('mirror', s.mine === false);
@@ -25,8 +24,7 @@
       s.ownerNotice = el;
     }
     const name = m.device || '另一台设备';
-    s.ownerNotice.querySelector('.owner-title').textContent = m.online === false ? `${name}已断开`
-      : m.busy === false ? `${name}没在用了` : `正在${name}上使用`;
+    s.ownerNotice.querySelector('.owner-title').textContent = m.online === false ? `${name}已断开` : `正在${name}上使用`;
   }
 
   // 镜像显示：锁住时终端按使用者的行列排，整体缩小放进这台设备的终端区域；没锁住时照常按本机屏幕排 (rawFit)
@@ -67,7 +65,7 @@
     s.mine = true; // 先在本地解锁、按本机屏幕排 (服务端收到 claim 一定给，马上会确认)
     updateOwnerNotice(s);
     if (!s.scrollView) s.fit.fit();
-    send(s, { type: 'resize', cols: s.term.cols, rows: s.term.rows, claim: true });
+    send(s, { type: 'resize', cols: s.term.cols, rows: s.term.rows, claim: 'take' });
     // 光标去哪同点终端：终端的输入框里有没发送的字 (任何设备上打的都算) 时留在终端，方便接着改
     if (!isTouch && deskOn && s.cli.locked()) s.term.focus();
     else focusTerm(s);

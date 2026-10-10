@@ -113,6 +113,7 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   // 手机上不显示
   const m = await (await browser.newContext({ ...devices['Pixel 7'] })).newPage(); m.on('pageerror', (e) => errors.push(e.message));
   await m.goto(BASE + '/'); await m.waitForSelector('.tab'); await wait(1200);
+  await m.tap('.term.active .owner-notice button'); await wait(500); // 电脑先用的：手机锁着，接管后才能按键
   ok(await m.isHidden('#deskBar') && await m.isVisible('#mobileBar') && await m.isHidden('#btnInput'), '手机上仍是原来的输入栏');
   got = ''; await m.tap('#mInput'); await m.keyboard.type('ab'); await wait(300);
   ok(got === '', '手机输入栏也是先本地编辑');

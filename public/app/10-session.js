@@ -197,8 +197,8 @@
 
     ws.onopen = () => {
       s.retries = 0;
-      // 连上时的尺寸。要不要当使用者 (终端按这台设备排版)：先来先用 —— 打开 / 刷新页面、页面在前台时重连，
-      // 原来的使用者不在用了才接管 ('auto'，服务端判断)，还在用就锁着；断线前就是使用者的，服务端认得出是同一个页面 (pageId)，重连回来还是它
+      // 连上时的尺寸。要不要当使用者 (终端按这台设备排版)：最先用的客户端锁定标签，别人只能点「在本机继续」接管 ——
+      // 这里只在没人用时才当 ('auto')；原来就是这台在用的 (同一个页面重连、同一个浏览器刷新)，服务端认得出 (pageId / deviceId)，还是它
       s.mine = null; // 断线期间别的设备可能接管了：等服务端重新告诉 (连上时会发)，不然下面同步尺寸时还当自己是使用者、抢回来
       const size = s.box.clientWidth ? { cols: s.term.cols, rows: s.term.rows } : {};
       size.claim = document.hidden ? false : 'auto';
@@ -207,9 +207,9 @@
       size.device = deviceName;
       if (s.remoteId) {
         // offset: 已收到的输出字节数，断线重连时服务端只补发缺的部分
-        ws.send(JSON.stringify({ type: 'attach', id: s.remoteId, offset: s.offset, pageId, ...size }));
+        ws.send(JSON.stringify({ type: 'attach', id: s.remoteId, offset: s.offset, pageId, deviceId, ...size }));
       } else {
-        ws.send(JSON.stringify({ type: 'connect', ...s.params, title: s.baseTitle, n: s.n, histHost: s.histHost, pageId, ...size }));
+        ws.send(JSON.stringify({ type: 'connect', ...s.params, title: s.baseTitle, n: s.n, histHost: s.histHost, pageId, deviceId, ...size }));
       }
       // 应用层心跳，避免 Cloudflare / 反向代理 100 秒空闲断开
       clearInterval(s.ping);
@@ -267,10 +267,10 @@
           if (active === s) { syncSize(s); focusTerm(s); }
         }
       } else if (m.type === 'hostkey') {
-        activate(s, false);
+        activate(s);
         hostkeyDialog(m, s.id).then((accept) => { if (accept != null) send(s, { type: 'hostkey-response', accept }); });
       } else if (m.type === 'prompt') {
-        activate(s, false);
+        activate(s);
         promptDialog(m, s.id).then((answers) => {
           if (answers === undefined) return; // 已在其他设备上回答
           send(s, answers ? { type: 'prompt-response', answers } : { type: 'prompt-response', cancel: true });
@@ -341,10 +341,9 @@
     s.restoring = null;
   }
 
-  // 让服务端终端尺寸与当前显示一致 (其他设备可能改过尺寸)。claim：'auto' = 切到这个标签，原来的使用者不在用就接管
-  function syncSize(s, claim) {
+  // 让服务端终端尺寸与当前显示一致 (其他设备可能改过尺寸)
+  function syncSize(s) {
     if (!s.box.clientWidth) return;
-    if (claim) s.wantClaim = claim;
     if (!s.scrollView) s.fit.fit();
     sendSize(s, s.term.cols, s.term.rows);
   }
@@ -357,7 +356,7 @@
       if (!d?.cols || !d?.rows) return;
       cols = d.cols; rows = d.rows;
     }
-    send(s, { type: 'resize', cols, rows, claim: s.mine ? true : (s.wantClaim || false) });
+    send(s, { type: 'resize', cols, rows, claim: s.mine ? 'auto' : (s.wantClaim || false) });
     s.wantClaim = false;
   }
 
@@ -366,7 +365,6 @@
       const b = document.createElement('button');
       b.className = 'primary reconnect';
       b.onclick = () => {
-        if (s.mine === false) claimSize(s); // 在这台设备上重新连接 = 在这里用 (按钮在锁住的提示上面也点得到)
         if (s.remoteId && s.ws && s.ws.readyState === WebSocket.OPEN) send(s, { type: 'reconnect' });
         else connect(s);
       };

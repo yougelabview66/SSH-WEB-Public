@@ -129,9 +129,8 @@
     if (active === s) document.title = `${s.title} - SSH-WEB`;
   }
 
-  // claim：切到这个标签 = 想在这台设备上用它：原来的使用者不在用了就接管，还在用就镜像只看、点「在本机继续」才接管 (见 42-owner.js)。
-  // 弹出主机密钥 / 验证码对话框时自动切过去的不算 (每台设备都会弹)；刚打开页面恢复标签时按 10-session.js 的规则
-  function activate(s, claim = true) {
+  // 切标签不接管：这个标签别的设备在用就锁着 (镜像显示)，点「在本机继续」才接管 (见 42-owner.js)
+  function activate(s) {
     const prev = active;
     active = s;
     sessions.forEach((x) => {
@@ -140,8 +139,7 @@
       if (x !== s) disableWebgl(x);
     });
     enableWebgl(s);
-    claim = claim && !!prev && prev !== s && !document.hidden ? 'auto' : false;
-    requestAnimationFrame(() => { syncSize(s, claim); focusTerm(s); });
+    requestAnimationFrame(() => { syncSize(s); focusTerm(s); });
     // 刚显示出来的标签：手机上有时只画出一部分 (要点一下输入框再收起键盘才完整)，切过来后照那样重新量一遍、整屏重画；
     // 新建的 WebGL 渲染器的字形缓存也清掉重画 (藏起来时量的字宽可能不对)
     if (prev !== s) {

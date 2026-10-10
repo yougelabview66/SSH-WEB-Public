@@ -1,6 +1,6 @@
 'use strict';
-// 切到一个标签：原来的使用者没在看它 (在别的标签 / 不在用)，这台直接接管、按本机屏幕铺满；还在看就锁着 (镜像只看)。
-// 使用者切走了 (不看这个标签了)，5 秒后换给正在看它的设备。打开 / 刷新页面时在后台的标签 (那时量不出尺寸)，切过去时一样
+// 切标签不接管：别的设备在用的标签切过去是锁着的 (镜像显示)，点「在本机继续」才接管、按本机屏幕铺满；
+// 自己在用的标签切过去照常铺满。打开 / 刷新页面时在后台的标签 (那时量不出尺寸)，切过去时一样
 const { Server } = require('ssh2');
 const { BASE, ok, wait, shot, launch, addHost, run, hostKey, devices } = require('./helpers');
 
@@ -37,34 +37,33 @@ run(async () => {
   ok(await d.locator('.tab').count() === 2, '电脑上开了两个标签');
   const deskSize = sizes[2];
 
-  // 手机打开页面 (停在标签 2，电脑正在看)：锁着，还是电脑的排版
+  // 手机打开页面：两个标签都是电脑在用，都锁着
   const m = await (await browser.newContext({ ...devices['Pixel 7'] })).newPage();
   await m.goto(BASE + '/'); await m.waitForSelector('.tab.active .dot.ok'); await wait(2000);
   let f = await info(m);
-  ok(f.tab.endsWith('-2') && f.notice.includes('正在电脑上使用') && sizes[2] === deskSize, `手机打开页面：电脑正在看这个标签，手机锁着「${f.notice}」`);
-
-  // 手机切到标签 1 (电脑没在看)：直接接管，铺满
+  ok(f.notice.includes('正在电脑上使用') && sizes[2] === deskSize, `手机打开页面：锁着「${f.notice}」`);
   f = await switchTab(m);
+  ok(f.notice.includes('正在电脑上使用') && sizes[1] === deskSize, `手机切到另一个标签 (电脑没在看)：也锁着，不接管 ${sizes[1]}`);
+
+  // 手机点「在本机继续」：接管这个标签、铺满
+  await m.tap('.term.active .owner-notice button'); await wait(1200);
+  f = await info(m);
   const phoneSize = sizes[1];
-  ok(f.tab.endsWith('-1') && filled(f) && f.notice === '' && phoneSize !== deskSize, `手机切到电脑没在看的标签：直接接管、铺满 ${desc(f)}，服务端 ${phoneSize}`);
+  ok(f.notice === '' && filled(f) && phoneSize !== deskSize, `手机点「在本机继续」：接管、铺满 ${desc(f)}，服务端 ${phoneSize}`);
   await m.screenshot({ path: shot('tabsw-phone.png') });
 
-  // 电脑切到标签 1 (手机正在看)：电脑锁着；标签 2 电脑不看了，但手机也没在看它，不换
+  // 电脑切到被手机接管的标签：锁着
   f = await switchTab(d);
-  ok(f.tab.endsWith('-1') && f.notice.includes('正在手机上使用') && sizes[1] === phoneSize, `电脑切到手机正在看的标签：锁着「${f.notice}」，还是手机的 ${sizes[1]}`);
+  ok(f.tab.endsWith('-1') && f.notice.includes('正在手机上使用') && sizes[1] === phoneSize, `电脑切到手机在用的标签：锁着「${f.notice}」`);
   await d.screenshot({ path: shot('tabsw-desk.png') });
+  // 电脑切回自己在用的标签：照常铺满
+  f = await switchTab(d);
+  ok(f.tab.endsWith('-2') && f.notice === '' && filled(f) && sizes[2] === deskSize, `电脑切回自己在用的标签：铺满 ${desc(f)}`);
 
-  // 手机切到标签 2：电脑不在看 2 → 手机接管 2；手机不看 1 了 → 5 秒后换给正在看 1 的电脑
-  f = await switchTab(m);
-  ok(f.tab.endsWith('-2') && filled(f) && f.notice === '' && sizes[2] === phoneSize, `手机切到标签 2：直接接管、铺满 ${desc(f)}`);
-  await wait(5000);
-  f = await info(d);
-  ok(f.notice === '' && filled(f) && sizes[1] === deskSize, `手机切走 5 秒后：标签 1 换给正在看的电脑、铺满 ${desc(f)}，服务端 ${sizes[1]}`);
-
-  // 手机刷新页面 (停在标签 2，没人在看别的)：还是手机在用；切到标签 1 (电脑正在看)：锁着
+  // 手机刷新页面：自己在用的标签还是它 (同一个浏览器)，切到电脑的标签锁着
   await m.reload(); await m.waitForSelector('.tab.active .dot.ok'); await wait(2000);
   f = await info(m);
-  ok(f.tab.endsWith('-2') && filled(f) && f.notice === '', `手机刷新页面：标签 2 还是手机在用、铺满 ${desc(f)}`);
+  ok(f.tab.endsWith('-1') && f.notice === '' && filled(f) && sizes[1] === phoneSize, `手机刷新页面：标签 1 还是手机在用、铺满 ${desc(f)}`);
   f = await switchTab(m);
-  ok(f.tab.endsWith('-1') && f.notice.includes('正在电脑上使用') && sizes[1] === deskSize, `手机切到电脑正在看的标签：锁着「${f.notice}」`);
+  ok(f.tab.endsWith('-2') && f.notice.includes('正在电脑上使用'), `手机切到电脑在用的标签：锁着「${f.notice}」`);
 });
