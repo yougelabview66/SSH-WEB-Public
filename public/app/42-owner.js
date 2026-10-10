@@ -3,7 +3,7 @@
   // 点「在本机继续」、点「重新连接」才接管；使用者确定不在用了 (关掉页面 / 断线锁屏 / 页面到后台 / 切到别的标签 /
   // 5 分钟没动)，5 秒后自动换给正在看的设备。
   // 锁住的一端：镜像只看 —— 终端按使用者的行列排、整体缩放放进来，看到的和它一模一样 (不会折乱)，能看进度；
-  // 顶上一条提示 + 「在本机继续」。打字、按键、发送都不发出去 (下方输入框里打的字留着，接管后回车再发)
+  // 终端中间一个弹窗「正在 xx 上使用 · 在本机继续」。打字、按键、发送都不发出去 (下方输入框里打的字留着，接管后回车再发)
   function updateOwnerNotice(s, m = {}) {
     s.box.classList.toggle('mirror', s.mine === false);
     if (s.mine !== false) {
@@ -14,7 +14,7 @@
     if (!s.ownerNotice) {
       const el = document.createElement('div');
       el.className = 'owner-notice';
-      el.innerHTML = '<span class="owner-title"></span><span class="owner-sub">只能看</span><button class="primary" type="button">在本机继续</button>';
+      el.innerHTML = '<div class="owner-title"></div><button class="primary" type="button">在本机继续</button>';
       el.addEventListener('mousedown', (e) => e.preventDefault()); // 不抢走下方输入框的焦点
       el.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true }); // 不当成滑动终端
       el.addEventListener('click', (e) => {
@@ -29,7 +29,7 @@
       : m.busy === false ? `${name}没在用了` : `正在${name}上使用`;
   }
 
-  // 镜像显示：锁住时终端按使用者的行列排，整体缩小放进这台设备的终端区域 (顶上提示条下面)；没锁住时照常按本机屏幕排 (rawFit)
+  // 镜像显示：锁住时终端按使用者的行列排，整体缩小放进这台设备的终端区域；没锁住时照常按本机屏幕排 (rawFit)
   function mirrorFit(s, rawFit) {
     const el = s.term.element;
     const m = s.srvSize;
@@ -42,11 +42,10 @@
       const scr = el.querySelector('.xterm-screen');
       if (!scr || !scr.offsetWidth || s.mine !== false) return;
       const w = scr.offsetWidth, h = scr.offsetHeight;
-      const top = s.ownerNotice ? s.ownerNotice.offsetTop + s.ownerNotice.offsetHeight + 4 : 0; // 不被提示条挡住
-      const k = Math.min(s.box.clientWidth / w, (s.box.clientHeight - top) / h, 1);
+      const k = Math.min(s.box.clientWidth / w, s.box.clientHeight / h, 1);
       el.style.width = w + 'px';
       el.style.height = h + 'px';
-      el.style.transform = `translateY(${top}px) scale(${k.toFixed(4)})`;
+      el.style.transform = `scale(${k.toFixed(4)})`;
     };
     scale();
     requestAnimationFrame(scale); // 改行列后渲染器下一帧才更新大小

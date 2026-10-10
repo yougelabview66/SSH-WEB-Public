@@ -449,15 +449,14 @@ body.no-select { user-select: none; -webkit-user-select: none; }
   border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 10px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 #emptyLoading { text-align: center; color: var(--muted); }
-/* 别的设备正在用这个会话 (见 42-owner.js)：顶上一条提示，终端镜像只看 */
-.owner-notice { position: absolute; top: 6px; left: 50%; transform: translateX(-50%); z-index: 6; display: flex; align-items: center;
-  gap: 8px; max-width: calc(100% - 16px); padding: 5px 6px 5px 12px; background: var(--panel); border: 1px solid var(--border);
-  border-radius: 8px; box-shadow: 0 4px 16px var(--shadow); font-size: 13px; white-space: nowrap; cursor: pointer; }
-.owner-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
-.owner-sub { color: var(--muted); }
-.owner-notice button { padding: 4px 10px; font-size: 13px; }
+/* 别的设备正在用这个会话 (见 42-owner.js)：终端中间一个弹窗，后面是镜像画面 */
+.owner-notice { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 6; display: flex;
+  flex-direction: column; align-items: center; gap: 12px; max-width: calc(100% - 32px); padding: 16px 22px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 6px 24px var(--shadow);
+  text-align: center; cursor: pointer; }
+.owner-title { font-size: 15px; font-weight: 600; }
 .owner-notice.nudge { animation: owner-nudge .4s; } /* 锁住时打字 / 发送：晃一下 */
-@keyframes owner-nudge { 20%, 60% { transform: translateX(calc(-50% - 6px)); } 40%, 80% { transform: translateX(calc(-50% + 6px)); } }
+@keyframes owner-nudge { 20%, 60% { transform: translate(calc(-50% - 6px), -50%); } 40%, 80% { transform: translate(calc(-50% + 6px), -50%); } }
 .term-box.mirror { overflow: hidden; }
 .term-box.mirror .xterm { transform-origin: top left; }
 .restoring { position: absolute; inset: 0; z-index: 4; display: flex; flex-direction: column; align-items: center;
