@@ -65,8 +65,10 @@
       fontFamily: s.term.options.fontFamily, fontSize: s.term.options.fontSize + 'px', lineHeight: lh + 'px',
       color: theme.foreground, background: theme.background,
     });
-    pre.innerHTML = ansiToHtml(data.replace(/\n+$/, ''), theme);
-    s.box.appendChild(v);
+    s.box.appendChild(v); // 先放进页面才量得出字宽
+    const text = data.replace(/\n+$/, '');
+    const cw = screen && screen.clientWidth / s.term.cols; // 实时画面一格多宽
+    pre.innerHTML = ansiToHtml(text, theme, cw ? gridFit(pre, text, cw) : null);
     s.scrollView = v;
     s.lsLine = lh;
     syncLsBars();
@@ -161,7 +163,72 @@
     return p;
   }
 
-  function ansiToHtml(text, theme) {
+  // 实时画面按格子画 (中文 / emoji 占两格，其他一格)，历史视图是普通文字：英文字宽和格子差一点点，
+  // 中文、emoji 和后备字体里的符号更是宽窄不一，表格的竖线对不齐、占满一行的分隔线放不下而折行。
+  // 量出每种字在历史视图里的实际宽度，用 letter-spacing 把每个字补成正好 1 / 2 格 (和实时画面一样宽)。
+  // 英文统一补在整个视图上；返回其他要单独补的字 → 补多少 px
+  function gridFit(pre, text, cw) {
+    const chars = [...new Set(text.replace(ANSI_RE, '').match(/[^\x00-\x7f]/gu) || [])].filter(cellWidth);
+    const probe = document.createElement('div');
+    probe.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;letter-spacing:0';
+    probe.innerHTML = `<span>${'0'.repeat(100)}</span>` + chars.map((c) => `<span>${esc(c)}</span>`).join('');
+    pre.appendChild(probe);
+    const w = [...probe.children].map((x) => x.getBoundingClientRect().width);
+    probe.remove();
+    const base = cw - w[0] / 100;
+    pre.style.letterSpacing = base.toFixed(3) + 'px';
+    const fix = new Map();
+    chars.forEach((c, i) => {
+      const d = cellWidth(c) * cw - w[i + 1];
+      if (Math.abs(d - base) > 0.01) fix.set(c, d.toFixed(3));
+    });
+    return fix;
+  }
+
+  // 一个字在终端里占几格 (同 tmux：中日韩文字、全角符号、emoji 两格，组合用的附加符号不占格)
+  const WIDE = [[0x1100, 0x115f], [0x231a, 0x231b], [0x2329, 0x232a], [0x23e9, 0x23ec], [0x23f0, 0x23f0], [0x23f3, 0x23f3],
+    [0x25fd, 0x25fe], [0x2614, 0x2615], [0x2648, 0x2653], [0x267f, 0x267f], [0x2693, 0x2693], [0x26a1, 0x26a1],
+    [0x26aa, 0x26ab], [0x26bd, 0x26be], [0x26c4, 0x26c5], [0x26ce, 0x26ce], [0x26d4, 0x26d4], [0x26ea, 0x26ea],
+    [0x26f2, 0x26f3], [0x26f5, 0x26f5], [0x26fa, 0x26fa], [0x26fd, 0x26fd], [0x2705, 0x2705], [0x270a, 0x270b],
+    [0x2728, 0x2728], [0x274c, 0x274c], [0x274e, 0x274e], [0x2753, 0x2755], [0x2757, 0x2757], [0x2795, 0x2797],
+    [0x27b0, 0x27b0], [0x27bf, 0x27bf], [0x2b1b, 0x2b1c], [0x2b50, 0x2b50], [0x2b55, 0x2b55], [0x2e80, 0x303e],
+    [0x3041, 0x4dbf], [0x4e00, 0xa4cf], [0xa960, 0xa97f], [0xac00, 0xd7a3], [0xf900, 0xfaff], [0xfe10, 0xfe19],
+    [0xfe30, 0xfe6f], [0xff00, 0xff60], [0xffe0, 0xffe6], [0x16fe0, 0x16fe4], [0x17000, 0x18aff], [0x1b000, 0x1b2ff],
+    [0x1f004, 0x1f004], [0x1f0cf, 0x1f0cf], [0x1f18e, 0x1f18e], [0x1f191, 0x1f19a], [0x1f200, 0x1f251],
+    [0x1f300, 0x1f64f], [0x1f680, 0x1f6ff], [0x1f7e0, 0x1f7eb], [0x1f90c, 0x1f9ff], [0x1fa70, 0x1faff], [0x20000, 0x3fffd]];
+  const ZERO_RE = /[\u0300-\u036f\u0483-\u0489\u0591-\u05bd\u0610-\u061a\u064b-\u065f\u200b-\u200f\u2028-\u202e\u2060-\u2064\u20d0-\u20ff\ufe00-\ufe0f\ufe20-\ufe2f\u{1f3fb}-\u{1f3ff}\u{e0100}-\u{e01ef}]/u;
+  function cellWidth(c) {
+    const cp = c.codePointAt(0);
+    if (cp < 0x300) return 1;
+    if (ZERO_RE.test(c)) return 0;
+    let lo = 0, hi = WIDE.length - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (cp < WIDE[mid][0]) hi = mid - 1;
+      else if (cp > WIDE[mid][1]) lo = mid + 1;
+      else return 2;
+    }
+    return 1;
+  }
+
+  // 按 gridFit 量出来的结果，把要单独补宽度的字包起来；不占格的附加符号跟着前一个字
+  function fitHtml(t, fix) {
+    if (!fix?.size) return esc(t);
+    let out = '', run = '', ls;
+    const flush = () => {
+      if (run) out += ls === undefined ? esc(run) : `<span style="letter-spacing:${ls}px">${esc(run)}</span>`;
+      run = '';
+    };
+    for (const c of t) {
+      const v = cellWidth(c) ? fix.get(c) : ls;
+      if (v !== ls) { flush(); ls = v; }
+      run += c;
+    }
+    flush();
+    return out;
+  }
+
+  function ansiToHtml(text, theme, fix) {
     const pal = palette256(theme);
     let fg = null, bg = null, fgIdx = -1, bold = false, dim = false, it = false, ul = false, inv = false, st = false;
     let out = '', last = 0, m;
@@ -181,7 +248,7 @@
     const put = (t) => {
       if (!t) return;
       const c = css();
-      out += c ? `<span style="${c}">${esc(t)}</span>` : esc(t);
+      out += c ? `<span style="${c}">${fitHtml(t, fix)}</span>` : fitHtml(t, fix);
     };
     ANSI_RE.lastIndex = 0;
     while ((m = ANSI_RE.exec(text))) {
