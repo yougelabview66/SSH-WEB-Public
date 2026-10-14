@@ -9,13 +9,13 @@ const hist = HIST.join('\n') + '\n';
 const OTHER = Array.from({ length: 200 }, (_, i) => `完全不相干的另一个 pane ${i}`).join('\n') + '\n';
 
 // mode: ok | none (没有 tmux) | busy (全屏程序) | other (抓到别的 pane) | plain (普通 shell，不开鼠标) | claude (全屏模式的 Claude Code)
-let got = ''; let ccUp = 0; let winChanges = 0; const execs = []; const envs = [];
+let got = ''; let ccUp = 0; let winChanges = 0; const execs = []; const envs = []; let rows = 24;
 function mockServer(port, mode) {
   new Server({ hostKeys: [hostKey()] }, (c) => {
     c.on('authentication', (ctx) => ctx.accept());
     c.on('ready', () => c.on('session', (acc) => {
       const s = acc();
-      s.on('pty', (a) => a()); s.on('window-change', (a) => { winChanges++; a && a(); });
+      s.on('pty', (a, r, info) => { rows = info.rows; a(); }); s.on('window-change', (a, r, info) => { winChanges++; rows = info.rows; a && a(); });
       s.on('env', (a, r, info) => { envs.push({ mode, key: info.key, val: info.val }); a && a(); });
       s.on('shell', (a) => {
         const st = a();
@@ -39,14 +39,18 @@ function mockServer(port, mode) {
           return;
         }
         // 像 tmux：备用屏幕 + 鼠标 (SGR)，屏幕上是历史的最后几十行，最后一行状态栏
-        st.write('\x1b[?1049h\x1b[?1000h\x1b[?1006h\x1b[H\x1b[2J' + HIST.slice(-60).join('\r\n') + '\x1b[999;1H\x1b[42m[main] 0:bash*\x1b[K\x1b[0m');
+        // (换行到状态栏那一行再画状态栏：pane 最后一行 = 历史最后一行，同真的 tmux)
+        st.write('\x1b[?1049h\x1b[?1000h\x1b[?1006h\x1b[H\x1b[2J' + HIST.slice(-60).join('\r\n') + '\r\n\x1b[999;1H\x1b[42m[main] 0:bash*\x1b[K\x1b[0m');
       });
       s.on('exec', (a, r, info) => {
         const ch = a();
         execs.push({ mode, cmd: info.command });
         const code = mode === 'none' ? 3 : mode === 'busy' || mode === 'claude' ? 4 : 0;
-        if (!code) ch.write(mode === 'other' ? OTHER : hist);
-        ch.exit(code); ch.end();
+        // 像真的 tmux：先一行 pane 的位置 (状态栏在最底下一行)；抓历史要等一会儿 (远程主机)
+        setTimeout(() => {
+          if (!code) ch.write(mode === 'other' ? OTHER : `SSHWEB-PANE 0 ${rows - 1} on bottom\n` + hist);
+          ch.exit(code); ch.end();
+        }, mode === 'ok' ? 400 : 0);
       });
     }));
   }).listen(port, '127.0.0.1');
@@ -88,6 +92,25 @@ const WHEEL_UP = '\x1b[<64;';
   ok(v && v.text.includes('line 1 普通输出') && v.text.includes('ERROR line 3000'), '历史视图里有完整的 3000 行');
   ok(v && /rgb|#/.test(v.red), '颜色保留 (ERROR 行是红色: ' + (v && v.red) + ')');
   ok(v && v.max - v.top > 0 && v.max - v.top < 200, `一开始停在底部往回几行的位置 (离底部 ${v && v.max - v.top}px)`);
+  // 和实时画面逐行对齐：滚到最底下时每一行都在实时画面里那一行的位置，最后一行是 tmux 状态栏
+  const align = () => p.evaluate(() => {
+    const pre = document.querySelector('.term.active .lscroll .ls-body');
+    const sc = document.querySelector('.term.active .xterm-screen').getBoundingClientRect();
+    pre.scrollTop = pre.scrollHeight;
+    const lh = parseFloat(pre.style.lineHeight);
+    const row = (needle) => {
+      const w = document.createTreeWalker(pre, NodeFilter.SHOW_TEXT); let n;
+      while ((n = w.nextNode())) {
+        const i = n.data.indexOf(needle);
+        if (i >= 0) { const r = document.createRange(); r.setStart(n, i); r.setEnd(n, i + 1); const b = r.getBoundingClientRect(); return ((b.top + b.bottom) / 2 - sc.top) / lh - 0.5; }
+      }
+      return null;
+    };
+    return { last: row('ERROR line 3000'), bar: row('[main] 0:bash*'), rows: Math.round(sc.height / lh) };
+  });
+  let al = await align();
+  ok(Math.abs(al.last - (al.rows - 2)) < 0.25 && Math.abs(al.bar - (al.rows - 1)) < 0.25,
+    `滚到最底下和实时画面逐行对齐：历史最后一行在第 ${al.last?.toFixed(2)} 行、状态栏在第 ${al.bar?.toFixed(2)} 行 (终端 ${al.rows} 行)`);
   const lsH = await p.evaluate(() => document.querySelector('.term.active .lscroll').getBoundingClientRect().height);
   ok(await p.isHidden('#deskBar') && lsH > termH0 + 40, `历史视图打开时输入框藏起来，历史视图变高 (${Math.round(termH0)} → ${Math.round(lsH)}px)`);
   ok(winChanges === 0, '输入框藏起来时终端尺寸不变 (不会让 tmux 整屏重画)');
@@ -101,6 +124,19 @@ const WHEEL_UP = '\x1b[<64;';
   got = ''; await p.keyboard.press('Escape'); await wait(300);
   ok(!(await view()) && !got.includes('\x1b'), 'Esc → 回到实时画面，Esc 没有发给终端');
   ok(await p.isVisible('#deskBar') && winChanges === 0 && await p.evaluate(() => document.activeElement.id) === 'dInput', '回到实时画面后输入框回来、焦点在输入框，终端尺寸始终没变');
+  // 打开过一次后：往上滚马上拿当前画面打开 (不等网络)，历史抓回来补到上面，正在看的位置不动
+  const ex00 = execs.length;
+  await wait(300); await overTerm(); await p.mouse.wheel(0, -100); await wait(150);
+  const early = await p.evaluate(() => { const pre = document.querySelector('.term.active .lscroll .ls-body');
+    return pre && { wait: !!pre.querySelector('.ls-wait'), text: pre.textContent }; });
+  ok(early && early.wait && early.text.includes('line 2999') && !early.text.includes('line 1 普通输出') && execs.length === ex00 + 1,
+    '再往上滚：不等历史抓回来，马上拿当前画面打开，同时去抓历史');
+  await wait(1000); v = await view();
+  ok(v && v.text.includes('line 1 普通输出') && !(await p.$('.term.active .ls-wait')) && Math.abs(v.max - v.top - 100) < 4,
+    `历史抓回来补到上面，正在看的位置不动 (离底部 ${v && v.max - v.top}px，就是滚轮这一下的 100px)`);
+  al = await align();
+  ok(Math.abs(al.last - (al.rows - 2)) < 0.25 && Math.abs(al.bar - (al.rows - 1)) < 0.25, '补上历史后最后一屏照样和实时画面对齐');
+  await p.keyboard.press('Escape'); await wait(300);
   // Ctrl+End → 直接回到实时画面 (以前只滚到历史视图底部，还要再往下滚一下)，不发给终端
   await overTerm(); await p.mouse.wheel(0, -100); await wait(1000);
   ok(!!(await view()) && await p.evaluate(() => document.activeElement.classList.contains('ls-body')), '打开历史视图时焦点在历史视图上');
