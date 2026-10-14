@@ -2,31 +2,24 @@
   // tmux 开了鼠标时，历史在 tmux 手里，每滚一格都要 tmux 重画整屏再传回来，要等一个来回。
   // 改成：往上滚的第一下，服务端在目标主机上 tmux capture-pane 抓出这个 pane 的历史，
   // 网页盖一层可以原生滚动的历史视图，之后滚动全在本地。Esc / 回到实时画面 / 滚到底再往下 / 打字 退出。
-  // 没有 tmux、pane 里是 vim 等全屏程序、分屏或抓到的不是这个画面时，照旧把滚轮交给程序。
-  // 切换要看不出来：历史视图的最后一屏和实时画面逐行对齐 (同样的位置、同样的状态栏)，打开时从这里滑上去，
-  // 回来时滚到底正好就是实时画面；这个标签打开过一次后，往上滚不等网络，先拿当前画面打开，历史抓回来再补到上面
+  // 没有 tmux、pane 里是 vim 等全屏程序、分屏或抓到的不是这个画面时，照旧把滚轮交给程序
   const LS_LINES = 3000;
   const LS_WHEEL_QUIET = 400; // 滚轮停这么久才算这一下滚动结束
 
-  const lsLineH = (s) => (s.box.querySelector('.xterm-screen')?.clientHeight / s.term.rows) || 17;
-  // 这一下滚轮要滚多少像素 (往上为正)
-  const wheelPx = (s, e) => -e.deltaY * (e.deltaMode === 1 ? lsLineH(s) : e.deltaMode === 2 ? lsLineH(s) * s.term.rows : 1);
 
   function localScrollWheel(s, e) {
     if (s.bypassWheel) return true;
     if (s.scrollView) { scrollViewWheel(s, e.deltaY); return false; }
     // 刚往下滚回实时画面：这一下滚动剩下的 (滚轮 / 触摸板末尾常带一两格反方向的抖动) 都不算，免得又打开历史视图
     if (s.lsWheelUntil > Date.now()) { s.lsWheelUntil = Date.now() + LS_WHEEL_QUIET; return false; }
-    if (s.scrollLoading) { s.heldWheel += e.deltaY < 0 ? 1 : -1; s.heldPx += wheelPx(s, e); return false; } // 等结果期间的滚动先记下 (往上为正)
+    if (s.scrollLoading) { s.heldWheel += e.deltaY < 0 ? 1 : -1; return false; } // 等结果期间的滚动先记下 (往上为正)
     const b = s.term.buffer.active;
     if (e.deltaY >= 0 || !s.sid || s.term.modes.mouseTrackingMode === 'none' || b.type !== 'alternate') return true;
     if (s.noTmuxUntil > Date.now()) return true;
     s.scrollLoading = true;
     s.heldWheel = 1;
-    s.heldPx = wheelPx(s, e);
     send(s, { type: 'tmux-history', lines: LS_LINES });
     s.lsTimer = setTimeout(() => onTmuxHistory(s, { ok: false, reason: 'timeout' }), 4000);
-    if (s.lsOk) openLocalScroll(s, null); // 这个标签用得了本地滚动：不等网络，先拿当前画面打开
     return false;
   }
 
@@ -48,15 +41,9 @@
     if (!s.scrollLoading) return;
     s.scrollLoading = false;
     clearTimeout(s.lsTimer);
-    const early = s.scrollView; // 先拿当前画面打开的
-    if (m.ok && !early && s.heldWheel <= 0) return; // 等结果期间又滚回来了 (最后是往下的)，不打开
-    if (m.ok && historyMatchesScreen(s, m.data)) {
-      s.lsOk = true;
-      return early ? fillLocalScroll(s, m) : openLocalScroll(s, m);
-    }
+    if (m.ok && s.heldWheel <= 0) return; // 等结果期间又滚回来了 (最后是往下的)，不打开
+    if (m.ok && historyMatchesScreen(s, m.data)) return openLocalScroll(s, m.data, Math.max(1, s.heldWheel));
     // 用不了：一段时间内不再尝试，把刚才拦下的滚轮补发给程序 (会进入 tmux 自己的复制模式，不弹提示)
-    s.lsOk = false;
-    if (early) closeLocalScroll(s);
     const reason = m.ok ? 'mismatch' : m.reason;
     s.noTmuxUntil = Date.now() + ({ 'no-tmux': 300000, busy: 5000, 'in-mode': 3000 }[reason] || 30000);
     const target = s.term.element.querySelector('.xterm-screen') || s.term.element;
@@ -71,34 +58,31 @@
     s.bypassWheel = false;
   }
 
-  // m = 抓回来的历史；为空 = 还没抓回来，先放当前画面
-  function openLocalScroll(s, m) {
+  function openLocalScroll(s, data, up) {
     const theme = termTheme();
     const screen = s.box.querySelector('.xterm-screen');
-    const lh = lsLineH(s);
+    const lh = (screen && screen.clientHeight / s.term.rows) || 17;
     const v = document.createElement('div');
     v.className = 'lscroll';
-    v.innerHTML = '<button class="ls-close" title="Esc / 往下滚到底 / 打字 也可以返回">回到实时画面 ✕</button><pre class="ls-body" tabindex="-1"></pre>';
+    v.innerHTML = '<button class="ls-close" title="Esc / 滚到最底下再往下 / 打字 也可以返回">回到实时画面 ✕</button><pre class="ls-body" tabindex="-1"></pre>';
     const pre = v.querySelector('.ls-body');
     Object.assign(pre.style, {
       fontFamily: s.term.options.fontFamily, fontSize: s.term.options.fontSize + 'px', lineHeight: lh + 'px',
       color: theme.foreground, background: theme.background,
     });
-    v.style.background = theme.background;
     s.box.appendChild(v); // 先放进页面才量得出字宽
+    const text = data.replace(/\n+$/, '');
+    const cw = screen && screen.clientWidth / s.term.cols; // 实时画面一格多宽
+    pre.innerHTML = ansiToHtml(text, theme, cw ? gridFit(pre, text, cw) : null);
     s.scrollView = v;
     s.lsLine = lh;
     syncLsBars();
-    // 输入栏藏起来后历史视图比终端高：底下留出多出来的高度，最后一屏每一行都还在实时画面里那一行的位置
-    if (screen) pre.style.paddingBottom = Math.max(0, v.getBoundingClientRect().bottom - screen.getBoundingClientRect().bottom) + 'px';
-    renderLs(s, pre, m);
-    pre.scrollTop = pre.scrollHeight; // 停在最底下 = 和实时画面一模一样
-    pre.scrollTo({ top: pre.scrollHeight - pre.clientHeight - Math.max(lh, s.heldPx || 0), behavior: 'smooth' }); // 照这一下滚轮滑上去
+    pre.scrollTop = pre.scrollHeight - pre.clientHeight - up * 3 * lh; // 和滚轮一样往回看几行
     pre.focus({ preventScroll: true }); // 输入框藏起来了，焦点放这里：PageUp / PageDown / Home / 方向键直接滚历史
     v.querySelector('.ls-close').addEventListener('click', () => closeLocalScroll(s));
-    // 电脑：往下滚到底 = 回到实时画面 (最后一屏和实时画面一样，不用到底了再多滚一下)
+    // 电脑：在最底下还往下滚 = 回到实时画面
     pre.addEventListener('wheel', (e) => {
-      if (e.deltaY > 0 && toBottom(pre) <= -wheelPx(s, e)) { e.preventDefault(); closeByWheel(s); }
+      if (e.deltaY > 0 && atBottom(pre)) { e.preventDefault(); closeByWheel(s); }
     }, { passive: false });
     // 电脑：选中文字松开鼠标就自动复制 (同终端里 tmux 开鼠标后的选中即复制)
     pre.addEventListener('mouseup', (e) => {
@@ -124,81 +108,18 @@
     });
   }
 
-  // 先拿当前画面打开的，历史抓回来了：换成完整的历史，正在看的那一行不动 (两者最后一屏是对齐的，按离底部的距离保持)
-  function fillLocalScroll(s, m) {
-    const pre = s.scrollView.querySelector('.ls-body');
-    const fromBottom = pre.scrollHeight - pre.scrollTop;
-    renderLs(s, pre, m);
-    pre.scrollTop = pre.scrollHeight - fromBottom;
-  }
-
-  // 历史视图的内容：抓到的历史 (末尾就是 pane 现在这一屏，连底下的空行) + 终端里 pane 下面那几行 (tmux 状态栏)，
-  // 和实时画面逐行对上。还没抓回来时放当前画面，上面留一段空白可以先接着往上滚
-  function renderLs(s, pre, m) {
-    const rows = s.term.rows;
-    let text;
-    if (m) {
-      const end = paneEnd(s, m.pane);
-      text = m.data.replace(/\n$/, '') + (end < rows ? '\n' + screenAnsi(s, end, rows) : '');
-    } else text = screenAnsi(s, 0, rows);
-    const theme = termTheme();
-    const screen = s.box.querySelector('.xterm-screen');
-    const cw = screen && screen.clientWidth / s.term.cols; // 实时画面一格多宽
-    const html = ansiToHtml(text, theme, cw ? gridFit(pre, text, cw) : null);
-    pre.innerHTML = m ? html : `<div class="ls-wait" style="height:${pre.clientHeight * 2}px"></div>` + html;
-  }
-
-  // pane 最后一行的下一行在终端里是第几行 (下面是状态栏)；服务端没给 pane 位置时按 tmux 默认 (状态栏一行、在最底下) 算
-  function paneEnd(s, p) {
-    if (!p) return s.term.rows - 1;
-    const st = p.status === 'off' ? 0 : p.status === 'on' ? 1 : (parseInt(p.status, 10) || 1);
-    return Math.min(s.term.rows, (p.position === 'top' ? st : 0) + p.top + p.height);
-  }
-
-  // 终端屏幕上第 from ~ to-1 行转成带颜色 (SGR) 的文字，和 tmux capture-pane -e 一样交给 ansiToHtml
-  function screenAnsi(s, from, to) {
-    const b = s.term.buffer.active, out = [];
-    const cell = b.getNullCell();
-    for (let y = from; y < to; y++) {
-      const line = b.getLine(b.viewportY + y);
-      let end = line ? line.length : 0;
-      while (end > 0 && blankCell(line.getCell(end - 1, cell))) end--;
-      let t = '', last = '';
-      for (let x = 0; x < end; x++) {
-        const c = line.getCell(x, cell);
-        if (!c.getWidth()) continue; // 中文 / emoji 占两格，后一格是空的
-        const sgr = cellSgr(c);
-        if (sgr !== last) { t += `\x1b[0${sgr}m`; last = sgr; }
-        t += c.getChars() || ' ';
-      }
-      out.push(last ? t + '\x1b[0m' : t);
-    }
-    return out.join('\n');
-  }
-  const blankCell = (c) => (c.getChars() || ' ') === ' ' && c.isBgDefault() && !c.isInverse();
-  const sgrColor = (c, fg) => {
-    const v = fg ? c.getFgColor() : c.getBgColor();
-    if (fg ? c.isFgRGB() : c.isBgRGB()) return `;${fg ? 38 : 48};2;${(v >> 16) & 255};${(v >> 8) & 255};${v & 255}`;
-    if (!(fg ? c.isFgPalette() : c.isBgPalette())) return '';
-    return v < 8 ? `;${(fg ? 30 : 40) + v}` : v < 16 ? `;${(fg ? 82 : 92) + v}` : `;${fg ? 38 : 48};5;${v}`;
-  };
-  const cellSgr = (c) => (c.isBold() ? ';1' : '') + (c.isDim() ? ';2' : '') + (c.isItalic() ? ';3' : '') + (c.isUnderline() ? ';4' : '')
-    + (c.isInverse() ? ';7' : '') + (c.isStrikethrough() ? ';9' : '') + sgrColor(c, true) + sgrColor(c, false);
-
   // 历史视图打开时把输入栏 (电脑输入框 / 手机输入栏) 藏起来，多出来的地方给历史视图
   function syncLsBars() {
     $('#app').classList.toggle('ls-open', !!active?.scrollView);
   }
 
-  const toBottom = (el) => el.scrollHeight - el.clientHeight - el.scrollTop;
-  const atBottom = (el) => toBottom(el) <= 2;
+  const atBottom = (el) => el.scrollTop + el.clientHeight >= el.scrollHeight - 2;
 
   // 手指一开始是在终端上滑的，这一次滑动剩下的滚轮事件继续滚历史视图
   function scrollViewWheel(s, deltaY) {
     const pre = s.scrollView.querySelector('.ls-body');
-    const step = 3 * s.lsLine;
-    if (deltaY > 0 && toBottom(pre) <= step) return closeByWheel(s); // 这一下就到底了
-    pre.scrollTop += Math.sign(deltaY) * step;
+    if (deltaY > 0 && atBottom(pre)) return closeByWheel(s);
+    pre.scrollTop += Math.sign(deltaY) * 3 * s.lsLine;
   }
 
   function closeByWheel(s) {
@@ -206,21 +127,10 @@
     closeLocalScroll(s);
   }
 
-  // 回到实时画面：历史视图很快淡出 (滚到底时和实时画面一模一样，看不出来；看历史期间又有新输出时不会一下子跳变)，
-  // 输入栏淡入 (它回来的地方原来是历史视图底下留空的那一截)
   function closeLocalScroll(s) {
-    const v = s.scrollView;
-    if (!v) return;
-    if (s.scrollLoading) { s.scrollLoading = false; clearTimeout(s.lsTimer); } // 先拿当前画面打开的，历史还没抓回来
+    if (!s.scrollView) return;
+    s.scrollView.remove();
     s.scrollView = null;
-    v.classList.add('ls-gone'); // 淡出期间点不到、滚轮直接落到终端上
-    setTimeout(() => v.remove(), 150);
-    const app = $('#app');
-    if (app.classList.contains('ls-open') && !active?.scrollView) {
-      app.classList.add('ls-back');
-      clearTimeout(closeLocalScroll.t);
-      closeLocalScroll.t = setTimeout(() => app.classList.remove('ls-back'), 250);
-    }
     syncLsBars();
     if (s === active) focusTerm(s);
   }
