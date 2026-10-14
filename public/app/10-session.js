@@ -315,19 +315,9 @@
         // 在其他设备上关闭了这个标签
         closeSession(s, true);
       } else if (m.type === 'gone') {
-        if (m.closed) return closeSession(s, true); // 断线期间 (锁屏) 在别的设备上关掉了
-        doneRestoring(s);
-        s.mine = null; // 会话没了：撤掉「正在 xx 上使用」(重新连接是新会话，这台就是使用者)
-        updateOwnerNotice(s);
-        if (active === s && s.box.clientWidth && !s.scrollView) s.fit.fit();
-        // 服务端没有这个会话了 (服务重启过)
-        s.remoteId = null;
-        s.offset = undefined;
-        s.sid = null;
-        setStatus(s, 'bad');
-        updateSftpBtn();
-        s.term.write('\r\n\x1b[33m后台会话已不存在 (服务可能重启过)\x1b[0m\r\n');
-        showReconnect(s, '重新连接');
+        // 服务端没有这个会话了 (别的设备关掉了 / 服务重启过)：标签以服务端为准，直接关掉。
+        // 以前服务重启后留着标签提示「后台会话已不存在」，别的设备新开的又同步过来，标签越来越多
+        closeSession(s, true);
       }
     };
     ws.onclose = () => {

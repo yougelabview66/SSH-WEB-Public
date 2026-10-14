@@ -74,10 +74,15 @@
     if (!active) activate(s);
   }
 
+  // 和服务端对账，标签以服务端为准：补上别的设备新开的，关掉服务端已经没有的 (服务重启过、事件连接断开期间被关掉)
   async function syncTabs() {
-    const list = await fetchSessions();
-    // 本页正在新建的标签还不知道自己的会话 id，稍后再对账，避免重复
-    if (sessions.some((x) => !x.remoteId && !x.closed)) { setTimeout(syncTabs, 1500); return; }
+    const known = new Set(sessions.map((x) => x.remoteId).filter(Boolean)); // 问之前就有的，问的途中刚建好的不算
+    let list;
+    try { list = await api('GET', '/api/sessions'); } catch { return; } // 没问到 (断网 / 登录过期) 不能当成一个都没有
+    // 本页正在新建的标签 (还没有会话 id、也没出错) 还不知道自己的会话 id，稍后再对账，避免重复
+    if (sessions.some((x) => !x.remoteId && !x.reconnectBtn)) { setTimeout(syncTabs, 1500); return; }
+    const ids = new Set(list.map((x) => x.id));
+    sessions.filter((x) => known.has(x.remoteId) && !ids.has(x.remoteId)).forEach((x) => closeSession(x, true));
     list.forEach(addRemoteTab);
     applyTabOrder(list.map((x) => x.id));
   }
