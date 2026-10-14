@@ -34,7 +34,7 @@
 - **手机 / 弱网优化**：终端输出压缩传输；断线重连只补发缺少的输出，不重画整屏；终端用 GPU (WebGL) 渲染，Claude Code、top 等频繁刷新的程序更流畅省电（不支持时自动退回普通渲染）
 - **支持连接通过 Cloudflare Tunnel 暴露 SSH 的 NAS**（相当于内置了 `cloudflared access ssh`，支持 Access Service Token）
 - 主机列表（分组、搜索），凭据用 AES-256-GCM 加密保存在服务器，浏览器拿不到
-- 网页登录保护、登录失败限流、签名 Cookie
+- 网页登录保护、登录失败限流、签名 Cookie；每台设备各自登录，用着自动续期，默认 30 天没用过才要重新登录
 - 可限制允许连接的目标主机（`ALLOWED_HOSTS`）
 - WebSocket 心跳，适配 Cloudflare / 反向代理的空闲超时
 - 前端依赖全部本地提供，内网离线可用
@@ -71,7 +71,7 @@ docker run -d --name ssh-web --restart unless-stopped \
 | `AUTH_USER` | `admin` | 网页登录用户名 |
 | `AUTH_PASSWORD` | 空 | 网页登录密码，**为空则不需要登录**（仅限可信内网） |
 | `SECRET` | 自动生成 | 用于 Cookie 签名和凭据加密，自动生成的保存在 `/data/.secret`。**丢失后已保存的密码无法解密** |
-| `SESSION_HOURS` | `24` | 登录有效期（小时） |
+| `SESSION_HOURS` | `720` | 登录有效期（小时）：多久没用过就要重新登录，默认 30 天；打开页面、页面开着时会自动续期（以前默认 24 小时、从登录起算不续期） |
 | `COOKIE_SECURE` | `false` | 通过 HTTPS 访问时设为 `true` |
 | `ALLOWED_HOSTS` | 空（不限） | 允许连接的主机，逗号分隔，`*` 只匹配一段（不跨 `.`），如 `192.168.1.*,*.example.com`；Cloudflare 隧道按隧道主机名校验 |
 | `TRUST_PROXY` | `loopback, linklocal, uniquelocal` | 信任哪些地址发来的 `X-Forwarded-For`（用于登录限流取真实 IP）。默认只信任内网地址（反向代理、cloudflared 容器），防止公网伪造 |
