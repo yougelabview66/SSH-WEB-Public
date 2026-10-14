@@ -4,10 +4,14 @@
   // 网页盖一层可以原生滚动的历史视图，之后滚动全在本地。Esc / 回到实时画面 / 滚到底再往下 / 打字 退出。
   // 没有 tmux、pane 里是 vim 等全屏程序、分屏或抓到的不是这个画面时，照旧把滚轮交给程序
   const LS_LINES = 3000;
+  const LS_WHEEL_QUIET = 400; // 滚轮停这么久才算这一下滚动结束
+
 
   function localScrollWheel(s, e) {
     if (s.bypassWheel) return true;
     if (s.scrollView) { scrollViewWheel(s, e.deltaY); return false; }
+    // 刚往下滚回实时画面：这一下滚动剩下的 (滚轮 / 触摸板末尾常带一两格反方向的抖动) 都不算，免得又打开历史视图
+    if (s.lsWheelUntil > Date.now()) { s.lsWheelUntil = Date.now() + LS_WHEEL_QUIET; return false; }
     if (s.scrollLoading) { s.heldWheel += e.deltaY < 0 ? 1 : -1; return false; } // 等结果期间的滚动先记下 (往上为正)
     const b = s.term.buffer.active;
     if (e.deltaY >= 0 || !s.sid || s.term.modes.mouseTrackingMode === 'none' || b.type !== 'alternate') return true;
@@ -37,6 +41,7 @@
     if (!s.scrollLoading) return;
     s.scrollLoading = false;
     clearTimeout(s.lsTimer);
+    if (m.ok && s.heldWheel <= 0) return; // 等结果期间又滚回来了 (最后是往下的)，不打开
     if (m.ok && historyMatchesScreen(s, m.data)) return openLocalScroll(s, m.data, Math.max(1, s.heldWheel));
     // 用不了：一段时间内不再尝试，把刚才拦下的滚轮补发给程序 (会进入 tmux 自己的复制模式，不弹提示)
     const reason = m.ok ? 'mismatch' : m.reason;
@@ -77,7 +82,7 @@
     v.querySelector('.ls-close').addEventListener('click', () => closeLocalScroll(s));
     // 电脑：在最底下还往下滚 = 回到实时画面
     pre.addEventListener('wheel', (e) => {
-      if (e.deltaY > 0 && atBottom(pre)) { e.preventDefault(); closeLocalScroll(s); }
+      if (e.deltaY > 0 && atBottom(pre)) { e.preventDefault(); closeByWheel(s); }
     }, { passive: false });
     // 电脑：选中文字松开鼠标就自动复制 (同终端里 tmux 开鼠标后的选中即复制)
     pre.addEventListener('mouseup', (e) => {
@@ -113,8 +118,13 @@
   // 手指一开始是在终端上滑的，这一次滑动剩下的滚轮事件继续滚历史视图
   function scrollViewWheel(s, deltaY) {
     const pre = s.scrollView.querySelector('.ls-body');
-    if (deltaY > 0 && atBottom(pre)) return closeLocalScroll(s);
+    if (deltaY > 0 && atBottom(pre)) return closeByWheel(s);
     pre.scrollTop += Math.sign(deltaY) * 3 * s.lsLine;
+  }
+
+  function closeByWheel(s) {
+    s.lsWheelUntil = Date.now() + LS_WHEEL_QUIET;
+    closeLocalScroll(s);
   }
 
   function closeLocalScroll(s) {

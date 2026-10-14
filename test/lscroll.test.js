@@ -124,6 +124,21 @@ const WHEEL_UP = '\x1b[<64;';
   await p.evaluate(() => { const pre = document.querySelector('.term.active .ls-body'); pre.scrollTop = pre.scrollHeight; });
   await wait(200); await p.mouse.wheel(0, 200); await wait(300);
   ok(!(await view()), '滚到最底下再往下滚 → 回到实时画面');
+  await wait(300); // 停一下：这一下滚动结束
+  // 滚轮 / 触摸板往下滚回实时画面时，同一下滚动末尾常带一两格反方向的抖动：不能把历史视图又打开
+  const ex1 = execs.length;
+  await overTerm(); await p.mouse.wheel(0, -100); await wait(1000);
+  await p.evaluate(() => { const pre = document.querySelector('.term.active .ls-body'); pre.scrollTop = pre.scrollHeight; });
+  await wait(200); got = '';
+  await p.mouse.wheel(0, 200); await wait(30); await p.mouse.wheel(0, 100); await wait(30); await p.mouse.wheel(0, -40); await wait(30); await p.mouse.wheel(0, 100);
+  await wait(1200);
+  ok(!(await view()) && execs.length === ex1 + 1 && !got.includes('\x1b[<6'), '往下滚回实时画面时夹着一下往上的抖动 → 不会又跳回历史视图，剩下的滚动也不发给 tmux');
+  await p.mouse.wheel(0, -100); await wait(1000);
+  ok(!!(await view()) && execs.length === ex1 + 2, '停一下再往上滚 → 照常打开历史视图');
+  await p.click('.term.active .ls-close'); await wait(500);
+  // 往上滚一下马上又往下滚回来 (历史还没抓回来)：最后是往下的，不打开
+  await overTerm(); await p.mouse.wheel(0, -100); await wait(20); await p.mouse.wheel(0, 100); await p.mouse.wheel(0, 100); await wait(1000);
+  ok(!(await view()) && execs.length === ex1 + 3, '往上滚一下又马上往下滚回来 → 历史抓回来也不打开');
   // 打字 → 返回
   await overTerm(); await p.mouse.wheel(0, -100); await wait(1000);
   got = ''; await p.keyboard.type('ls'); await p.keyboard.press('Enter'); await wait(400);
