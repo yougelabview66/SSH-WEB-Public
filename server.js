@@ -72,7 +72,7 @@ process.on('uncaughtException', (e) => console.error('[未捕获的异常]', e))
 const shutdown = () => {
   for (const s of sessions.values()) s.closeConn();
   ws.wss.clients.forEach((c) => c.close());
-  server.close(() => process.exit(0));
+  server.close(() => audit.flush().then(() => process.exit(0))); // 等审计日志写完
   setTimeout(() => process.exit(0), 3000).unref();
 };
 process.on('SIGTERM', shutdown);

@@ -48,7 +48,7 @@
 
   // ------------------------------------------------------------ 连接日志 (审计日志里这个会话的记录，见 lib/audit.js)
   const AUDIT_EV = {
-    'ssh-open': '新建会话', 'ssh-attach': '新设备 / 新来源打开', 'ssh-reconnect': '重新连接', 'ssh-ok': '已连上主机',
+    'ssh-open': '新建会话', 'ssh-attach': '打开 / 重连', 'ssh-reconnect': '重新连接', 'ssh-ok': '已连上主机',
     'ssh-fail': '连接失败', 'ssh-end': '连接断开', 'ssh-close': '关闭会话',
   };
   const auditHost = (hp) => String(hp || '').replace(/:\d+$/, ''); // 「地址:端口」里的地址
@@ -62,39 +62,34 @@
   // 归属地：内网 / 国家 地区 城市 · 运营商
   const geoText = (g) => (!g ? '' : g.local ? '内网'
     : [g.country, g.region !== g.city ? g.region : '', g.city].filter(Boolean).join(' ') + (g.isp ? ' · ' + g.isp : ''));
-  // 出口 IP 是不是代理：归属地服务认定是代理 / VPN，或者请求头里声明经过了代理 → 是；只是机房 IP → 可能；查不到归属地 → 未知
-  function proxyOf(x, g) {
-    const why = [];
-    if (g?.proxy) why.push('代理 / VPN IP');
-    else if (g?.hosting) why.push('机房 IP');
-    if (x.claimed?.length) why.push('请求头声明经过 ' + x.claimed.join(', '));
-    const v = g?.proxy || x.claimed?.length ? '是' : g?.hosting ? '可能' : g ? '否' : '未知';
-    return { v, cls: v === '是' ? 'bad' : v === '可能' ? 'warn' : '', text: v + (why.length ? ' · ' + why.join('；') : '') };
-  }
+  // 是否用了代理：服务端判断好存在记录里 (见 lib/audit.js 的 judge)；是 = 红、可能 = 黄
+  const proxyText = (p) => (!p ? '未知' : p.v + (p.why?.length ? ' · ' + p.why.join('；') : ''));
+  const proxyCls = (p) => (p?.v === '是' ? 'bad' : p?.v === '可能' ? 'warn' : '');
   // 和磁盘一行一样：左边名称、右边数值
   const kv = (k, v, cls = '') => `<div class="sec-t kv"><span>${k}</span><span class="val ${cls}">${esc(v)}</span></div>`;
 
-  function auditRow(x, geo, geoip) {
+  // n：同一来源连着挂载了几次 (刷新、断线重连，见 foldAudit)
+  function auditRow(x, geoip, n = 1) {
     const noGeo = geoip ? '查不到' : '未开启 (GEOIP=off)';
+    const name = (AUDIT_EV[x.ev] || x.ev) + (n > 1 ? ` ×${n}` : '') + (x.device ? ' · ' + x.device : '');
     let h = `<div class="arow"${x.ua ? ` title="${esc(x.ua)}"` : ''}><div class="sec-t ah">`
-      + `<span class="mnt">${esc((AUDIT_EV[x.ev] || x.ev) + (x.device ? ' · ' + x.device : ''))}</span><span class="val">${esc(auditTime(x.t))}</span></div>`;
+      + `<span class="mnt">${esc(name)}</span><span class="val">${esc(auditTime(x.t))}</span></div>`;
     if (x.ev === 'ssh-ok') {
       // SSH-WEB 到主机这一段：直连记的是主机 IP；Cloudflare 隧道记的是 Cloudflare 边缘节点
       const remote = auditHost(x.out?.remote);
-      const g = geo[remote];
+      const g = geoText(x.out?.geo);
       if (x.route === 'cloudflare') {
         h += kv('主机', x.target) + kv('代理', '是 · Cloudflare 隧道 ' + (x.via || ''), 'warn');
-        if (remote) h += kv('边缘节点', remote + (geoText(g) ? ' · ' + geoText(g) : ''));
+        if (remote) h += kv('边缘节点', remote + (g ? ' · ' + g : ''));
       } else {
-        h += kv('主机 IP', remote ? x.out.remote + (geoText(g) ? ' · ' + geoText(g) : '') : x.target) + kv('代理', '否 · 直连');
+        h += kv('主机 IP', remote ? x.out.remote + (g ? ' · ' + g : '') : x.target) + kv('代理', '否 · 直连');
       }
       if (x.out?.local) h += kv('本机', x.out.local);
     } else if (x.ip) {
       // 谁打开的：出口 IP、归属地、是否代理，经过哪些代理到 SSH-WEB (连接 IP 是最后一跳)
-      const g = geo[x.ip];
-      const p = proxyOf(x, g);
       const hops = (x.path || []).slice(1);
-      h += kv('主机', x.target) + kv('出口 IP', x.ip) + kv('归属地', geoText(g) || noGeo) + kv('代理', p.text, p.cls)
+      h += kv('主机', x.target) + kv('出口 IP', x.ip) + kv('归属地', geoText(x.geo) || noGeo)
+        + kv('代理', proxyText(x.proxy), proxyCls(x.proxy))
         + kv('连接 IP', hops.length ? `${x.peer} (经 ${x.cf ? 'Cloudflare → ' : ''}${hops.join(' → ')})` : `${x.peer} (直连)`);
     } else if (x.ev === 'ssh-close' && x.reason === 'idle') {
       h += kv('原因', '无人查看太久，自动关闭');
@@ -104,6 +99,18 @@
     return h + '</div>';
   }
 
+  // 服务端每次挂载都记 (本地文件是全的)；面板上同一会话、同一设备、同一来源连着的挂载 (刷新、断线重连) 合成一条，显示次数
+  function foldAudit(entries) {
+    const out = [];
+    const key = (x) => x.ev === 'ssh-attach' && [x.session, x.device, x.ip, (x.path || []).join('>'), x.proxy?.v].join('|');
+    for (const x of entries) {
+      const last = out[out.length - 1];
+      if (last && key(x) && key(x) === key(last.x)) last.n++;
+      else out.push({ x, n: 1 });
+    }
+    return out;
+  }
+
   function createMonitor(s) {
     const el = document.createElement('div');
     el.className = 'mon';
@@ -111,7 +118,7 @@
       <div class="mon-head"><span class="mh">性能监控</span><button data-a="close" title="关闭">×</button></div>
       <div class="sub m-os"></div>
       <div class="sub m-up"></div>
-      <div class="sec"><div class="sec-t"><b>连接日志</b><span class="ptabs"><button class="m-aref">刷新</button></span></div>
+      <div class="sec"><div class="sec-t"><b>连接日志 (这台主机)</b><span class="ptabs"><button class="m-aref">刷新</button></span></div>
         <div class="m-alist"><div class="note">正在加载…</div></div></div>
       <div class="m-body"><div class="note" style="margin-top:14px">正在采集…</div></div>
       <div class="err m-err"></div>`;
@@ -131,7 +138,7 @@
         if (sid !== s.sid) return;
         const top = list.scrollTop;
         list.innerHTML = !d.enabled ? '<div class="note">审计日志已关闭 (AUDIT_LOG=off)</div>'
-          : d.entries.map((x) => auditRow(x, d.geo, d.geoip)).join('') || '<div class="note">还没有记录</div>';
+          : foldAudit(d.entries).map((r) => auditRow(r.x, d.geoip, r.n)).join('') || '<div class="note">这台主机还没有记录</div>';
         list.scrollTop = top;
       } catch (e) {
         list.innerHTML = `<div class="note">${esc(e.message)}</div>`;

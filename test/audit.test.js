@@ -1,6 +1,6 @@
 'use strict';
 // 审计日志：登录 / 会话事件记下出口 IP、连接 IP、代理路径 (按 TRUST_PROXY 核实)、登录编号、SSH-WEB 到目标主机的连接
-// @env AUTH_PASSWORD=test-pass-123 AUTH_USER=admin
+// @env AUTH_PASSWORD=test-pass-123 AUTH_USER=admin GEOIP=off
 const { WebSocket } = require('ws');
 const { Server } = require('ssh2');
 const { BASE, ok, wait, run, hostKey } = require('./helpers');
@@ -42,10 +42,12 @@ run(async () => {
   const fail = await find('login-fail');
   ok(fail && fail.ip === '1.2.3.4' && fail.peer === '127.0.0.1' && same(fail.path, ['1.2.3.4', '10.0.0.5', '127.0.0.1']),
     '登录失败：出口 IP 是第一个不受信任的地址，连接 IP 是本机，代理路径从出口到连接 IP');
+  ok(fail && fail.proxy?.v === '是' && /请求头声明经过 6\.6\.6\.6/.test(fail.proxy.why.join()), '请求头声明经过代理：判断为用了代理，存在记录里');
   ok(fail && same(fail.claimed, ['6.6.6.6']) && fail.cf?.ray === 'abc123-NRT' && fail.cf?.country === 'JP' && fail.user === 'admin' && fail.ua === 'audit-test',
     '登录失败：客户端声称的地址单独记成 claimed，带 CF-Ray / 国家 / 尝试的用户名 / UA');
   ok(!JSON.stringify(fail).includes('wrong'), '登录失败不记密码');
   const lg = await find('login');
+  ok(lg && lg.proxy?.v === '否' && lg.geo?.local, '内网直连：不是代理，归属地记成内网');
   ok(lg && lg.ip === '127.0.0.1' && same(lg.path, ['127.0.0.1']) && /^[0-9a-f]{12}$/.test(lg.sid), '直连登录：出口 IP 就是连接 IP，带登录编号');
   ok((await fetch(BASE + '/api/audit')).status === 401, '没登录不能看审计日志');
 
@@ -66,9 +68,9 @@ run(async () => {
   a.close();
   const b = await openWs('5.5.5.5'); attach(b, 'dev-a');
   await wait(500);
-  ok(!(await find('ssh-attach', (x) => x.session === id, 300)), '同一设备、同一来源断线重连不重复记');
+  ok(await find('ssh-attach', (x) => x.session === id && x.ip === '5.5.5.5'), '断线重连也记一条 (本地文件全部存)');
   const c = await openWs('7.7.7.7, 10.1.2.3'); attach(c, 'dev-b');
-  const at = await find('ssh-attach', (x) => x.session === id);
+  const at = await find('ssh-attach', (x) => x.session === id && x.ip === '7.7.7.7');
   ok(at && at.ip === '7.7.7.7' && same(at.path, ['7.7.7.7', '10.1.2.3', '127.0.0.1']) && at.device === '手机', '别的设备从别的出口打开：记一条 ssh-attach');
 
   // 查找、关闭、退出
