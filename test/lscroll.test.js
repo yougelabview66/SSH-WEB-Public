@@ -345,8 +345,29 @@ const WHEEL_UP = '\x1b[<64;';
   ok(num(pressed) > num(seen) && num(cp.top) === num(pressed), `按住的那一行在复制面板里就在手指底下 (按住「${pressed}」，面板里手指处「${cp.top}」)`);
   await m.screenshot({ path: shot('lscroll-copy.png') });
   await m.evaluate(() => document.getElementById('copyPanel').classList.add('hidden'));
+  // 电脑上在用这个标签 (手机这边锁着，点终端本来就不聚焦输入框)：先在手机上接管，下面才测得出会不会弹输入法
+  const claim = async () => { await m.evaluate(() => document.querySelector('.term.active .owner-notice button')?.click()); await wait(500); };
+  const mFocused = () => m.evaluate(() => document.activeElement?.id === 'mInput');
+  await claim();
+  ok(!!(await m.$('.term.active .lscroll')) && !(await m.$('.term.active .owner-notice')), '手机：接管后历史视图还开着');
   await m.locator('.term.active .ls-close').tap(); await wait(400);
   ok(!(await m.$('.term.active .lscroll')) && await m.isVisible('#mobileBar'), '手机：点「回到实时画面」后输入栏回来');
+  ok(!(await mFocused()), '手机：点「回到实时画面」不聚焦输入框 (不弹输入法)');
+  // tmux 自己的复制模式 (抓到的不是这个画面，滑动交给 tmux) 的「回到实时画面」也一样
+  await m.locator('.tab', { hasText: 'OTHER' }).first().tap(); await wait(1500); await claim();
+  const swipeDown = async () => {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y: y0t }] });
+    for (let i = 1; i <= 15; i++) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y0t + i * 20 }] }); await wait(30); }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await wait(1500);
+  };
+  await swipeDown();
+  if (await m.isHidden('.term.active .tmux-exit')) await swipeDown(); // 第一下用来发现抓不到，之后的滑动才交给 tmux
+  ok(await m.isVisible('.term.active .tmux-exit'), '手机：tmux 复制模式也显示「回到实时画面」');
+  got = ''; await m.locator('.term.active .tmux-exit').tap(); await wait(700);
+  // (按钮消失由上面电脑的测试管：模拟的 tmux 把位置标记画在第 60 列，手机终端没这么宽，清不干净)
+  ok(got === 'q' && !(await mFocused()), '手机：点它发 q 退出复制模式，不聚焦输入框 (不弹输入法): ' + JSON.stringify(got));
+  await m.locator('.term.active .xterm-screen').tap(); await wait(300);
+  ok(await mFocused(), '手机：点终端本身还是照常聚焦输入框');
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
   await browser.close(); process.exit();
 })().catch((e) => { console.error(e); process.exit(1); });

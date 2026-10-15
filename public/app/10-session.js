@@ -54,7 +54,12 @@
       s.term.textarea.setAttribute('readonly', 'readonly');
       // 别的设备在用 (锁住，见 42-owner.js)：点终端不弹键盘 (打了也发不出去)，要写字点下面的输入栏
       s.term.textarea.addEventListener('focus', () => { if (!isLocked(s)) mInput.focus(); });
-      s.box.addEventListener('click', () => { if (s.longPressed) { s.longPressed = false; return; } if (!isLocked(s)) mInput.focus(); });
+      // 点终端上的按钮 (回到实时画面、重连等) 和历史视图不弹键盘：「回到实时画面」点完历史视图已经关了、输入栏刚回来，
+      // 这一下 click 冒泡上来再聚焦输入框就会弹出输入法
+      s.box.addEventListener('click', (e) => {
+        if (s.longPressed) { s.longPressed = false; return; }
+        if (!isLocked(s) && !e.target.closest('button, .lscroll')) mInput.focus();
+      });
     } else {
       // 电脑：下方输入框开着时，点终端后光标回到下方输入框；点击本身照常交给 tmux / Claude Code。
       // 不抢的情况：选中了文字 (方便复制)、连按两下 Alt 进终端直接打字、
