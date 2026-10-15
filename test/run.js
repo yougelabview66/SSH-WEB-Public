@@ -44,13 +44,7 @@ function runOne(name) {
     });
     let srvErr = '';
     srv.stderr.on('data', (d) => { srvErr += d; });
-    // 等服务真的退出了再删数据目录：测试结束时模拟的 SSH 服务器跟着退出，服务端还在往里写审计日志 (ssh-end)
-    const done = (res) => {
-      const rm = () => { fs.rmSync(data, { recursive: true, force: true }); resolve(res); };
-      if (srv.exitCode !== null || srv.signalCode !== null) return rm();
-      srv.once('exit', rm);
-      srv.kill();
-    };
+    const done = (res) => { srv.kill(); fs.rmSync(data, { recursive: true, force: true }); resolve(res); };
     try { await waitUp(url); } catch (e) { return done({ name, pass: 0, fail: 1, out: e.message + '\n' + srvErr }); }
     const t0 = Date.now();
     const t = spawn(process.execPath, [path.join(__dirname, name + '.test.js')], { cwd: ROOT, env: { ...process.env, SSHWEB_URL: url } });

@@ -36,7 +36,6 @@
 - 主机列表（分组、搜索），凭据用 AES-256-GCM 加密保存在服务器，浏览器拿不到
 - 网页登录保护、登录失败限流、签名 Cookie；每台设备各自登录，用着自动续期，默认 30 天没用过才要重新登录
 - 可限制允许连接的目标主机（`ALLOWED_HOSTS`）
-- **审计日志**：登录、退出、打开 / 挂载 / 重连 / 关闭 SSH 会话都记下出口 IP、连接 IP 和代理路径（按 `TRUST_PROXY` 核实，伪造不了），以及会话怎么连到目标主机，写在 `data/audit.log`（见下面「审计日志」）
 - WebSocket 心跳，适配 Cloudflare / 反向代理的空闲超时
 - 前端依赖全部本地提供，内网离线可用
 
@@ -84,11 +83,9 @@ docker run -d --name ssh-web --restart unless-stopped \
 | `SCROLLBACK` | `5000` | 滚动记录行数：后台会话保留多少行用于恢复画面，浏览器终端也保留同样的行数 |
 | `PUSH_SUBJECT` | `mailto:ssh-web@example.com` | Web Push 联系方式（推送服务要求，一般不用改） |
 | `HISTORY_MAX` | `1000` | 历史命令最多保存条数 |
-| `AUDIT_LOG` | 开 | 审计日志，设为 `off` 关闭 |
-| `AUDIT_MAX_MB` | `10` | 审计日志单个文件最大多少 MB，超过后换成 `audit.log.1`（只留一份旧的） |
 | `HOSTKEY_POLICY` | `ask` | 主机指纹校验：`ask` 新主机和指纹变化都要确认；`accept-new` 新主机自动信任、变化时确认；`off` 不校验 |
 
-数据都在 `./data`：`hosts.json`（主机列表，密码加密）、`known_hosts.json`（已信任的主机指纹）、`history.json`（历史命令）、`favorites.json`（收藏）、`vapid.json` / `push.json`（通知密钥与订阅）、`audit.log`（审计日志）和 `.secret`，备份这个目录即可。
+数据都在 `./data`：`hosts.json`（主机列表，密码加密）、`known_hosts.json`（已信任的主机指纹）、`history.json`（历史命令）、`favorites.json`（收藏）、`vapid.json` / `push.json`（通知密钥与订阅）和 `.secret`，备份这个目录即可。
 
 ## 手机使用
 
@@ -195,31 +192,6 @@ SSH 连接由服务器保持，浏览器只是「挂载」上去查看和操作�
 适用于服务器开启了 Google Authenticator 等二次验证（如群晖 SSH 两步验证、`libpam-google-authenticator`）。
 连接时服务器询问的「Password」会自动用保存的密码填写，「Verification code」等其他问题会在网页上弹窗让你输入，
 手机上会自动弹出数字键盘。等待输入期间不会超时（最长 5 分钟）。
-
-## 审计日志
-
-每条一行 JSON，写在 `data/audit.log`（权限 600），用来追查「谁、从哪里、经过哪些代理」用过 SSH-WEB：
-
-| 字段 | 说明 |
-|---|---|
-| `ip` | **出口 IP**：从连接 IP 往回按 `TRUST_PROXY` 数 `X-Forwarded-For`，第一个不受信任的地址，也就是用户那边的公网出口（用了代理就是代理的出口）。和登录限流用的是同一个 |
-| `peer` | **连接 IP**：直接连到 SSH-WEB 的地址（反向代理、cloudflared 容器，或者用户本身） |
-| `path` | **代理路径**：从出口 IP 到连接 IP 依次经过的地址，每一跳都是受信任的代理报上来的；直连时只有一个 |
-| `claimed` | `X-Forwarded-For` 里出口 IP 前面的地址：是客户端自己声称的，核实不了，只作参考 |
-| `cf` | 经过 Cloudflare 时的 `ray`（可以在 Cloudflare 后台查到这次请求）和 `country` |
-| `sid` | 登录编号：同一次登录（续期也不变）打开的会话都是同一个编号，把登录和会话串起来（不记凭证原文） |
-| `session` / `title` / `target` | 会话 id、标签名、`用户@主机:端口` |
-| `route` / `out` / `via` | SSH-WEB 到目标主机这一段：`direct` 直连，`out` 是本机地址 → 目标主机地址；`cloudflare` 隧道，`out` 是本机 → Cloudflare 边缘节点，`via` 是隧道地址 |
-
-事件（`ev`）：`login` / `login-fail`（带尝试的用户名）/ `login-blocked`、`logout`、`ssh-open`（新建会话）、`ssh-attach`（会话第一次从某个设备 + 来源打开，同一来源断线重连不重复记，换了 IP 或代理路径会再记）、`ssh-reconnect`、`ssh-ok`（连上目标主机）、`ssh-fail`、`ssh-end`（连接断开，带连了多少秒）、`ssh-close`（关闭会话，`reason: idle` 是无人查看太久自动关的）。
-
-```json
-{"t":"2026-10-15T08:00:00.000Z","ev":"ssh-open","session":"…","title":"NAS","target":"root@192.168.1.10:22","route":"direct","sid":"3f9c0a…","device":"手机","ip":"203.0.113.90","peer":"172.18.0.3","path":["203.0.113.90","172.18.0.3"],"cf":{"ray":"8c1e…-NRT","country":"JP"},"ua":"Mozilla/5.0 …"}
-```
-
-查看：`tail -f data/audit.log`，或者登录后访问 `/api/audit?limit=200&q=203.0.113.90`（新的在前，`q` 只看包含这段文字的，可以填 IP、会话 id、登录编号、主机名）。
-
-> 出口 IP 准不准取决于 `TRUST_PROXY`：SSH-WEB 前面的反向代理 / cloudflared 必须在信任范围内，否则出口 IP 就是代理自己的地址；反过来，不要信任公网地址，否则别人能伪造 `X-Forwarded-For`。
 
 ## 主机指纹校验
 

@@ -22,7 +22,6 @@
 const http = require('http');
 const { PORT, HOST, BG_TIMEOUT_HOURS, VERSION } = require('./lib/config');
 const auth = require('./lib/auth');
-const audit = require('./lib/audit');
 const { createApp } = require('./lib/http');
 const { attachWebSocket } = require('./lib/ws');
 const { sessions, setPush } = require('./lib/session');
@@ -49,7 +48,6 @@ setInterval(() => {
     const idleH = (now - s.detachedAt) / 3600000;
     if ((BG_TIMEOUT_HOURS > 0 && idleH > BG_TIMEOUT_HOURS) || (s.status === 'closed' && idleH > 24)) {
       console.log(`[${new Date().toISOString()}] 清理后台会话 ${s.title}`);
-      audit.log('ssh-close', { session: s.id, title: s.title, reason: 'idle' });
       s.terminate();
     }
   }
