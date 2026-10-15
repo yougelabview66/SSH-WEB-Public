@@ -17,6 +17,7 @@ services:
       # - COOKIE_SECURE=true         # 通过 HTTPS (如 Cloudflare 隧道) 访问时建议开启
       # - ALLOWED_HOSTS=192.168.1.*,*.example.com   # 限制可连接的目标主机
       # - HOSTKEY_POLICY=ask         # 主机指纹校验: ask(默认) / accept-new / off
+      # - AUDIT_LOG=off              # 关闭审计日志 (默认开，写在 ./data/audit.log)
       # - PUID=1000                  # 可选：用这个用户 (不是 root) 运行，启动时自动把 ./data 交给它
       # - PGID=1000
 
