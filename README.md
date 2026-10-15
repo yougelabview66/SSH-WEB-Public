@@ -85,6 +85,7 @@ docker run -d --name ssh-web --restart unless-stopped \
 | `PUSH_SUBJECT` | `mailto:ssh-web@example.com` | Web Push 联系方式（推送服务要求，一般不用改） |
 | `HISTORY_MAX` | `1000` | 历史命令最多保存条数 |
 | `AUDIT_LOG` | 开 | 审计日志，设为 `off` 关闭 |
+| `GEOIP` | ip-api.com | 监控面板连接日志里查 IP 归属地用的地址（`{ip}` 换成要查的 IP，返回 ip-api.com 格式）；设为 `off` 不查，不把 IP 发给第三方 |
 | `AUDIT_MAX_MB` | `10` | 审计日志单个文件最大多少 MB，超过后换成 `audit.log.1`（只留一份旧的） |
 | `HOSTKEY_POLICY` | `ask` | 主机指纹校验：`ask` 新主机和指纹变化都要确认；`accept-new` 新主机自动信任、变化时确认；`off` 不校验 |
 
@@ -217,7 +218,13 @@ SSH 连接由服务器保持，浏览器只是「挂载」上去查看和操作�
 {"t":"2026-10-15T08:00:00.000Z","ev":"ssh-open","session":"…","title":"NAS","target":"root@192.168.1.10:22","route":"direct","sid":"3f9c0a…","device":"手机","ip":"203.0.113.90","peer":"172.18.0.3","path":["203.0.113.90","172.18.0.3"],"cf":{"ray":"8c1e…-NRT","country":"JP"},"ua":"Mozilla/5.0 …"}
 ```
 
-查看：`tail -f data/audit.log`，或者登录后访问 `/api/audit?limit=200&q=203.0.113.90`（新的在前，`q` 只看包含这段文字的，可以填 IP、会话 id、登录编号、主机名）。
+**监控面板里看**：点工具栏「📊 监控」，最上面「连接日志」是这个标签的记录（新的在上面，开着时每 15 秒刷新，也可以点「刷新」）：
+- 打开会话的记录：主机、**出口 IP**、**归属地**（国家 地区 城市 · 运营商）、**是否用了代理**、连接 IP（以及经过哪些代理到 SSH-WEB）。
+  - 代理判断：归属地服务认定是代理 / VPN IP，或者请求头里声明经过了代理 → 红色「是」；只是机房 IP → 黄色「可能」；查不到归属地 → 「未知」。
+- 连上主机的记录：**主机 IP**（带归属地，内网显示「内网」）、是否走代理（直连 / Cloudflare 隧道，隧道显示 Cloudflare 边缘节点）、本机地址。
+- 归属地默认在线查 [ip-api.com](https://ip-api.com)（免费，每分钟最多 45 次；同一个 IP 缓存 1 天，内网 IP 不查），NAS 不能上网时显示「查不到」；`GEOIP=off` 关闭。
+
+也可以 `tail -f data/audit.log`，或者登录后访问 `/api/audit?limit=200&q=203.0.113.90`（新的在前，`q` 只看包含这段文字的，可以填 IP、会话 id、登录编号、主机名）。
 
 > 出口 IP 准不准取决于 `TRUST_PROXY`：SSH-WEB 前面的反向代理 / cloudflared 必须在信任范围内，否则出口 IP 就是代理自己的地址；反过来，不要信任公网地址，否则别人能伪造 `X-Forwarded-For`。
 
