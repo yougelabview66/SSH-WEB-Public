@@ -208,7 +208,6 @@
       // 还没显示出来 (恢复标签时后台的标签量不出尺寸)：等量出尺寸再接管 (见 syncSize)
       s.wantClaim = size.cols ? false : size.claim;
       size.device = deviceName;
-      Object.assign(size, browserTz());
       if (s.remoteId) {
         // 打开页面时在后台、还没看过的标签：先只要状态，不要画面 (最多 5000 行的快照)，切过来时再要 (见 activate)
         s.lite = !s.shown && s !== active;

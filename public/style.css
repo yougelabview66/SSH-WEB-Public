@@ -440,16 +440,6 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 .ptable th:first-child, .ptable td:first-child { text-align: left; overflow: hidden; text-overflow: ellipsis; }
 .ptable col.n { width: auto; } .ptable col.c { width: 52px; } .ptable col.m { width: 62px; }
 .mon .err { color: var(--danger); margin-top: 10px; }
-/* 监控面板：连接日志 (每条和磁盘一样：标题一行，下面左名称、右数值) */
-.m-alist { max-height: 320px; overflow-y: auto; }
-.arow { margin-top: 10px; }
-.arow:first-child { margin-top: 0; }
-.arow .ah { margin-bottom: 2px; }
-.arow .kv { margin-bottom: 1px; }
-.arow .kv > span:first-child { color: var(--muted); white-space: nowrap; }
-.arow .kv .val { white-space: normal; text-align: right; min-width: 0; overflow-wrap: anywhere; }
-.arow .bad { color: var(--danger); }
-.arow .warn { color: var(--warn); }
 
 @media (max-width: 760px) {
   .mon { position: absolute; inset: 0; width: auto; z-index: 6; font-size: 13px; }

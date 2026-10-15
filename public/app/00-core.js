@@ -19,11 +19,6 @@
     } catch { return ''; }
   })();
 
-  // 浏览器时区：连接 / 登录时告诉服务端，审计日志拿它和出口 IP 的时区比，对不上多半是用了代理 (见 lib/audit.js)
-  const browserTz = () => {
-    try { return { tz: Intl.DateTimeFormat().resolvedOptions().timeZone || '', tzOffset: -new Date().getTimezoneOffset() * 60 }; } catch { return {}; }
-  };
-
   // ------------------------------------------------------------ API
   async function api(method, url, body) {
     const r = await fetch(url, {
@@ -60,7 +55,7 @@
     const fd = new FormData(e.target);
     $('#loginErr').textContent = '';
     try {
-      await api('POST', '/api/login', { username: fd.get('username'), password: fd.get('password'), ...browserTz() });
+      await api('POST', '/api/login', { username: fd.get('username'), password: fd.get('password') });
       $('#login').classList.add('hidden');
       e.target.reset();
       armPasswords(e.target, false);

@@ -85,8 +85,7 @@ docker run -d --name ssh-web --restart unless-stopped \
 | `PUSH_SUBJECT` | `mailto:ssh-web@example.com` | Web Push 联系方式（推送服务要求，一般不用改） |
 | `HISTORY_MAX` | `1000` | 历史命令最多保存条数 |
 | `AUDIT_LOG` | 开 | 审计日志，设为 `off` 关闭 |
-| `GEOIP` | ip-api.com | 监控面板连接日志里查 IP 归属地用的地址（`{ip}` 换成要查的 IP，返回 ip-api.com 格式）；设为 `off` 不查，不把 IP 发给第三方 |
-| `AUDIT_MAX_MB` | `10` | 审计日志单个文件最大多少 MB，超过后改名成 `audit-<时间>.log` 存档（不会自动删除，全部留着） |
+| `AUDIT_MAX_MB` | `10` | 审计日志单个文件最大多少 MB，超过后换成 `audit.log.1`（只留一份旧的） |
 | `HOSTKEY_POLICY` | `ask` | 主机指纹校验：`ask` 新主机和指纹变化都要确认；`accept-new` 新主机自动信任、变化时确认；`off` 不校验 |
 
 数据都在 `./data`：`hosts.json`（主机列表，密码加密）、`known_hosts.json`（已信任的主机指纹）、`history.json`（历史命令）、`favorites.json`（收藏）、`vapid.json` / `push.json`（通知密钥与订阅）、`audit.log`（审计日志）和 `.secret`，备份这个目录即可。
@@ -199,7 +198,7 @@ SSH 连接由服务器保持，浏览器只是「挂载」上去查看和操作�
 
 ## 审计日志
 
-每条一行 JSON，写在 `data/audit.log`（权限 600），用来追查「谁、从哪里、经过哪些代理」用过 SSH-WEB。**所有主机的所有记录都存**：每次打开、刷新、断线重连都记一条，出口 IP 的归属地和是否用了代理的判断也一起存进去，单看文件就是完整的；文件满了存档，不删：
+每条一行 JSON，写在 `data/audit.log`（权限 600），用来追查「谁、从哪里、经过哪些代理」用过 SSH-WEB：
 
 | 字段 | 说明 |
 |---|---|
@@ -209,32 +208,16 @@ SSH 连接由服务器保持，浏览器只是「挂载」上去查看和操作�
 | `claimed` | `X-Forwarded-For` 里出口 IP 前面的地址：是客户端自己声称的，核实不了，只作参考 |
 | `cf` | 经过 Cloudflare 时的 `ray`（可以在 Cloudflare 后台查到这次请求）和 `country` |
 | `sid` | 登录编号：同一次登录（续期也不变）打开的会话都是同一个编号，把登录和会话串起来（不记凭证原文） |
-| `geo` | 出口 IP 的归属地：`country` / `region` / `city` / `isp` / `as` / `tz`（时区），`proxy` / `hosting` 是归属地服务的判断；内网是 `{"local":true}` |
-| `proxy` | **是否用了代理**：`v` 是 `是` / `可能` / `否` / `未知`，`why` 是依据（见下面） |
-| `tz` / `tzOffset` | 浏览器的时区和离 UTC 多少秒 |
-| `session` / `title` / `host` / `target` | 会话 id、标签名、主机（`主机:端口`，隧道是主机名）、`用户@主机:端口` |
-| `route` / `out` / `via` | SSH-WEB 到目标主机这一段：`direct` 直连，`out` 是本机地址 → 目标主机地址；`cloudflare` 隧道，`out` 是本机 → Cloudflare 边缘节点，`via` 是隧道地址；`out.geo` 是对端的归属地 |
+| `session` / `title` / `target` | 会话 id、标签名、`用户@主机:端口` |
+| `route` / `out` / `via` | SSH-WEB 到目标主机这一段：`direct` 直连，`out` 是本机地址 → 目标主机地址；`cloudflare` 隧道，`out` 是本机 → Cloudflare 边缘节点，`via` 是隧道地址 |
 
-事件（`ev`）：`login` / `login-fail`（带尝试的用户名）/ `login-blocked`、`logout`、`ssh-open`（新建会话）、`ssh-attach`（打开会话：每次打开、刷新、断线重连都记）、`ssh-reconnect`、`ssh-ok`（连上目标主机）、`ssh-fail`、`ssh-end`（连接断开，带连了多少秒）、`ssh-close`（关闭会话，`reason: idle` 是无人查看太久自动关的）。
+事件（`ev`）：`login` / `login-fail`（带尝试的用户名）/ `login-blocked`、`logout`、`ssh-open`（新建会话）、`ssh-attach`（会话第一次从某个设备 + 来源打开，同一来源断线重连不重复记，换了 IP 或代理路径会再记）、`ssh-reconnect`、`ssh-ok`（连上目标主机）、`ssh-fail`、`ssh-end`（连接断开，带连了多少秒）、`ssh-close`（关闭会话，`reason: idle` 是无人查看太久自动关的）。
 
 ```json
-{"t":"2026-10-15T08:00:00.000Z","ev":"ssh-open","session":"…","title":"NAS","host":"192.168.1.10:22","target":"root@192.168.1.10:22","route":"direct","sid":"3f9c0a…","device":"手机","tz":"Asia/Shanghai","tzOffset":28800,"ip":"203.0.113.90","peer":"172.18.0.3","path":["203.0.113.90","172.18.0.3"],"cf":{"ray":"8c1e…-NRT","country":"JP"},"ua":"Mozilla/5.0 …","geo":{"country":"日本","region":"Tokyo","city":"東京都","isp":"Example Proxy Ltd","tz":"Asia/Tokyo","offset":32400,"proxy":true,"hosting":true},"proxy":{"v":"是","why":["归属地服务认定是代理 / VPN IP","出口在日本 (UTC+9)，浏览器时区 Asia/Shanghai (UTC+8)","机房 IP"]}}
+{"t":"2026-10-15T08:00:00.000Z","ev":"ssh-open","session":"…","title":"NAS","target":"root@192.168.1.10:22","route":"direct","sid":"3f9c0a…","device":"手机","ip":"203.0.113.90","peer":"172.18.0.3","path":["203.0.113.90","172.18.0.3"],"cf":{"ray":"8c1e…-NRT","country":"JP"},"ua":"Mozilla/5.0 …"}
 ```
 
-**是否用了代理**（用户那边的机场 / VPN / 公司代理；SSH-WEB 前面的反向代理、Cloudflare 看「连接 IP」那一栏，不算）：
-- **是**（红）：请求头里声明经过了代理；或者归属地服务认定是代理 / VPN IP；或者**出口 IP 所在时区和浏览器时区对不上**（人在国内、出口在日本 —— 机场节点归属地服务常常认不出来，这一条最准）
-- **可能**（黄）：出口是机房 / 云服务器的 IP（归属地服务认定是机房，或者运营商是常见的机房 / 云厂商），但时区对得上
-- **否**：都不是，内网 IP 也算否；**未知**：查不到归属地（`GEOIP=off` 或者 NAS 上不了网）
-
-> 判断只是参考：开了全局代理、同时把系统时区改成节点所在地，或者节点所在时区刚好和你一样（比如香港节点 + 北京时间），就看不出来。
-
-**监控面板里看**：点工具栏「📊 监控」，最上面「连接日志」**只显示这台主机的记录**（这台主机所有标签的，不含别的主机；新的在上面，开着时每 15 秒刷新，也可以点「刷新」）：
-- 打开会话的记录：主机、**出口 IP**、**归属地**（国家 地区 城市 · 运营商）、**是否用了代理**、连接 IP（以及经过哪些代理到 SSH-WEB）。
-  - 同一个标签、同一设备、同一来源连着的打开 / 重连（刷新、断线重连）合成一条，显示「×次数」；本地文件里每次都有。
-- 连上主机的记录：**主机 IP**（带归属地，内网显示「内网」）、是否走代理（直连 / Cloudflare 隧道，隧道显示 Cloudflare 边缘节点）、本机地址。
-- 归属地默认在线查 [ip-api.com](https://ip-api.com)（免费，每分钟最多 45 次；同一个 IP 缓存 1 天，内网 IP 不查），NAS 不能上网时显示「查不到」；`GEOIP=off` 关闭。
-
-也可以 `tail -f data/audit.log`，或者登录后访问 `/api/audit?limit=200&q=203.0.113.90`（新的在前，`q` 只看包含这段文字的，可以填 IP、会话 id、登录编号、主机名）。
+查看：`tail -f data/audit.log`，或者登录后访问 `/api/audit?limit=200&q=203.0.113.90`（新的在前，`q` 只看包含这段文字的，可以填 IP、会话 id、登录编号、主机名）。
 
 > 出口 IP 准不准取决于 `TRUST_PROXY`：SSH-WEB 前面的反向代理 / cloudflared 必须在信任范围内，否则出口 IP 就是代理自己的地址；反过来，不要信任公网地址，否则别人能伪造 `X-Forwarded-For`。
 
