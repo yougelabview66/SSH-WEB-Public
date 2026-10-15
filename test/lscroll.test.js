@@ -1,15 +1,19 @@
 'use strict';
-const { BASE, ok, wait, shot, launch, post, addHost, devices, hostKey } = require('./helpers');
+const { BASE, ok, wait, shot, launch, post, addHost, devices, hostKey, waitFor } = require('./helpers');
 const { Server, utils } = require('ssh2');
 
 // 模拟 tmux 的历史：3000 行，每 10 行一行红色
 const HIST = [];
 for (let i = 1; i <= 3000; i++) HIST.push(i % 10 === 0 ? `\x1b[31mERROR line ${i}\x1b[39m 出错了` : i % 7 === 0 ? `line ${i} 长行 ` + "很长的一行 Claude 输出 ".repeat(i % 3 + 2) : `line ${i} 普通输出 abc`); // 有中文、有手机上会折行的长行
+HIST[2899] += '\x1b[34m'; // 第 2900 行末尾开始蓝色、到第 2901 行才结束：正好跨过历史视图分块的边界 (块从最后往前每 100 行一块)
+HIST[2900] += '\x1b[39m';
 const hist = HIST.join('\n') + '\n';
+const PLAIN_HIST = HIST.join('\n').replace(/\x1b\[[0-9;]*m/g, '');
 const OTHER = Array.from({ length: 200 }, (_, i) => `完全不相干的另一个 pane ${i}`).join('\n') + '\n';
 
 // mode: ok | none (没有 tmux) | busy (全屏程序) | other (抓到别的 pane) | plain (普通 shell，不开鼠标) | claude (全屏模式的 Claude Code)
 let got = ''; let ccUp = 0; let winChanges = 0; const execs = []; const envs = [];
+let opens = 0; let dropShell = false; // 开了几次 exec 通道；dropShell：常驻的 sh 收到下一段脚本时直接断开
 function mockServer(port, mode) {
   new Server({ hostKeys: [hostKey()] }, (c) => {
     c.on('authentication', (ctx) => ctx.accept());
@@ -43,9 +47,27 @@ function mockServer(port, mode) {
       });
       s.on('exec', (a, r, info) => {
         const ch = a();
-        execs.push({ mode, cmd: info.command });
+        opens++;
         const code = mode === 'none' ? 3 : mode === 'busy' || mode === 'claude' ? 4 : 0;
-        if (!code) ch.write(mode === 'other' ? OTHER : hist);
+        const out = code ? '' : mode === 'other' ? OTHER : hist;
+        if (info.command === 'sh') { // 常驻的 sh：读进来的每段脚本执行一次，最后打印结束标记和退出码
+          let buf = '';
+          ch.on('data', (d) => {
+            buf += d;
+            let m;
+            while ((m = /printf '\\n%s %s\\n' '(\w+)' "\$\?"\n/.exec(buf))) {
+              execs.push({ mode, cmd: buf.slice(0, m.index) });
+              buf = buf.slice(m.index + m[0].length);
+              if (dropShell) { dropShell = false; ch.close(); return; }
+              const res = out + `\n${m[1]} ${code}\n`; // 分几次写回去，结束标记也拆开
+              for (let i = 0; i < res.length - 12; i += 50000) ch.write(res.slice(i, Math.min(i + 50000, res.length - 12)));
+              ch.write(res.slice(-12));
+            }
+          });
+          return;
+        }
+        execs.push({ mode, cmd: info.command });
+        if (!code) ch.write(out);
         ch.exit(code); ch.end();
       });
     }));
@@ -85,8 +107,20 @@ const WHEEL_UP = '\x1b[<64;';
   const env = envs.find((e) => e.mode === 'ok' && e.key === 'LC_SSHWEB');
   ok(env && /^[0-9a-f-]{36}$/.test(env.val), '打开 shell 时带上 LC_SSHWEB=<会话 ID> 环境变量: ' + (env && env.val));
   ok(env && execs[0].cmd.includes('LC_SSHWEB=' + env.val), '抓历史时按这个 ID 找对应的 tmux 客户端');
-  ok(v && v.text.includes('line 1 普通输出') && v.text.includes('ERROR line 3000'), '历史视图里有完整的 3000 行');
+  ok(v && v.text.includes('ERROR line 3000'), '历史视图马上显示最后面的内容');
+  await waitFor(p, () => document.querySelector('.term.active .ls-body')?.textContent.startsWith('line 1 普通输出'), null, 8000).catch(() => {});
+  v = await view();
+  ok(v && v.text.replace(/\n+$/, '') === PLAIN_HIST, '前面的历史在后台分块补上：最后和整段 3000 行一字不差 (块与块之间的换行不多不少)');
   ok(v && /rgb|#/.test(v.red), '颜色保留 (ERROR 行是红色: ' + (v && v.red) + ')');
+  const carry = await p.evaluate(() => {
+    const pre = document.querySelector('.term.active .ls-body');
+    const sp = [...pre.querySelectorAll('span')].find((x) => x.textContent.startsWith('line 2901'));
+    return { n: pre.children.length, color: sp?.style.color || '', block: sp && sp.closest('.ls-body > div') !== [...pre.querySelectorAll('span')].find((x) => x.textContent.startsWith('ERROR line 2900'))?.closest('.ls-body > div') };
+  });
+  ok(carry.n === 30 && carry.block && /rgb|#/.test(carry.color), `分成 ${carry.n} 块，颜色接着上一块 (第 2901 行在新的一块里，接着第 2900 行末尾的蓝色: ${carry.color})`);
+  const selAll = await p.evaluate(() => { const pre = document.querySelector('.term.active .ls-body'); getSelection().selectAllChildren(pre); const t = getSelection().toString(); getSelection().removeAllRanges(); return t; });
+  ok(selAll.replace(/\n+$/, '') === PLAIN_HIST, '跨块选中复制的文字和整段历史一样');
+  ok(opens === 1, '抓历史开了一个常驻通道');
   ok(v && v.max - v.top > 0 && v.max - v.top < 200, `一开始停在底部往回几行的位置 (离底部 ${v && v.max - v.top}px)`);
   const lsH = await p.evaluate(() => document.querySelector('.term.active .lscroll').getBoundingClientRect().height);
   ok(await p.isHidden('#deskBar') && lsH > termH0 + 40, `历史视图打开时输入框藏起来，历史视图变高 (${Math.round(termH0)} → ${Math.round(lsH)}px)`);
@@ -121,6 +155,7 @@ const WHEEL_UP = '\x1b[<64;';
   const ex0 = execs.length;
   await overTerm(); await p.mouse.wheel(0, -100); await wait(1000);
   ok(!!(await view()) && execs.length === ex0 + 1, '再往上滚 → 重新抓一次最新历史');
+  ok(opens === 1, `之后再抓历史还是用那个常驻通道，不再每次开新通道 (抓了 ${execs.length} 次，开了 ${opens} 个通道)`);
   await p.evaluate(() => { const pre = document.querySelector('.term.active .ls-body'); pre.scrollTop = pre.scrollHeight; });
   await wait(200); await p.mouse.wheel(0, 200); await wait(300);
   ok(!(await view()), '滚到最底下再往下滚 → 回到实时画面');
@@ -169,6 +204,14 @@ const WHEEL_UP = '\x1b[<64;';
   // 按钮 → 返回
   await p.click('.term.active .ls-close'); await wait(300);
   ok(!(await view()), '点「回到实时画面」返回');
+  // 常驻通道半路断了：这次改用临时通道照常打开，下次重新开常驻通道
+  dropShell = true; const op0 = opens, ex3 = execs.length;
+  await overTerm(); await p.mouse.wheel(0, -100); await wait(1200);
+  ok(!!(await view()) && opens === op0 + 1 && execs.length === ex3 + 2 && execs[execs.length - 1].cmd.startsWith('sh -c'), '常驻通道断了 → 这次临时开通道抓，历史视图照常打开');
+  await p.click('.term.active .ls-close'); await wait(300);
+  await overTerm(); await p.mouse.wheel(0, -100); await wait(1000);
+  ok(!!(await view()) && opens === op0 + 2 && execs.length === ex3 + 3, '下一次重新开常驻通道');
+  await p.click('.term.active .ls-close'); await wait(300);
   // 往下滚不触发
   await overTerm(); const e0 = execs.length; await p.mouse.wheel(0, 100); await wait(500);
   ok(!(await view()) && execs.length === e0, '往下滚不会打开历史视图');
@@ -266,7 +309,10 @@ const WHEEL_UP = '\x1b[<64;';
     while ((node = w.nextNode())) {
       const t = node.data; let i = -1;
       while (n < 1500 && (i = t.indexOf('\n', i + 1)) >= 0) n++;
-      if (n === 1500) { const rg = document.createRange(); rg.setStart(node, i + 1); rg.setEnd(node, i + 2);
+      if (n === 1500) { // 下一行可能在下一个文字节点 (下一块) 里
+        let tn = node, o = i + 1;
+        while (tn && o >= tn.data.length) { tn = w.nextNode(); o = 0; }
+        const rg = document.createRange(); rg.setStart(tn, o); rg.setEnd(tn, o + 1);
         pre.scrollTop += rg.getBoundingClientRect().top - pre.getBoundingClientRect().top; break; }
     }
     return pre.textContent.split('\n')[1500];

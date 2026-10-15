@@ -5,6 +5,7 @@
   // 没有 tmux、pane 里是 vim 等全屏程序、分屏或抓到的不是这个画面时，照旧把滚轮交给程序
   const LS_LINES = 3000;
   const LS_WHEEL_QUIET = 400; // 滚轮停这么久才算这一下滚动结束
+  const LS_CHUNK = 100; // 历史视图按块放进页面，每块这么多行
 
 
   function localScrollWheel(s, e) {
@@ -25,7 +26,9 @@
 
   // 抓到的历史末尾应该就是现在的画面：拿当前屏幕的文字行去对，对上 6 成以上才算同一个 pane
   function historyMatchesScreen(s, data) {
-    const plain = data.replace(ANSI_RE, '').split('\n').slice(-s.term.rows * 3).join('\n');
+    let i = data.length; // 只看最后几屏 (整段几千行去颜色要十几毫秒)
+    for (let k = 0; k < s.term.rows * 3 && i > 0; k++) i = data.lastIndexOf('\n', i - 1);
+    const plain = data.slice(Math.max(0, i)).replace(ANSI_RE, '');
     const b = s.term.buffer.active;
     let total = 0, hit = 0;
     for (let y = b.viewportY; y < b.viewportY + s.term.rows - 1; y++) { // 最后一行多半是 tmux 状态栏
@@ -73,7 +76,42 @@
     s.box.appendChild(v); // 先放进页面才量得出字宽
     const text = data.replace(/\n+$/, '');
     const cw = screen && screen.clientWidth / s.term.cols; // 实时画面一格多宽
-    pre.innerHTML = ansiToHtml(text, theme, cw ? gridFit(pre, text, cw) : null);
+    const fix = cw ? gridFit(pre, text, cw) : null, pal = palette256(theme);
+    // 几千行一次全塞进页面要卡一两秒：分成块，先放最后几块马上显示，前面的在后台一块块补到上面。
+    // 块从最后往前切 (最前面那块不满)；块末尾的换行留着，textContent 和整段文字一样 (复制面板按它数行)
+    const lines = text.split('\n'), chunks = [], g = sgrInit();
+    for (let i = 0, end = lines.length % LS_CHUNK || LS_CHUNK; i < lines.length; i = end, end += LS_CHUNK) {
+      const t = lines.slice(i, end).join('\n') + (end < lines.length ? '\n' : '');
+      chunks.push({ t, g: { ...g } }); // 这块开头的颜色 (接着上一块)
+      sgrScan(t, g, pal);
+    }
+    const block = (c) => {
+      const d = document.createElement('div');
+      d.innerHTML = ansiToHtml(c.t, theme, fix, pal, { ...c.g });
+      return d;
+    };
+    let next = chunks.length - 1;
+    for (let n = 0; next >= 0 && n < s.term.rows * 2 + up * 3; n += LS_CHUNK) pre.prepend(block(chunks[next--]));
+    // 补到上面时正在看的内容不动：浏览器自己会保持 (scroll anchoring)，已经滚到最顶上 / 不支持的浏览器手动补上多出来的高度
+    const addAbove = (el) => {
+      const ref = pre.firstChild, y0 = ref.getBoundingClientRect().top;
+      pre.prepend(el);
+      const d = ref.getBoundingClientRect().top - y0;
+      if (d) pre.scrollTop += d;
+    };
+    const fill = () => {
+      if (s.scrollView !== v) return;
+      for (const t0 = performance.now(); next >= 0 && performance.now() - t0 < 10;) addAbove(block(chunks[next--]));
+      if (next >= 0) setTimeout(fill);
+    };
+    // 复制面板要整段历史：剩下的一次补完
+    v.lsRest = () => {
+      if (next < 0) return;
+      const f = document.createDocumentFragment();
+      while (next >= 0) f.prepend(block(chunks[next--]));
+      addAbove(f);
+    };
+    requestAnimationFrame(() => setTimeout(fill)); // 先让最后几块画出来
     s.scrollView = v;
     s.lsLine = lh;
     syncLsBars();
@@ -238,21 +276,61 @@
     return out;
   }
 
-  function ansiToHtml(text, theme, fix) {
-    const pal = palette256(theme);
-    let fg = null, bg = null, fgIdx = -1, bold = false, dim = false, it = false, ul = false, inv = false, st = false;
+  // 颜色 / 字体样式的状态：分块渲染时每块从上一块结束时的状态接着算
+  const sgrInit = () => ({ fg: null, bg: null, fgIdx: -1, bold: false, dim: false, it: false, ul: false, inv: false, st: false });
+
+  function applySgr(g, seq, pal) {
+    if (!seq.endsWith('m') || seq[1] !== '[') return;
+    const ps = (seq.slice(2, -1) || '0').split(/[;:]/).map((x) => parseInt(x, 10) || 0);
+    for (let i = 0; i < ps.length; i++) {
+      const c = ps[i];
+      if (c === 0) Object.assign(g, sgrInit());
+      else if (c === 1) g.bold = true;
+      else if (c === 2) g.dim = true;
+      else if (c === 3) g.it = true;
+      else if (c === 4) g.ul = true;
+      else if (c === 7) g.inv = true;
+      else if (c === 9) g.st = true;
+      else if (c === 22) g.bold = g.dim = false;
+      else if (c === 23) g.it = false;
+      else if (c === 24) g.ul = false;
+      else if (c === 27) g.inv = false;
+      else if (c === 29) g.st = false;
+      else if (c >= 30 && c <= 37) { g.fg = pal[c - 30]; g.fgIdx = c - 30; }
+      else if (c === 39) { g.fg = null; g.fgIdx = -1; }
+      else if (c >= 40 && c <= 47) g.bg = pal[c - 40];
+      else if (c === 49) g.bg = null;
+      else if (c >= 90 && c <= 97) { g.fg = pal[c - 82]; g.fgIdx = -1; }
+      else if (c >= 100 && c <= 107) g.bg = pal[c - 92];
+      else if (c === 38 || c === 48) {
+        let col = null;
+        if (ps[i + 1] === 5) { col = pal[ps[i + 2]] || null; i += 2; }
+        else if (ps[i + 1] === 2) { col = `rgb(${ps[i + 2]},${ps[i + 3]},${ps[i + 4]})`; i += 4; }
+        if (c === 38) { g.fg = col; g.fgIdx = -1; } else g.bg = col;
+      }
+    }
+  }
+
+  // 只跟着颜色走一遍、不生成 HTML (算出下一块开头的颜色)
+  function sgrScan(text, g, pal) {
+    let m;
+    ANSI_RE.lastIndex = 0;
+    while ((m = ANSI_RE.exec(text))) applySgr(g, m[0], pal);
+  }
+
+  function ansiToHtml(text, theme, fix, pal = palette256(theme), g = sgrInit()) {
     let out = '', last = 0, m;
     const css = () => {
-      let f = fg, b = bg;
-      if (bold && fgIdx >= 0 && fgIdx < 8) f = pal[fgIdx + 8]; // 同 xterm：粗体用亮色
-      if (inv) { const t = f; f = b || theme.background; b = t || theme.foreground; }
+      let f = g.fg, b = g.bg;
+      if (g.bold && g.fgIdx >= 0 && g.fgIdx < 8) f = pal[g.fgIdx + 8]; // 同 xterm：粗体用亮色
+      if (g.inv) { const t = f; f = b || theme.background; b = t || theme.foreground; }
       let c = '';
       if (f) c += `color:${f};`;
       if (b) c += `background:${b};`;
-      if (bold) c += 'font-weight:bold;';
-      if (dim) c += 'opacity:.6;';
-      if (it) c += 'font-style:italic;';
-      if (ul || st) c += `text-decoration:${ul ? 'underline' : ''} ${st ? 'line-through' : ''};`;
+      if (g.bold) c += 'font-weight:bold;';
+      if (g.dim) c += 'opacity:.6;';
+      if (g.it) c += 'font-style:italic;';
+      if (g.ul || g.st) c += `text-decoration:${g.ul ? 'underline' : ''} ${g.st ? 'line-through' : ''};`;
       return c;
     };
     const put = (t) => {
@@ -264,36 +342,7 @@
     while ((m = ANSI_RE.exec(text))) {
       put(text.slice(last, m.index));
       last = ANSI_RE.lastIndex;
-      const seq = m[0];
-      if (!seq.endsWith('m') || seq[1] !== '[') continue;
-      const ps = (seq.slice(2, -1) || '0').split(/[;:]/).map((x) => parseInt(x, 10) || 0);
-      for (let i = 0; i < ps.length; i++) {
-        const c = ps[i];
-        if (c === 0) { fg = bg = null; fgIdx = -1; bold = dim = it = ul = inv = st = false; }
-        else if (c === 1) bold = true;
-        else if (c === 2) dim = true;
-        else if (c === 3) it = true;
-        else if (c === 4) ul = true;
-        else if (c === 7) inv = true;
-        else if (c === 9) st = true;
-        else if (c === 22) bold = dim = false;
-        else if (c === 23) it = false;
-        else if (c === 24) ul = false;
-        else if (c === 27) inv = false;
-        else if (c === 29) st = false;
-        else if (c >= 30 && c <= 37) { fg = pal[c - 30]; fgIdx = c - 30; }
-        else if (c === 39) { fg = null; fgIdx = -1; }
-        else if (c >= 40 && c <= 47) bg = pal[c - 40];
-        else if (c === 49) bg = null;
-        else if (c >= 90 && c <= 97) { fg = pal[c - 82]; fgIdx = -1; }
-        else if (c >= 100 && c <= 107) bg = pal[c - 92];
-        else if (c === 38 || c === 48) {
-          let col = null;
-          if (ps[i + 1] === 5) { col = pal[ps[i + 2]] || null; i += 2; }
-          else if (ps[i + 1] === 2) { col = `rgb(${ps[i + 2]},${ps[i + 3]},${ps[i + 4]})`; i += 4; }
-          if (c === 38) { fg = col; fgIdx = -1; } else bg = col;
-        }
-      }
+      applySgr(g, m[0], pal);
     }
     put(text.slice(last));
     return out;

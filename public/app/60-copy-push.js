@@ -38,6 +38,7 @@
     const hist = s.scrollView?.querySelector('.ls-body');
     let line = -1;
     if (hist) {
+      s.scrollView.lsRest(); // 前面的历史还在后台往上补：先补完
       ta.value = hist.textContent.replace(/\n+$/, '');
       line = at ? lineAt(hist, at.x, at.y) : firstVisibleLine(hist);
     } else {
