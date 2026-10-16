@@ -44,6 +44,7 @@
       s.box.appendChild(s.copyBtn);
     }
     if (!s.copyBtn) return;
+    if (mode && (s.copyBtn.classList.contains('hidden') || !s.copyBtn.style.height)) fitExitBtn(s.copyBtn);
     s.copyBtn.classList.toggle('hidden', !mode);
     if (mode && s.copyBtn.dataset.mode !== mode) { s.copyBtn.dataset.mode = mode; s.copyBtn.title = EXIT_KEYS[mode][1]; }
   }

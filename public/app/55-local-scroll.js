@@ -74,6 +74,7 @@
       color: theme.foreground, background: theme.background,
     });
     s.box.appendChild(v); // 先放进页面才量得出字宽
+    fitExitBtn(v.querySelector('.ls-close')); // 按键栏藏起来之前量
     const text = data.replace(/\n+$/, '');
     const cw = screen && screen.clientWidth / s.term.cols; // 实时画面一格多宽
     const fix = cw ? gridFit(pre, text, cw) : null, pal = palette256(theme);
@@ -144,6 +145,15 @@
       const dy = (e.changedTouches[0]?.clientY ?? startY) - startY;
       if (startBottom && dy < -40) closeLocalScroll(s);
     });
+  }
+
+  // 手机：「回到实时画面」和下面按键栏的按键一样高 (按键高度随手机的等宽字体变，量出来；
+  // 历史视图打开时按键栏是藏起来的，量不到就用上次量的)
+  let mkeyH = 0;
+  function fitExitBtn(btn) {
+    if (!isTouch) return;
+    mkeyH = $('#mobileBar .mkeys button')?.offsetHeight || mkeyH;
+    if (mkeyH) btn.style.height = mkeyH + 'px';
   }
 
   // 历史视图打开时把输入栏 (电脑输入框 / 手机输入栏) 藏起来，多出来的地方给历史视图

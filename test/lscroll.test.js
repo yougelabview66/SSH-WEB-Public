@@ -350,8 +350,12 @@ const WHEEL_UP = '\x1b[<64;';
   const mFocused = () => m.evaluate(() => document.activeElement?.id === 'mInput');
   await claim();
   ok(!!(await m.$('.term.active .lscroll')) && !(await m.$('.term.active .owner-notice')), '手机：接管后历史视图还开着');
+  const hOf = (sel) => m.evaluate((sel) => document.querySelector(sel).getBoundingClientRect().height, sel);
+  const closeH = await hOf('.term.active .ls-close');
   await m.locator('.term.active .ls-close').tap(); await wait(400);
   ok(!(await m.$('.term.active .lscroll')) && await m.isVisible('#mobileBar'), '手机：点「回到实时画面」后输入栏回来');
+  const keyH = await hOf('#mobileBar .mkeys button');
+  ok(keyH > 20 && Math.abs(closeH - keyH) < 0.5, `手机：「回到实时画面」和按键栏的按键一样高 (${closeH} / ${keyH}px)`);
   ok(!(await mFocused()), '手机：点「回到实时画面」不聚焦输入框 (不弹输入法)');
   // tmux 自己的复制模式 (抓到的不是这个画面，滑动交给 tmux) 的「回到实时画面」也一样
   await m.locator('.tab', { hasText: 'OTHER' }).first().tap(); await wait(1500); await claim();
@@ -363,6 +367,8 @@ const WHEEL_UP = '\x1b[<64;';
   await swipeDown();
   if (await m.isHidden('.term.active .tmux-exit')) await swipeDown(); // 第一下用来发现抓不到，之后的滑动才交给 tmux
   ok(await m.isVisible('.term.active .tmux-exit'), '手机：tmux 复制模式也显示「回到实时画面」');
+  const exH = await hOf('.term.active .tmux-exit');
+  ok(Math.abs(exH - keyH) < 0.5, `手机：tmux 复制模式的「回到实时画面」也和按键一样高 (${exH} / ${keyH}px)`);
   got = ''; await m.locator('.term.active .tmux-exit').tap(); await wait(700);
   // (按钮消失由上面电脑的测试管：模拟的 tmux 把位置标记画在第 60 列，手机终端没这么宽，清不干净)
   ok(got === 'q' && !(await mFocused()), '手机：点它发 q 退出复制模式，不聚焦输入框 (不弹输入法): ' + JSON.stringify(got));
