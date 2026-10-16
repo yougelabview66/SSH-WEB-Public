@@ -163,6 +163,23 @@
   }
 
   mInput.addEventListener('focus', () => { if (!mInput.value.startsWith(SENTINEL)) setMobileText(mText()); });
+  // 安卓上按返回键 / 输入法的收起键只把键盘收起来，焦点还留在输入框里：之后点 ↵ (选 CLI 的选项)、方向键等，
+  // 浏览器又把键盘弹出来。所以看到键盘收起 (宽度不变、可视高度比聚焦以来最矮时高出一截) 就让输入框失去焦点，
+  // 要打字再点输入框或终端。没有屏幕键盘 (实体键盘) 时高度不变，不受影响
+  const viewH = () => Math.min(innerHeight, window.visualViewport?.height ?? innerHeight);
+  let kbLow = null; // 输入框聚焦以来最矮的可视高度 (键盘开着时的高度)
+  mInput.addEventListener('focus', () => { kbLow = { w: innerWidth, h: viewH() }; });
+  function checkKeyboardClosed() {
+    if (!isTouch || !kbLow || document.activeElement !== mInput) return;
+    const h = viewH();
+    if (innerWidth !== kbLow.w) kbLow = { w: innerWidth, h }; // 转屏：重新量
+    else if (h < kbLow.h) kbLow.h = h;
+    else if (h - kbLow.h > 150) mInput.blur();
+  }
+  window.addEventListener('resize', checkKeyboardClosed);
+  window.visualViewport?.addEventListener('resize', checkKeyboardClosed);
+  // 浏览器漏报可视区域变化时，点按钮前再量一次
+  document.addEventListener('pointerdown', checkKeyboardClosed, true);
   mInput.addEventListener('compositionstart', () => { composing = true; });
   // 中文 / 联想输入：上屏后再处理
   mInput.addEventListener('compositionend', () => {

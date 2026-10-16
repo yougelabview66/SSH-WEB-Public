@@ -117,6 +117,20 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   ok(await txt() === '', '新标签输入框为空');
   await m.locator('.tab').first().tap(); await wait(400);
   ok(await txt() === 'draft', '切回原标签草稿还在');
+  // 安卓上按返回键 / 输入法的收起键：键盘收起来了焦点却还在输入框里，之后点 ↵ (选 CLI 的选项) 浏览器会把键盘再弹出来。
+  // 模拟：聚焦输入框后页面变矮 (键盘弹出)，再恢复原高 (键盘收起)
+  const vp = m.viewportSize();
+  const mFocused = () => m.evaluate(() => document.activeElement?.id === 'mInput');
+  await m.evaluate(() => { document.getElementById('mInput').value = ''; document.getElementById('mInput').dispatchEvent(new Event('input')); });
+  await m.tap('#mInput'); await m.setViewportSize({ width: vp.width, height: 450 }); await wait(400);
+  got = ''; await key('up'); await wait(300);
+  ok(await mFocused() && got === '\x1b[A', '键盘开着时点按键栏的键，焦点留在输入框 (键盘不收起): ' + JSON.stringify(got));
+  await m.setViewportSize(vp); await wait(400);
+  ok(!(await mFocused()), '键盘收起后输入框不再留着焦点');
+  got = ''; await m.tap('#mForm button[type=submit]'); await wait(300);
+  ok(got === '\r' && !(await mFocused()), '键盘收起后点 ↵：照常发回车，不聚焦输入框 (不弹输入法): ' + JSON.stringify(got));
+  await m.tap('#mInput'); await wait(200);
+  ok(await mFocused(), '再点输入框照常聚焦 (弹输入法)');
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
   await browser.close(); process.exit();
 })().catch((e) => { console.error(e); process.exit(1); });
