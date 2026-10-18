@@ -143,6 +143,7 @@
   // 本地编辑的内容变化后：需要立即发送的情况就发送，否则只保存草稿
   function onMobileText() {
     const text = mText();
+    if (isReinsert(text)) return setMobileText('');
     if (mods.ctrl || mods.alt) {
       // 开着 Ctrl / Alt：只把新打的字按组合键发出去 (如 Ctrl + c = ^C)，输入框里原来的文字不动
       const prev = active?.draft || '';
@@ -200,7 +201,11 @@
     if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); mobileEnter(); }
   });
   mInput.addEventListener('input', (e) => {
-    if (composing || e.isComposing) return;
+    if (composing || e.isComposing) {
+      // 输入法把刚发出去的字当成组字又填回来：结束组字，上屏后删掉
+      if (isReinsert(mText())) { endComposition(); setMobileText(''); }
+      return;
+    }
     // 个别输入法的「发送」没有先经过 beforeinput：换行已经插进去了，删掉再发送
     if (shiftEnter && (e.inputType === 'insertLineBreak' || e.inputType === 'insertParagraph')) shiftEnter = false; // Shift+回车：保留换行
     else if (e.inputType === 'insertLineBreak' || e.inputType === 'insertParagraph') {
@@ -225,16 +230,36 @@
   });
   $('#mForm').addEventListener('submit', (e) => {
     e.preventDefault();
-    composing = false;
     mobileEnter();
   });
 
-  function mobileEnter() {
+  // 输入法还在组字 (手机输入法正在打的那个英文词、中文拼音选字) 时点 ↵ / 按键栏：先让输入法把字上屏、结束组字。
+  // 不然发出去、清空输入框后，输入法还记着这段字，接着又把它填回输入框 (CLI 里有了，输入框里还留着)。
+  // 输入框离开再回来，浏览器会把正在组的字上屏，输入法也会丢掉它记着的字
+  let reinsert = null; // 组字中发出去的那段字：输入法要是还把它填回来 (马上就会)，删掉
+  // 只看发出去后的第一次输入 (输入法填回来是紧跟着的)，之后打的字不管
+  const isReinsert = (text) => {
+    const r = reinsert;
+    reinsert = null;
+    return !!(r && text && Date.now() - r.at < 500 && r.text.endsWith(text));
+  };
+  function endComposition() {
+    const was = composing;
+    composing = false;
+    if (!was || document.activeElement !== mInput) return;
+    mInput.blur();
+    mInput.focus({ preventScroll: true });
+    return true;
+  }
+
+  function mobileEnter(ended = false) {
     if (inputLocked(active)) return; // 别的设备在用：字留在输入框里，接管后再发
+    const wasComposing = endComposition() || ended;
     if (cmdMode) { flushInput(); setCmdMode(false); }
     const text = mText();
     setMobileText('');
     submitText(active, text);
+    reinsert = wasComposing && text ? { text, at: Date.now() } : null;
   }
 
   // 按钮按下时不抢走输入框焦点，避免键盘收起
@@ -243,6 +268,7 @@
     const b = e.target.closest('button');
     if (!b) return;
     if (b.dataset.a === 'kset') return openKeysEditor();
+    const ended = endComposition();
     if (b.dataset.mod) return setMod(b.dataset.mod, !mods[b.dataset.mod]);
     if (b.dataset.t) {
       // | / - ~ 等字符键：和键盘打字一样先放进输入框
@@ -262,9 +288,12 @@
       // 输入框有文字时 ⌫ ← → Home End 编辑输入框；回车 = 发送
       if (plain && k === 'bs') return at > 0 && setMobileText(text.slice(0, at - 1) + text.slice(at), at - 1);
       if (plain && CARET[k]) return setMobileText(text, CARET[k](at, text.length));
-      if (plain && k === 'enter') return mobileEnter();
+      if (plain && k === 'enter') return mobileEnter(ended);
       // Esc、^C 等控制键不影响正在编辑的文字；其他键 (Tab 补全等) 先把文字发出去再发按键
-      if (!['esc', 'escesc'].includes(k) && !/^\^/.test(k)) flushInput();
+      if (!['esc', 'escesc'].includes(k) && !/^\^/.test(k)) {
+        flushInput();
+        if (ended) reinsert = { text, at: Date.now() };
+      }
     }
     if (cmdMode && (['esc', 'escesc', 'enter', '^c'].includes(k) || (k === 'bs' && --cmdMode.n <= 0))) setCmdMode(false);
     if (b.dataset.seq != null) { clearMods(); return sendKeys(b.dataset.seq); }

@@ -131,6 +131,23 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   ok(got === '\r' && !(await mFocused()), '键盘收起后点 ↵：照常发回车，不聚焦输入框 (不弹输入法): ' + JSON.stringify(got));
   await m.tap('#mInput'); await wait(200);
   ok(await mFocused(), '再点输入框照常聚焦 (弹输入法)');
+  // 输入法还在组字时点 ↵：发出去、清空后输入法接着把记着的字填回来 (CLI 里有了，输入框里还留着)。
+  // 模拟输入法：组字中点 ↵，之后输入法把那段字上屏 (insertText) / 又当成组字填回来 (imeSetComposition)
+  got = ''; await m.keyboard.type('hello ');
+  await cdp.send('Input.imeSetComposition', { text: 'world', selectionStart: 5, selectionEnd: 5 }); await wait(100);
+  await m.tap('#mForm button[type=submit]'); await wait(300);
+  await cdp.send('Input.insertText', { text: 'world' }); await wait(300);
+  ok(got === 'hello world\r' && await txt() === '', '组字中点 ↵：整段发出去，输入法把字上屏也不留在输入框: ' + JSON.stringify([got, await txt()]));
+  got = ''; await cdp.send('Input.imeSetComposition', { text: '你好世界', selectionStart: 4, selectionEnd: 4 }); await wait(100);
+  await m.tap('#mForm button[type=submit]'); await wait(300);
+  await cdp.send('Input.imeSetComposition', { text: '你好世界', selectionStart: 4, selectionEnd: 4 }); await wait(300);
+  ok(got === '你好世界\r' && await txt() === '', '中文组字中点 ↵：发出去，输入法又当成组字填回来也删掉: ' + JSON.stringify([got, await txt()]));
+  got = ''; await cdp.send('Input.imeSetComposition', { text: 'ls', selectionStart: 2, selectionEnd: 2 }); await wait(100);
+  await key('tab'); await wait(300);
+  await cdp.send('Input.insertText', { text: 'ls' }); await wait(300);
+  ok(got === 'ls\t' && await txt() === '', '组字中点按键栏 Tab：先发字再发 Tab，输入框不留字: ' + JSON.stringify([got, await txt()]));
+  await wait(600); got = ''; await m.keyboard.type('s'); await wait(200);
+  ok(await txt() === 's' && got === '', '之后正常打字不受影响');
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
   await browser.close(); process.exit();
 })().catch((e) => { console.error(e); process.exit(1); });
