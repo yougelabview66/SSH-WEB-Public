@@ -95,25 +95,43 @@
   }
 
   // ------------------------------------------------------------ GPU 渲染 (WebGL)
-  // 整屏重画的程序 (Claude Code / top 等) 更流畅、更省电。只给当前标签启用：
-  // 隐藏的标签本来就不绘制，且浏览器同时能用的 WebGL 数量有限。
+  // 整屏重画的程序 (Claude Code / top 等) 更流畅、更省电。当前标签和最近用过的几个标签启用：
+  // 切标签时不用拆掉、重建渲染器 (拆掉的标签会退回 DOM 渲染整屏重画一遍，新建的要重新生成字形，标签多时切换会卡)；
+  // 浏览器同时能用的 WebGL 数量有限 (手机约 8 个)，超出的拆掉。藏着的标签本来就不绘制。
   // 不支持 WebGL 或 GPU 上下文丢失 (手机切到后台时可能发生) 时退回默认渲染，回到前台再启用
   // 先检测再加载：插件在不支持的浏览器上加载失败时会残留在终端里，导致触摸滚动失效
   const webglSupported = (() => {
     try { return !!window.WebglAddon && !!document.createElement('canvas').getContext('webgl2'); } catch { return false; }
   })();
   let webglFails = webglSupported ? 0 : 3;
+  let lastLoss = 0;
+  const WEBGL_KEEP = isTouch ? 4 : 6;
+  let recentGl = []; // 最近激活的标签，最近的在前
+  let trimTimer = 0;
+  function trimWebgl() {
+    recentGl = recentGl.filter((x) => !x.closed);
+    const extra = recentGl.slice(WEBGL_KEEP).find((x) => x.webgl && x !== active);
+    if (!extra) return;
+    disableWebgl(extra);
+    trimTimer = setTimeout(trimWebgl, 300); // 一次拆一个 (拆掉的标签要退回 DOM 渲染重画一遍)，连着开了很多标签时不一下子卡住
+  }
+  // 渲染器按这些画的：字号、字体、配色、屏幕缩放
+  const glSig = (s) => [s.term.options.fontSize, s.term.options.fontFamily, JSON.stringify(s.term.options.theme), window.devicePixelRatio];
+  const sameSig = (a, b) => !!a && a.every((v, i) => v === b[i]);
 
   function enableWebgl(s) {
     if (s.webgl || s.closed || webglFails >= 3) return;
     const addon = new WebglAddon.WebglAddon();
     try {
       addon.onContextLoss(() => {
-        webglFails++;
+        // 切到后台时几个标签的上下文会一起丢：一起丢的只算一次
+        if (Date.now() - lastLoss > 2000) webglFails++;
+        lastLoss = Date.now();
         disableWebgl(s);
       });
       s.term.loadAddon(addon);
       s.webgl = addon;
+      s.glSig = glSig(s);
     } catch {
       try { addon.dispose(); } catch {}
       webglFails = 3;
@@ -141,19 +159,25 @@
     s.shown = true;
     // 还没看过的后台标签 (只收了状态，见 10-session.js)：现在要画面
     if (s.lite && s.ws?.readyState === WebSocket.OPEN) { s.lite = false; send(s, { type: 'sync', offset: s.offset }); }
+    if (prev && prev !== s && prev.webgl) prev.glSig = glSig(prev); // 切走时它的渲染器是对的
     sessions.forEach((x) => {
       x.el.classList.toggle('active', x === s);
       x.tab.classList.toggle('active', x === s);
-      if (x !== s) disableWebgl(x);
     });
+    // 最近用过的几个标签留着 WebGL 渲染器，切回来直接显示；藏着的时候字号 / 字体 / 配色 / 缩放变过就重建 (藏起来时量不准)
+    recentGl = [s, ...recentGl.filter((x) => x !== s)];
+    if (s.webgl && !sameSig(s.glSig, glSig(s))) disableWebgl(s);
+    const fresh = !s.webgl;
     enableWebgl(s);
+    clearTimeout(trimTimer);
+    trimTimer = setTimeout(trimWebgl, 1000); // 多出来的等切换画完、空下来再拆
     requestAnimationFrame(() => { syncSize(s); focusTerm(s); });
     // 刚显示出来的标签：手机上有时只画出一部分 (要点一下输入框再收起键盘才完整)，切过来后照那样重新量一遍、整屏重画；
     // 新建的 WebGL 渲染器的字形缓存也清掉重画 (藏起来时量的字宽可能不对)
     if (prev !== s) {
       const redraw = () => {
         if (active !== s) return;
-        if (s.webgl) try { s.term.clearTextureAtlas(); } catch {}
+        if (fresh && s.webgl) try { s.term.clearTextureAtlas(); } catch {}
         relayout();
       };
       setTimeout(redraw, 100);

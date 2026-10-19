@@ -1,5 +1,5 @@
   // ------------------------------------------------------------ 各主机 (标签) 状态
-  let deskTabList = [], lastStatusPaint = 0;
+  let deskTabList = [], lastStatusPaint = 0, alignKey = '';
 
   // 主机状态画到所有显示着的地方：网页内悬浮窗、置顶到桌面的小窗口
   function statusBoxes() {
@@ -22,9 +22,15 @@
         <span class="${$('.dot', x.tab).className}"></span><span class="nm">${esc($('.title', x.tab).textContent)}</span>
         <span class="stt ${cls}">${st}</span></div>`;
     }).join('');
-    for (const box of boxes) if (box.innerHTML !== html) box.innerHTML = html;
-    alignPipBack();
-    alignHfHead();
+    let changed = false;
+    for (const box of boxes) if (box.innerHTML !== html) { box.innerHTML = html; changed = true; }
+    // 对齐要量卡片的位置 (浏览器得马上重新排版)：每 0.5 秒都会走到这里，内容、悬浮窗状态、窗口宽度都没变就不重新量
+    const key = `${hostFloat.className}|${innerWidth}|${pipWin ? pipWin.innerWidth : ''}`;
+    if (changed || key !== alignKey) {
+      alignKey = key;
+      alignPipBack();
+      alignHfHead();
+    }
     // 悬浮窗收起时，标题栏上用小圆点显示每个标签的状态
     const sum = states.map(([st, cls], i) => `<i class="hf-d ${cls}" title="${esc($('.title', deskTabList[i].tab).textContent)}：${st}"></i>`).join('');
     if (hfSum.innerHTML !== sum) hfSum.innerHTML = sum;
