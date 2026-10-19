@@ -148,6 +148,38 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   ok(got === 'ls\t' && await txt() === '', '组字中点按键栏 Tab：先发字再发 Tab，输入框不留字: ' + JSON.stringify([got, await txt()]));
   await wait(600); got = ''; await m.keyboard.type('s'); await wait(200);
   ok(await txt() === 's' && got === '', '之后正常打字不受影响');
+  // 命令模式 (打 / 后逐字发送) 里组字中点 ↵ / 按键栏：组的字发出去、输入框清空后输入法也会填回来
+  await m.evaluate(() => { const el = document.getElementById('mInput'); el.value = ''; el.dispatchEvent(new Event('input')); });
+  got = ''; await m.keyboard.type('/'); await wait(100);
+  await cdp.send('Input.imeSetComposition', { text: 'help', selectionStart: 4, selectionEnd: 4 }); await wait(100);
+  await m.tap('#mForm button[type=submit]'); await wait(300);
+  await cdp.send('Input.insertText', { text: 'help' }); await wait(300);
+  ok(got === '/help\r' && await txt() === '' && !(await isCmd()), '命令模式组字中点 ↵：执行，输入框不留字: ' + JSON.stringify([got, await txt()]));
+  got = ''; await m.keyboard.type('/'); await wait(100);
+  await cdp.send('Input.imeSetComposition', { text: 'mo', selectionStart: 2, selectionEnd: 2 }); await wait(100);
+  await key('tab'); await wait(300);
+  await cdp.send('Input.insertText', { text: 'mo' }); await wait(300);
+  ok(got === '/mo\t' && await txt() === '' && await isCmd(), '命令模式组字中点按键栏 Tab：补全，输入框不留字: ' + JSON.stringify([got, await txt()]));
+  got = ''; await cdp.send('Input.imeSetComposition', { text: 'del', selectionStart: 3, selectionEnd: 3 }); await wait(100);
+  await cdp.send('Input.insertText', { text: 'del' }); await wait(100); await m.keyboard.type(' '); await wait(300);
+  ok(got === 'del ' && await txt() === '' && await isCmd(), '命令模式正常上屏 (打完词按空格) 照常逐字发送: ' + JSON.stringify([got, await txt()]));
+  await key('esc'); await wait(200);
+  // 发出去时让输入法重新开始：输入框离开再回来 (正在组的字上屏、输入法丢掉记着的字)，焦点留在输入框 (键盘不收起)
+  await m.evaluate(() => { const el = document.getElementById('mInput'); window.FB = []; el.addEventListener('blur', () => FB.push('blur')); el.addEventListener('focus', () => FB.push('focus')); });
+  got = ''; await m.keyboard.type('echo a'); await m.tap('#mForm button[type=submit]'); await wait(300);
+  ok(got === 'echo a\r' && await mFocused() && (await m.evaluate(() => FB.join())) === 'blur,focus', '点 ↵ 发出去时输入框离开又回来 (输入法重新开始)，焦点留在输入框: ' + await m.evaluate(() => FB.join()));
+  got = ''; await m.keyboard.type('echo b'); await m.keyboard.press('Enter'); await wait(300);
+  ok(got === 'echo b\r' && await mFocused(), '键盘上的「发送」也一样，焦点留在输入框');
+  await m.evaluate(() => { FB.length = 0; }); got = ''; await key('up'); await wait(200);
+  ok(got === '\x1b[A' && (await m.evaluate(() => FB.join())) === '', '输入框空着时点方向键不动输入框');
+  // 不组字的输入法 (自己记着整段字) 发出去后紧跟着把它整段填回来：也删掉
+  got = ''; await m.keyboard.type('git status'); await m.tap('#mForm button[type=submit]'); await wait(100);
+  await cdp.send('Input.insertText', { text: 'git status' }); await wait(300);
+  ok(got === 'git status\r' && await txt() === '', '发出去后输入法把整段字填回来：删掉: ' + JSON.stringify(await txt()));
+  // 发出去后马上打的字 (一个一个打) 不会被当成填回来的
+  got = ''; await m.keyboard.type('y'); await m.tap('#mForm button[type=submit]'); await m.keyboard.type('y'); await wait(300);
+  ok(got === 'y\r' && await txt() === 'y', '发出去后马上打同一个字不会被删: ' + JSON.stringify([got, await txt()]));
+  await m.evaluate(() => { const el = document.getElementById('mInput'); el.value = ''; el.dispatchEvent(new Event('input')); });
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
   await browser.close(); process.exit();
 })().catch((e) => { console.error(e); process.exit(1); });

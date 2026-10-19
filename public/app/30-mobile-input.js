@@ -92,6 +92,8 @@
       selectionStart: { get: () => (offsets() || last)[0] },
       selectionEnd: { get: () => (offsets() || last)[1] },
       setSelectionRange: { value: (a, b) => (document.activeElement === el ? select(a, b) : (last = [a, b])) },
+      // 不在输入框里时设的光标位置 (setSelectionRange 只记下，聚焦后要自己放回去，见 imeRestart)
+      savedSelection: { get: () => last.slice() },
       select: { value: () => { el.focus({ preventScroll: true }); select(0, textOf(el).length); } },
     });
     // 聚焦时光标回到上次的位置 (可编辑的 div 默认放在最前面)，点到哪里就以点的位置为准
@@ -132,12 +134,21 @@
 
   // 把输入框里的文字立即发给终端并清空 (命令模式、修饰键，或按特殊键前保持先后顺序)
   function flushInput() {
+    // 命令模式里输入法正常上屏 (compositionend) 时就发送：正在派发组字事件，不在这里让输入框离开，过后再让输入法重新开始
+    if (justComposed) { if (takeText(sendKeys)) setTimeout(() => imeRestart(() => {})); return; }
+    imeRestart(() => takeText(sendKeys)); // 修饰键留给后面的按键
+  }
+
+  // 把输入框里的字拿出来交给 send 并清空输入框，返回拿到的字
+  function takeText(send) {
     const text = mText();
-    if (text && inputLocked(active)) return; // 别的设备在用：字留在输入框里
+    if (text && inputLocked(active)) return ''; // 别的设备在用：字留在输入框里
     setMobileText('');
-    if (!text) return;
+    if (!text) return '';
     if (cmdMode) cmdMode.n += [...text].length;
-    sendKeys(text); // 修饰键留给后面的按键
+    send(text);
+    armReinsert(text);
+    return text;
   }
 
   // 本地编辑的内容变化后：需要立即发送的情况就发送，否则只保存草稿
@@ -183,9 +194,11 @@
   document.addEventListener('pointerdown', checkKeyboardClosed, true);
   mInput.addEventListener('compositionstart', () => { composing = true; });
   // 中文 / 联想输入：上屏后再处理
+  let justComposed = false; // 正在处理组字结束 (命令模式里这时就把字发出去、清空输入框)
   mInput.addEventListener('compositionend', () => {
     composing = false;
-    onMobileText();
+    justComposed = true;
+    try { onMobileText(); } finally { justComposed = false; }
   });
   // 键盘上的「发送」(textarea 里默认是换行) 和实体键盘的回车 = 发送；Shift+回车才换行
   let shiftEnter = false; // 实体键盘 Shift+回车：放行换行
@@ -203,7 +216,7 @@
   mInput.addEventListener('input', (e) => {
     if (composing || e.isComposing) {
       // 输入法把刚发出去的字当成组字又填回来：结束组字，上屏后删掉
-      if (isReinsert(mText())) { endComposition(); setMobileText(''); }
+      if (isReinsert(mText())) imeRestart(() => setMobileText(''));
       return;
     }
     // 个别输入法的「发送」没有先经过 beforeinput：换行已经插进去了，删掉再发送
@@ -233,42 +246,65 @@
     mobileEnter();
   });
 
-  // 输入法还在组字 (手机输入法正在打的那个英文词、中文拼音选字) 时点 ↵ / 按键栏：先让输入法把字上屏、结束组字。
-  // 不然发出去、清空输入框后，输入法还记着这段字，接着又把它填回输入框 (CLI 里有了，输入框里还留着)。
-  // 输入框离开再回来，浏览器会把正在组的字上屏，输入法也会丢掉它记着的字
-  let reinsert = null; // 组字中发出去的那段字：输入法要是还把它填回来 (马上就会)，删掉
-  // 只看发出去后的第一次输入 (输入法填回来是紧跟着的)，之后打的字不管
+  // 手机输入法自己也记着字：正在组的字 (英文正在打的那个词、中文拼音选字)、联想用的前文。直接改输入框里的字
+  // (发出去后清空)，有的输入法还按它记着的来，接着又把字填回输入框 (CLI 里有了，输入框里还留着，下次跟着再发一遍)。
+  // 所以发出去、清空前后让输入法重新开始：输入框离开 (浏览器把正在组的字上屏) 再回来 (输入法重新读输入框，
+  // 安卓上是 restartInput)，它记着的字全部丢掉。同一段代码里离开又回来，键盘不会收起
+  let imeState = null; // 正在 imeRestart：{ composed: 开始时输入法在组字 }
+  function imeRestart(fn) {
+    if (imeState || !isTouch || document.activeElement !== mInput) return fn();
+    imeState = { composed: composing };
+    void mInput.selectionStart; // 记下现在的光标位置
+    mInput.blur(); // 正在组的字上屏 (compositionend；命令模式里这时就发出去了)
+    composing = false;
+    try { return fn(); } finally {
+      imeState = null;
+      // 回来后光标放回该在的地方 (输入框里的字换过了，浏览器留着的选区已经不对)
+      const sel = mInput.savedSelection;
+      if (!document.activeElement || document.activeElement === document.body) {
+        mInput.focus({ preventScroll: true });
+        mInput.setSelectionRange(...sel);
+      }
+    }
+  }
+
+  // 第二道：发出去后输入法还紧跟着把这段字 (或它的结尾) 填回来，删掉。只看发出去后 0.5 秒内的第一次输入；
+  // 不是组字中发出去的，填回来的要两个字以上才算 (人一次只打一个字，免得接着打的字被删)
+  let reinsert = null;
+  function armReinsert(text) {
+    if (!isTouch || !(imeState || justComposed || document.activeElement === mInput)) return;
+    reinsert = { text, at: Date.now(), composed: !!(imeState?.composed || justComposed) };
+  }
   const isReinsert = (text) => {
     const r = reinsert;
     reinsert = null;
-    return !!(r && text && Date.now() - r.at < 500 && r.text.endsWith(text));
+    return !!(r && text && Date.now() - r.at < 500 && r.text.endsWith(text) && (r.composed || [...text].length >= 2));
   };
-  function endComposition() {
-    const was = composing;
-    composing = false;
-    if (!was || document.activeElement !== mInput) return;
-    mInput.blur();
-    mInput.focus({ preventScroll: true });
-    return true;
-  }
 
-  function mobileEnter(ended = false) {
+  function mobileEnter() {
     if (inputLocked(active)) return; // 别的设备在用：字留在输入框里，接管后再发
-    const wasComposing = endComposition() || ended;
-    if (cmdMode) { flushInput(); setCmdMode(false); }
-    const text = mText();
-    setMobileText('');
-    submitText(active, text);
-    reinsert = wasComposing && text ? { text, at: Date.now() } : null;
+    imeRestart(() => {
+      if (cmdMode) { flushInput(); setCmdMode(false); }
+      const text = mText();
+      setMobileText('');
+      submitText(active, text);
+      if (text) armReinsert(text);
+    });
   }
 
   // 按钮按下时不抢走输入框焦点，避免键盘收起
   $('#mobileBar').addEventListener('mousedown', (e) => { if (e.target.closest('button')) e.preventDefault(); });
-  $('#mobileBar .mkeys').addEventListener('click', async (e) => {
+  $('#mobileBar .mkeys').addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (!b) return;
     if (b.dataset.a === 'kset') return openKeysEditor();
-    const ended = endComposition();
+    if (b.dataset.k === 'history') return openHistory();
+    if (b.dataset.k === 'copy') return openCopyPanel(active);
+    // 要改输入框里的字 (编辑、发出去清空)：前后让输入法重新开始 (见 imeRestart)；输入框空着、没在组字就不用
+    if (mText() || composing) imeRestart(() => keybarKey(b));
+    else keybarKey(b);
+  });
+  function keybarKey(b) {
     if (b.dataset.mod) return setMod(b.dataset.mod, !mods[b.dataset.mod]);
     if (b.dataset.t) {
       // | / - ~ 等字符键：和键盘打字一样先放进输入框
@@ -279,8 +315,6 @@
       return onMobileText();
     }
     const k = b.dataset.k;
-    if (k === 'history') return openHistory();
-    if (k === 'copy') return openCopyPanel(active);
     const text = mText();
     if (text) {
       const plain = !mods.shift && !mods.ctrl && !mods.alt;
@@ -288,26 +322,23 @@
       // 输入框有文字时 ⌫ ← → Home End 编辑输入框；回车 = 发送
       if (plain && k === 'bs') return at > 0 && setMobileText(text.slice(0, at - 1) + text.slice(at), at - 1);
       if (plain && CARET[k]) return setMobileText(text, CARET[k](at, text.length));
-      if (plain && k === 'enter') return mobileEnter(ended);
+      if (plain && k === 'enter') return mobileEnter();
       // Esc、^C 等控制键不影响正在编辑的文字；其他键 (Tab 补全等) 先把文字发出去再发按键
-      if (!['esc', 'escesc'].includes(k) && !/^\^/.test(k)) {
-        flushInput();
-        if (ended) reinsert = { text, at: Date.now() };
-      }
+      if (!['esc', 'escesc'].includes(k) && !/^\^/.test(k)) flushInput();
     }
     if (cmdMode && (['esc', 'escesc', 'enter', '^c'].includes(k) || (k === 'bs' && --cmdMode.n <= 0))) setCmdMode(false);
     if (b.dataset.seq != null) { clearMods(); return sendKeys(b.dataset.seq); }
-    if (k === 'paste') {
-      if (inputLocked(active)) return; // 别的设备在用：不弹粘贴框 (粘贴的内容也发不出去)
-      let text = '';
-      try { text = await navigator.clipboard.readText(); } catch {}
-      if (!text) text = prompt('粘贴内容（浏览器不允许直接读取剪贴板时在这里粘贴）：') || '';
-      if (text) sendKeys(text);
-      return;
-    }
+    if (k === 'paste') return pasteKey();
     const seq = keySeq(k);
     if (seq) sendKeys(seq);
-  });
+  }
+  async function pasteKey() {
+    if (inputLocked(active)) return; // 别的设备在用：不弹粘贴框 (粘贴的内容也发不出去)
+    let text = '';
+    try { text = await navigator.clipboard.readText(); } catch {}
+    if (!text) text = prompt('粘贴内容（浏览器不允许直接读取剪贴板时在这里粘贴）：') || '';
+    if (text) sendKeys(text);
+  }
 
   const CARET = {
     left: (at) => Math.max(0, at - 1), right: (at, n) => Math.min(n, at + 1),
