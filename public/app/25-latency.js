@@ -100,6 +100,26 @@
     updateSftpBtn();
   });
 
+  // 上传一个文件到目标主机的 target (完整路径)：成功 'ok'，已存在且没让覆盖 'exists'，失败抛错；onProgress(已传, 总共)
+  // (文件管理的上传、发给 Claude 的附件共用)
+  function sftpPut(s, file, target, overwrite, onProgress) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('PUT', `/api/sftp/${s.sid}/upload?path=${encodeURIComponent(target)}${overwrite ? '&overwrite=1' : ''}`);
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+      xhr.upload.onprogress = (e) => { if (e.lengthComputable && onProgress) onProgress(e.loaded, e.total); };
+      xhr.onload = () => {
+        if (xhr.status === 200) return resolve('ok');
+        if (xhr.status === 409) return resolve('exists');
+        let msg = 'HTTP ' + xhr.status;
+        try { msg = JSON.parse(xhr.responseText).error || msg; } catch {}
+        reject(new Error(msg));
+      };
+      xhr.onerror = () => reject(new Error('网络错误'));
+      xhr.send(file);
+    });
+  }
+
   function createSftp(s) {
     const el = document.createElement('div');
     el.className = 'sftp';
@@ -219,23 +239,7 @@
     }
 
     function putFile(file, target, overwrite) {
-      return new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open('PUT', `/api/sftp/${s.sid}/upload?path=${encodeURIComponent(target)}${overwrite ? '&overwrite=1' : ''}`);
-        xhr.setRequestHeader('Content-Type', 'application/octet-stream');
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) setStatus2(`上传 ${file.name}  ${fmtSize(e.loaded)} / ${fmtSize(e.total)}`, (e.loaded / e.total) * 100);
-        };
-        xhr.onload = () => {
-          if (xhr.status === 200) return resolve('ok');
-          if (xhr.status === 409) return resolve('exists');
-          let msg = 'HTTP ' + xhr.status;
-          try { msg = JSON.parse(xhr.responseText).error || msg; } catch {}
-          reject(new Error(msg));
-        };
-        xhr.onerror = () => reject(new Error('网络错误'));
-        xhr.send(file);
-      });
+      return sftpPut(s, file, target, overwrite, (done, total) => setStatus2(`上传 ${file.name}  ${fmtSize(done)} / ${fmtSize(total)}`, (done / total) * 100));
     }
 
     async function upload(files) {

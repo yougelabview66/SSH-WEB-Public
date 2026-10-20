@@ -282,6 +282,9 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 #mInput.empty::before { content: attr(data-placeholder); position: absolute; left: 10px; right: 10px;
   color: var(--muted); pointer-events: none; }
 .mline button { flex-shrink: 0; width: 48px; height: 40px; font-size: 16px; touch-action: manipulation; }
+.mline #mAttach { width: 36px; padding: 0; }
+/* 拖文件到终端 / 输入框上：发给 Claude (见 62-attach.js) */
+.drop-hint { outline: 2px dashed var(--accent); outline-offset: -4px; }
 
 /* 电脑输入栏 */
 /* 样式同手机输入栏 .mline */

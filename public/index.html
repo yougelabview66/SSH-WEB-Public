@@ -110,9 +110,13 @@
           <div id="mInput" contenteditable="plaintext-only" role="textbox" aria-multiline="true" aria-label="输入框"
                data-placeholder="输入后点 ↵ 发送，打 / 显示命令列表" autocorrect="off" autocapitalize="off" spellcheck="false"
                enterkeyhint="send" inputmode="text" data-form-type="other" data-1p-ignore data-lpignore="true" data-bwignore></div>
+          <!-- 图片 / 文件发给 Claude：传到目标主机，路径填进输入框 (见 62-attach.js) -->
+          <button type="button" id="mAttach" title="发送图片 / 文件给 Claude">📎</button>
           <button type="submit" class="primary">↵</button>
         </form>
       </div>
+      <!-- 📎 选文件用 (放在输入栏外面：输入栏里不放表单输入框，见 30-mobile-input.js) -->
+      <input type="file" id="mAttachFile" multiple hidden>
       <!-- 电脑输入栏：先在本地编辑，回车才整段发给终端 (终端里照样可以直接打字) -->
       <div id="deskBar" class="hidden">
         <div id="dGrip" title="上下拖动调整输入框位置"></div>
