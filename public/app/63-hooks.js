@@ -23,7 +23,7 @@
     const host = s.baseTitle || s.title;
     el.className = 'overlay hooksp';
     el.innerHTML = `<div class="card wide hooks-card">
-      <div class="hist-head"><h3>🪝 Claude 钩子通知</h3><button type="button" data-a="close" title="关闭 (Esc)">×</button></div>
+      <div class="hist-head"><h3>🔔 钩子通知</h3><button type="button" data-a="close" title="关闭 (Esc)">×</button></div>
       <div class="hk-host"><span class="hk-name"></span> · <span class="hk-state">正在检查…</span></div>
       <div class="hint hk-note">装上后，Claude Code 开始干活、要权限、问问题、做完、出错时会直接告诉 SSH-WEB：主机状态更准，
         推送写得出具体内容（比如「要执行命令：npm test」「做完了：……」），安卓手机的通知上可以直接点「允许 / 拒绝」。<br>
