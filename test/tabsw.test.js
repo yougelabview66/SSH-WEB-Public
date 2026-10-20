@@ -8,8 +8,9 @@ const sizes = {}; let nextId = 0;
 new Server({ hostKeys: [hostKey()] }, (c) => {
   c.on('authentication', (ctx) => ctx.accept());
   c.on('ready', () => c.on('session', (acc) => {
-    const s = acc(); const id = ++nextId;
-    s.on('pty', (a, r, info) => { sizes[id] = `${info.cols}×${info.rows}`; a(); });
+    // 只给终端编号 (要了终端尺寸的才算；读钩子事件的 tail 这类通道不算)
+    const s = acc(); let id = 0;
+    s.on('pty', (a, r, info) => { id = ++nextId; sizes[id] = `${info.cols}×${info.rows}`; a(); });
     s.on('window-change', (a, r, info) => { sizes[id] = `${info.cols}×${info.rows}`; a && a(); });
     s.on('shell', (a) => { a().write(`TAB${id} $ `); });
   }));

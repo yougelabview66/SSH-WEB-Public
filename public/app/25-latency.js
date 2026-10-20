@@ -87,7 +87,7 @@
     $('#btnMon').classList.toggle('on', monOpen);
     $('#btnMore').classList.toggle('hidden', !active);
     $('#btnMore').classList.toggle('on', monOpen); // 监控收在「更多」里：开着时「更多」也高亮
-    $('#btnFwd').disabled = !(active && active.sid);
+    $('#btnFwd').disabled = $('#btnHooks').disabled = !(active && active.sid);
     sessions.forEach(syncMonitor);
     const b = $('#btnSftp');
     b.classList.toggle('hidden', !active);
