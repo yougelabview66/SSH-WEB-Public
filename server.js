@@ -17,6 +17,7 @@
  *   http.js        网页、登录、接口       api-data.js / api-sessions.js  各接口
  *   ws.js          WebSocket 消息         session/      后台会话 (SSH 连接、画面、输入、尺寸)
  *   events.js      通知所有页面           sftp.js / monitor.js / push.js / status.js / cli-input.js / echo-wait.js
+ *   forward.js     端口预览 (转发目标主机上的开发服务)
  */
 
 const http = require('http');
@@ -25,6 +26,7 @@ const auth = require('./lib/auth');
 const { createApp } = require('./lib/http');
 const { attachWebSocket } = require('./lib/ws');
 const { sessions, setPush } = require('./lib/session');
+const forward = require('./lib/forward');
 
 let ws = null;
 const { app, push } = createApp({ onLogout: (jti) => ws.closeByJti(jti) });
@@ -34,6 +36,8 @@ const server = http.createServer(app);
 // Node 默认 5 分钟收不完请求就返回 408，大文件 / 慢网络上传会中途失败；这里不限制 (连接空闲仍由 keep-alive 管理)
 server.requestTimeout = 0;
 ws = attachWebSocket(server);
+// 端口预览的 WebSocket (开发服务的热更新等，见 lib/forward.js)
+server.on('upgrade', (req, socket, head) => { if (req.url.startsWith('/p/')) forward.upgrade(req, socket, head); });
 
 // 每秒判断一次所有已连接会话的主机状态 (没人打开网页时也判断，手机才能收到推送)
 setInterval(() => {

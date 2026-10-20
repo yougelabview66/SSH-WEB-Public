@@ -66,7 +66,7 @@ run(async () => {
   await p.click('#hostForm button[type=submit]'); await wait(1800);
   ok(await p.evaluate(() => !!document.querySelector('.tab.active')), '登录后能连接主机');
   await p.click('#btnHistory'); await wait(400); await p.keyboard.press('Escape'); await wait(200);
-  await p.click('#btnMon'); await wait(1500); await p.click('#btnMon'); await wait(200);
+  await p.click('#btnMore'); await p.click('#btnMon'); await wait(1500); await p.click('#btnMore'); await p.click('#btnMon'); await wait(200); // 监控在「⋯ 更多」菜单里
   await p.click('#btnSftp'); await wait(1000); await p.click('#btnSftp'); await wait(200);
   await p.click('#lat'); await wait(300); await p.click('#lat'); await wait(200);
   await p.click('#dMode'); await wait(300); await p.click('#dMode'); await wait(300);

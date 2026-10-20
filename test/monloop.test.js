@@ -22,7 +22,8 @@ run(async () => {
   // 采集接口：每次 3 秒才回来 (目标主机慢)
   let n = 0;
   await p.route('**/api/monitor/**', async (route) => { n++; await wait(3000); route.fulfill({ json: {} }).catch(() => {}); });
-  await p.click('#btnMon'); await wait(300);
+  await p.click('#btnMore'); await p.click('#btnMon'); await wait(300); // 监控在「⋯ 更多」菜单里
+  ok(await p.evaluate(() => document.getElementById('btnMore').classList.contains('on') && document.getElementById('btnMon').classList.contains('on')), '监控开着：「⋯ 更多」和菜单里的「性能监控」高亮');
   // 采集还没回来时切走又切回
   await p.locator('.tab:not(.active)').first().click();
   await p.locator('.tab:not(.active)').first().click(); await wait(3500);

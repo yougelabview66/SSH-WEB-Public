@@ -168,6 +168,30 @@
     if (e.key === 'Escape' && !tabListPop.classList.contains('hidden')) { closeTabList(); e.stopPropagation(); e.preventDefault(); }
   }, true);
 
+  // 顶栏最右边「⋯ 更多」：不常用的按钮收在菜单里 (性能监控、端口预览)，顶栏不再变宽，标签栏留得宽 (手机上尤其)
+  const btnMore = $('#btnMore'), morePop = $('#morePop');
+  function closeMore() {
+    morePop.classList.add('hidden');
+    btnMore.classList.remove('open');
+  }
+  btnMore.addEventListener('mousedown', (e) => e.preventDefault()); // 不抢走输入框焦点
+  btnMore.addEventListener('click', () => {
+    if (!morePop.classList.contains('hidden')) return closeMore();
+    const r = btnMore.getBoundingClientRect();
+    morePop.style.top = r.bottom + 4 + 'px';
+    morePop.style.right = Math.max(8, window.innerWidth - r.right) + 'px';
+    morePop.classList.remove('hidden');
+    btnMore.classList.add('open');
+  });
+  morePop.addEventListener('mousedown', (e) => e.preventDefault());
+  morePop.addEventListener('click', (e) => { if (e.target.closest('button')) closeMore(); }); // 点了菜单项 (它自己的处理先执行) 就收起
+  document.addEventListener('pointerdown', (e) => {
+    if (!morePop.classList.contains('hidden') && !morePop.contains(e.target) && !btnMore.contains(e.target)) closeMore();
+  }, true);
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !morePop.classList.contains('hidden')) { closeMore(); e.stopPropagation(); e.preventDefault(); }
+  }, true);
+
   // ------------------------------------------------------------ 标签切换快捷键
   // Alt+1~9 跳到第 N 个标签，Alt+← / Alt+→ 上一个 / 下一个 (循环)；按界面上的标签顺序。
   // 捕获阶段处理，不再发给终端 / 输入框；Ctrl+Tab、Ctrl+数字会被浏览器占用，所以用 Alt

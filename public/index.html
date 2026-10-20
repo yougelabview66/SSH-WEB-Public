@@ -86,9 +86,9 @@
         <button id="lat" class="lat hidden" title="网络延迟 (上排：网页，下排：SSH)，点击查看"><span class="sig" data-k="web"><span class="bars"><i></i><i></i><i></i><i></i></span></span><span class="sig" data-k="ssh"><span class="bars"><i></i><i></i><i></i><i></i></span></span></button>
         <button id="btnInput" class="tbtn hidden" title="底部输入框：打字先在本地编辑，回车才发送，没有卡顿">✏️<span class="lbl"> 输入框</span></button>
         <button id="btnFloat" class="tbtn hidden" title="主机状态悬浮窗：开 / 关">🖥️<span class="lbl"> 状态</span></button>
-        <button id="btnMon" class="tbtn hidden" title="性能监控">📊<span class="lbl"> 监控</span></button>
         <button id="btnHistory" class="tbtn hidden" title="历史命令">🕘<span class="lbl"> 历史</span></button>
         <button id="btnSftp" class="tbtn hidden" title="SFTP 文件管理">📁<span class="lbl"> 文件</span></button>
+        <button id="btnMore" class="tbtn hidden" title="更多：性能监控、端口预览">⋯<span class="lbl"> 更多</span></button>
       </div>
       <div id="terms">
         <div id="empty">
@@ -146,6 +146,11 @@
   <div id="verBar" class="hidden" role="status"><span class="vb-text"></span><button class="primary vb-reload">刷新页面</button><button class="vb-close" title="这个版本不再提醒">×</button></div>
   <!-- 全部标签 (标签多到放不下时，点标签栏的 ▾) -->
   <div id="tabListPop" class="hidden"></div>
+  <!-- 顶栏「⋯ 更多」的菜单 (见 70-tabs-shortcuts.js) -->
+  <div id="morePop" class="hidden">
+    <button id="btnMon" class="mitem" title="性能监控">📊 性能监控</button>
+    <button id="btnFwd" class="mitem" title="在浏览器里打开目标主机上的开发服务 (如 localhost:5173)">🌐 端口预览</button>
+  </div>
 
   <!-- 连接 / 编辑主机 -->
   <div id="modal" class="overlay hidden">

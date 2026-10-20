@@ -83,8 +83,11 @@
 
   function updateSftpBtn() {
     $('#btnHistory').classList.toggle('hidden', !active);
-    $('#btnMon').classList.toggle('hidden', !active);
-    $('#btnMon').classList.toggle('on', !!(active && active.mon && active.mon.open));
+    const monOpen = !!(active && active.mon && active.mon.open);
+    $('#btnMon').classList.toggle('on', monOpen);
+    $('#btnMore').classList.toggle('hidden', !active);
+    $('#btnMore').classList.toggle('on', monOpen); // 监控收在「更多」里：开着时「更多」也高亮
+    $('#btnFwd').disabled = !(active && active.sid);
     sessions.forEach(syncMonitor);
     const b = $('#btnSftp');
     b.classList.toggle('hidden', !active);
