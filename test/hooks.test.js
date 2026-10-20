@@ -53,7 +53,11 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
     s.on('shell', (a) => { shellSt = a(); shellSt.write('$ '); shellSt.on('data', (d) => { got += d; }); });
     s.on('exec', (a, r, info) => {
       const ch = a();
-      if (info.command.includes('tail -n 0 -F')) { tailCh = ch; tailCh.cmd = info.command; return; }
+      if (info.command.includes('tail -n 0 -F')) { // 先报装没装钩子 (有没有 ~/.ssh-web/hook.sh)，再一直开着
+        tailCh = ch; tailCh.cmd = info.command;
+        ch.write(fs.existsSync(path.join(home, '.ssh-web/hook.sh')) ? 'SSHWEB_HOOKS=1\n' : 'SSHWEB_HOOKS=0\n');
+        return;
+      }
       if (info.command === 'sh') { // 常驻通道：每段脚本跑完回结束标记和退出码
         ch.on('data', (d) => {
           const m = /printf '\\n%s %s\\n' '(__SSHWEB_[0-9a-f]+__)'/.exec(String(d));
@@ -170,6 +174,18 @@ run(async () => {
   const lastState = () => states[states.length - 1];
   const lastPush = () => pushed[pushed.length - 1];
 
+  // 没装钩子的主机 (刚才卸载了)：终端响铃照常推送
+  shellSt.write('\x07');
+  await until(() => pushed.length >= 1, 5000);
+  ok(pushed.length === 1 && pushed[0].body === '终端提示音', '没装钩子的主机：响铃照常推送');
+  // 在网页上装了钩子：马上只按钩子推送 (还没收到任何钩子事件也一样)
+  fs.writeFileSync(settingsF, '{}');
+  const r0 = await J('POST', '/api/hooks/install', { sid });
+  await wait(10500); // 离上一次响铃推送超过 10 秒 (不然本来就有「10 秒内不重复推」挡着，测不出来)
+  shellSt.write('\x07'); await wait(1500);
+  ok(r0.status === 200 && pushed.length === 1, '装了钩子 (还没收到事件)：响铃不再推送');
+  pushed = [];
+
   // 别的标签的事件：不管
   tailCh.write(JSON.stringify({ v: 1, tabs: 'other-tab', hook_event_name: 'PermissionRequest', tool_name: 'Bash', command: 'x' }) + '\n'); await wait(600);
   ok(lastState() !== '待选择' && !pushed.length, '别的标签的事件不算到这个标签上');
@@ -229,9 +245,40 @@ run(async () => {
   emit({ hook_event_name: 'StopFailure', error: 'rate_limit', error_details: 'API Error: 429 rate limited' });
   await until(() => lastPush()?.title === 'HK2-1 · 报错', 5000);
   ok(lastState() === '报错' && lastPush().body === 'API Error: 429 rate limited', '出错 (StopFailure)：报错，推送写出错误: ' + JSON.stringify([states.slice(-4), pushed.length, lastPush()]));
+  // 收到过钩子事件以后：只按钩子推送 —— 响铃不推 (Claude Code 做完 / 要权限时也响铃，不然一件事推两次)，看屏幕判断的状态只显示不推
+  let n0 = pushed.length;
+  shellSt.write('\x07'); await wait(1500);
+  ok(pushed.length === n0, '收到过钩子事件的标签：响铃不再推送「终端提示音」');
+  ws.send(JSON.stringify({ type: 'data', data: 'y' })); await wait(800); // 「报错」算看过了，改看屏幕
+  shellSt.write('\r\n Do you want to proceed?\r\n ❯ 1. Yes\r\n   2. No\r\n'); await wait(2000);
+  ok(lastState() === '待选择' && pushed.length === n0, '看屏幕判断出的「待选择」只显示、不推送');
+  // 实际的重复：Claude Code 做完时先响铃、钩子事件稍后才读到 —— 只推钩子的「完成」，不推「终端提示音」
+  shellSt.write('\x1b[2J\x1b[H$ ');
+  ws.send(JSON.stringify({ type: 'data', data: 'z' })); await wait(500);
+  emit({ hook_event_name: 'UserPromptSubmit' });
+  await wait(10500); // 离上一条推送超过 10 秒 (不然本来就有「10 秒内不重复推」挡着，测不出来)
+  n0 = pushed.length;
+  shellSt.write('\x07'); await wait(300);
+  emit({ hook_event_name: 'Stop', last_assistant_message: '又做完了一件' });
+  await until(() => pushed.length > n0, 5000); await wait(1000);
+  ok(pushed.length === n0 + 1 && lastPush().body === '做完了：又做完了一件', '先响铃、后收到钩子的「做完了」：只推一条「完成」，不推「终端提示音」: ' + JSON.stringify(pushed.slice(n0).map((x) => x.body)));
   ok(!pushed.some((x) => x.error), '推送都能解密');
 
+  // 钩子不是在网页上装的 (主机上已经有 hook.sh)：重新连上这台主机时认出来，同样只按钩子推送
+  await J('POST', '/api/hooks/uninstall', { sid });
+  fs.mkdirSync(path.join(home, '.ssh-web'), { recursive: true }); fs.writeFileSync(path.join(home, '.ssh-web/hook.sh'), HOOK_SH);
   ws.close();
+  for (const x of await (await fetch(BASE + '/api/sessions')).json()) await fetch(BASE + '/api/sessions/' + x.id, { method: 'DELETE' });
+  await wait(800);
+  tailCh = null;
+  const ws3 = new WebSocket(BASE.replace('http', 'ws') + '/ws');
+  await new Promise((r) => ws3.on('open', r));
+  ws3.send(JSON.stringify({ type: 'connect', hostId: host.id, title: 'HK3', cols: 80, rows: 24 }));
+  await until(() => tailCh, 8000); await wait(800);
+  n0 = pushed.length;
+  shellSt.write('\x07'); await wait(1500);
+  ok(!!tailCh && pushed.length === n0, '主机上已经有钩子：重新连上时认出来，响铃不推送');
+  ws3.close();
   pushSrv.close();
   fs.rmSync(home, { recursive: true, force: true });
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
