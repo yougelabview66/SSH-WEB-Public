@@ -39,7 +39,8 @@
       try {
         const r = await api('POST', '/api/hooks/status', { sid: s.sid });
         if (hooksEl !== el) return;
-        state.textContent = r.installed ? '✅ 已安装' : r.partial ? '⚠️ 只装了一部分，建议重新安装' : '未安装';
+        // 装的钩子脚本是旧版本 (SSH-WEB 更新后脚本多取了字段，比如状态卡片上的「在做：…」)：提示重新安装
+        state.textContent = r.installed ? (r.outdated ? '✅ 已安装 · 钩子脚本有更新，点「重新安装」' : '✅ 已安装') : r.partial ? '⚠️ 只装了一部分，建议重新安装' : '未安装';
         bIn.textContent = r.installed || r.partial ? '重新安装' : '安装';
         bIn.disabled = false;
         bUn.classList.toggle('hidden', !(r.installed || r.partial || r.scriptOk));

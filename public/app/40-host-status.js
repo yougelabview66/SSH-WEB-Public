@@ -16,17 +16,22 @@
     deskTabList = tabOrder();
     // 状态由服务端判断后推过来 (lib/status.js)；没连上的显示未连接
     const states = deskTabList.map((x) => (!x.sid ? ['未连接', 'off'] : x.srvState ? [x.srvState.label, x.srvState.cls] : ['空闲', 'idle']));
+    // 卡片下面一行小字：Agent 在做什么 (装了钩子才有，见 lib/session/hooks.js)
     const html = deskTabList.map((x, i) => {
       const [st, cls] = states[i];
+      const dt = x.sid && x.srvState?.detail;
       return `<div class="dp-tab${x === active ? ' cur' : ''}" data-k="${i}">
         <span class="${$('.dot', x.tab).className}"></span><span class="nm">${esc($('.title', x.tab).textContent)}</span>
-        <span class="stt ${cls}">${st}</span></div>`;
+        <span class="stt ${cls}">${st}</span>${dt ? `<span class="dt" title="${esc(dt)}">${esc(dt)}</span>` : ''}</div>`;
     }).join('');
     for (const box of boxes) if (box.innerHTML !== html) box.innerHTML = html;
     alignPipBack();
     alignHfHead();
     // 悬浮窗收起时，标题栏上用小圆点显示每个标签的状态
-    const sum = states.map(([st, cls], i) => `<i class="hf-d ${cls}" title="${esc($('.title', deskTabList[i].tab).textContent)}：${st}"></i>`).join('');
+    const sum = states.map(([st, cls], i) => {
+      const dt = deskTabList[i].sid && deskTabList[i].srvState?.detail;
+      return `<i class="hf-d ${cls}" title="${esc($('.title', deskTabList[i].tab).textContent)}：${st}${dt ? ' · ' + esc(dt) : ''}"></i>`;
+    }).join('');
     if (hfSum.innerHTML !== sum) hfSum.innerHTML = sum;
   }
   setInterval(renderDeskTabs, 500);
@@ -41,24 +46,29 @@
     if (x && x !== active) activate(x);
   }
 
-  // ------------------------------------------------------------ 电脑：主机状态悬浮窗
-  // 顶部「🖥️ 状态」开关，显示在终端上 (和输入框模式无关)，按住标题栏拖动，开关 / 位置 / 收起状态每台电脑各自记住；
-  // 📌 置顶到桌面：浏览器的文档画中画 (Chrome / Edge 116+)，浏览器最小化后也浮在最上面
+  // ------------------------------------------------------------ 主机状态悬浮窗 (状态卡片)
+  // 电脑：顶部「🖥️ 状态」开关；手机：「⋯ 更多 → 状态卡片」开关 (默认关，会盖住一部分终端)。
+  // 显示在终端上 (和输入框模式无关)，按住标题栏拖动，开关 / 位置 / 收起状态每台设备各自记住；
+  // 📌 置顶到桌面 (电脑)：浏览器的文档画中画 (Chrome / Edge 116+)，浏览器最小化后也浮在最上面
   const hostFloat = $('#hostFloat'), hfTabs = $('#hostFloat .dp-tabs'), hfSum = $('#hostFloat .hf-sum');
   let pipWin = null;
   const hfPos = (() => { try { return JSON.parse(localStorage.getItem('sshweb.hostFloat')) || {}; } catch { return {}; } })();
   const saveHf = () => { try { localStorage.setItem('sshweb.hostFloat', JSON.stringify(hfPos)); } catch {} };
   if (hfPos.min) hostFloat.classList.add('min');
-  let hfOn = (() => { try { return localStorage.getItem('sshweb.hfOn') !== '0'; } catch { return true; } })();
-  const btnFloat = $('#btnFloat');
-  btnFloat.addEventListener('click', () => {
+  // 电脑默认开，手机默认关
+  let hfOn = (() => { try { const v = localStorage.getItem('sshweb.hfOn'); return isTouch ? v === '1' : v !== '0'; } catch { return !isTouch; } })();
+  const btnFloat = $('#btnFloat'), btnFloatM = $('#btnFloatM');
+  const toggleHf = () => {
     hfOn = !hfOn;
     try { localStorage.setItem('sshweb.hfOn', hfOn ? '1' : '0'); } catch {}
     if (!hfOn && pipWin) pipWin.close(); // 关掉时置顶小窗口也一起关
     updateHostFloat();
-  });
+  };
+  btnFloat.addEventListener('click', toggleHf);
+  btnFloatM.addEventListener('click', toggleHf);
   const pipOk = 'documentPictureInPicture' in window;
-  if (!pipOk) { hostFloat.querySelector('[data-a=pip]').remove(); hostFloat.querySelector('[data-a=auto]').remove(); }
+  // 置顶到桌面只给电脑 (手机浏览器不支持，手机上的状态卡片也放不下这两个按钮)
+  if (!pipOk || isTouch) { hostFloat.querySelector('[data-a=pip]').remove(); hostFloat.querySelector('[data-a=auto]').remove(); }
   // 自动钉住：浏览器规定置顶窗口只能在用户点击 / 按键时打开，所以在打开网页后的第一次操作时顺手打开；
   // 这次手动关掉了就不再自动打开，下次打开网页再说
   let autoPin = (() => { try { return localStorage.getItem('sshweb.autoPin') === '1'; } catch { return false; } })();
@@ -87,7 +97,9 @@
   function updateHostFloat() {
     btnFloat.classList.toggle('hidden', !(!isTouch && active));
     btnFloat.classList.toggle('on', hfOn);
-    const show = !isTouch && !!active && hfOn && !pipWin;
+    btnFloatM.classList.toggle('hidden', !(isTouch && active)); // 手机上开关在「⋯ 更多」菜单里
+    btnFloatM.classList.toggle('on', hfOn);
+    const show = !!active && hfOn && !pipWin;
     const was = !hostFloat.classList.contains('hidden');
     hostFloat.classList.toggle('hidden', !show);
     if (show) {
@@ -210,7 +222,8 @@
   function alignHfHead() {
     const head = hostFloat.querySelector('.hf-head');
     head.style.paddingRight = '';
-    if (hostFloat.classList.contains('hidden') || hostFloat.classList.contains('min')) return;
+    // 手机上卡片常常一排只放得下一张，对齐到第一排会把「–」拉到中间：不对齐，贴着右边
+    if (isTouch || hostFloat.classList.contains('hidden') || hostFloat.classList.contains('min')) return;
     // 悬浮窗宽度按内容撑开：卡片撑的宽度才对齐；只有一两张卡片时宽度由标题栏撑，加宽标题栏只会把整个窗口撑宽，保持原样
     const w0 = hostFloat.offsetWidth;
     const base = parseFloat(getComputedStyle(head).paddingRight);
