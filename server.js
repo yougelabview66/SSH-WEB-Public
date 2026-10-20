@@ -17,7 +17,7 @@
  *   http.js        网页、登录、接口       api-data.js / api-sessions.js  各接口
  *   ws.js          WebSocket 消息         session/      后台会话 (SSH 连接、画面、输入、尺寸)
  *   events.js      通知所有页面           sftp.js / monitor.js / push.js / status.js / cli-input.js / echo-wait.js
- *   forward.js     端口预览 (转发目标主机上的开发服务)
+ *   forward.js     端口预览 (转发目标主机上的开发服务)     hooks.js  Claude Code 钩子的安装 / 卸载 (事件见 session/hooks.js)
  */
 
 const http = require('http');

@@ -47,6 +47,7 @@ function mockServer(port, mode) {
       });
       s.on('exec', (a, r, info) => {
         const ch = a();
+        if (info.command.includes('hook.log')) return; // 读 Claude Code 钩子事件的通道 (tail -F 一直开着)，不是抓历史
         opens++;
         const code = mode === 'none' ? 3 : mode === 'busy' || mode === 'claude' ? 4 : 0;
         const out = code ? '' : mode === 'other' ? OTHER : hist;
