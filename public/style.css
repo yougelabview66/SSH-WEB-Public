@@ -242,6 +242,18 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 .sftp-msg { padding: 16px; color: var(--muted); text-align: center; }
 .frow:not(.dir) .fn { cursor: pointer; }
 
+/* 终端里搜索 (见 58-term-search.js)：终端区域顶部居中 (右上角常放着主机状态悬浮窗)，盖在历史视图上面 */
+.tsearch { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); z-index: 25; display: flex; align-items: center; gap: 4px;
+  padding: 4px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 4px 16px var(--shadow); }
+.tsearch input { width: 220px; margin: 0; padding: 4px 8px; font-size: 13px; }
+.tsearch.none input { border-color: var(--danger); }
+.tsearch .ts-info { font-size: 12px; color: var(--muted); white-space: nowrap; min-width: 36px; text-align: center; }
+.tsearch button { padding: 2px 9px; font-size: 13px; }
+@media (max-width: 760px) {
+  .tsearch { left: 8px; right: 8px; transform: none; }
+  .tsearch input { flex: 1; width: auto; min-width: 0; font-size: 16px; }
+}
+
 /* Claude 钩子通知 (见 63-hooks.js) */
 .hooks-card { width: 560px; }
 .hooks-card .hist-head button { padding: 2px 10px; }
