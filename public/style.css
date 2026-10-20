@@ -202,10 +202,10 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
   white-space: nowrap; flex-shrink: 0; }
 #btnMore.open { background: var(--bg); }
 /* 「⋯ 更多」菜单 (样式同标签列表 #tabListPop) */
-#morePop { position: fixed; z-index: 60; width: max-content; padding: 4px; display: flex; flex-direction: column; gap: 2px;
+#morePop { position: fixed; z-index: 60; width: max-content; min-width: 210px; padding: 6px; display: flex; flex-direction: column; gap: 2px;
   background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 24px var(--shadow); font-size: 14px; }
 #morePop.hidden { display: none; }
-#morePop .mitem { border: none; background: none; text-align: left; padding: 8px 10px; border-radius: 6px; white-space: nowrap; }
+#morePop .mitem { border: none; background: none; text-align: center; padding: 9px 14px; border-radius: 6px; white-space: nowrap; }
 #morePop .mitem:hover:not(:disabled) { background: var(--hover); }
 #morePop .mitem:disabled { opacity: .45; cursor: default; }
 #morePop .mitem.on { color: var(--accent); }
@@ -363,6 +363,10 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 .dp-tab .stt.run { background: var(--warn); color: #000; font-weight: 600; animation: dp-blink 1s ease-in-out infinite; }
 .dp-tab .stt.done { background: var(--accent2); color: #fff; font-weight: 600; }
 .dp-tab .stt.bad { background: var(--danger); color: #fff; font-weight: 600; }
+/* Agent 在做什么 (卡片下面一行小字，太长省略) */
+.dp-tab:has(.dt) { flex-wrap: wrap; row-gap: 2px; }
+.dp-tab .dt { flex-basis: 100%; min-width: 0; max-width: 280px; font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-left: 16px; }
+#tabListPop .dp-tab .dt { max-width: none; }
 .dp-tab .stt.idle { color: var(--muted); background: var(--panel2); border: 1px solid var(--border); }
 .dp-tab .stt.off { color: var(--muted); border: 1px dashed var(--muted); }
 @keyframes dp-blink { 50% { opacity: .35; } }
@@ -370,6 +374,7 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 #hostFloat { position: absolute; z-index: 8; min-width: 170px; max-width: min(420px, calc(100% - 16px)); background: var(--panel);
   border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 6px 24px var(--shadow); font-size: 13px; }
 #hostFloat.dragging { opacity: .85; }
+#hostFloat .hf-head { touch-action: none; } /* 手机：按住标题栏拖动时页面不跟着滚 */
 .hf-head { display: flex; align-items: center; gap: 6px; padding: 4px 4px 4px 10px; cursor: move; user-select: none;
   -webkit-user-select: none; touch-action: none; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--border); }
 .hf-head .hf-title { font-weight: 600; white-space: nowrap; }

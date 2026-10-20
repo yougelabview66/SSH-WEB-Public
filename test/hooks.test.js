@@ -109,6 +109,9 @@ run(async () => {
   ok(lines[0].tabs === 'tab-1' && lines[0].hook_event_name === 'PermissionRequest' && lines[0].tool_name === 'Bash' && lines[0].command === 'echo "hi" && ls C:\\tmp',
     '钩子脚本：引号、反斜杠原样保留，带上所属标签: ' + JSON.stringify(lines[0]));
   ok(lines[1].hook_event_name === 'Stop' && lines[1].last_assistant_message === '第一行\n第二行', '钩子脚本：格式化过的多行 JSON 也认得出');
+  runHook('{"hook_event_name":"UserPromptSubmit","prompt":"修复登录页的样式问题"}', { LC_SSHWEB: 'tab-1' });
+  const lp = JSON.parse(fs.readFileSync(path.join(fakeHome, '.cache/ssh-web/hook.log'), 'utf8').trim().split('\n').pop());
+  ok(lp.prompt === '修复登录页的样式问题', '钩子脚本：带上你让它做什么 (prompt，状态卡片上显示)');
   runHook('{"hook_event_name":"Stop"}', { LC_SSHWEB: 'stale', TMUX: '/tmp/none,1,0', TMUX_PANE: '%5' });
   const l3 = JSON.parse(fs.readFileSync(path.join(fakeHome, '.cache/ssh-web/hook.log'), 'utf8').trim().split('\n').pop());
   ok(l3.tabs === '' && l3.pane === '%5', '在 tmux 里：不用残留的 LC_SSHWEB (按挂在这个 tmux 会话上的客户端找)，带上 pane');
@@ -141,11 +144,16 @@ run(async () => {
   ok(fs.readFileSync(path.join(home, '.claude/settings.json.bak-sshweb'), 'utf8') === originalText, '安装前备份了原来的 settings.json');
   const script = path.join(home, '.ssh-web/hook.sh');
   ok(fs.existsSync(script) && (fs.statSync(script).mode & 0o111) && fs.readFileSync(script, 'utf8') === HOOK_SH, '写入了 ~/.ssh-web/hook.sh (可执行)');
+  // 装的是旧版本的钩子脚本：面板提示有更新
+  fs.appendFileSync(script, '# old\n');
+  await p.keyboard.press('Escape'); await wait(200);
+  await p.click('#btnMore'); await p.click('#btnHooks'); await waitState(/有更新/);
+  ok(/有更新/.test(await stateText()), '装的钩子脚本是旧版本：提示「钩子脚本有更新，点重新安装」');
   // 重新安装：不会多出一份
   dialogs.length = 0;
   await p.click('.hooksp [data-a=install]'); await wait(1500);
   st = JSON.parse(fs.readFileSync(settingsF, 'utf8'));
-  ok(ours(st).every((n) => n === 1), '重新安装：还是每个事件一条，不重复');
+  ok(ours(st).every((n) => n === 1) && fs.readFileSync(script, 'utf8') === HOOK_SH && await stateText() === '✅ 已安装', '重新安装：还是每个事件一条，不重复，脚本换成新版本');
   // 卸载：回到原来的样子
   await p.click('.hooksp [data-a=uninstall]');
   await waitState(/^未安装$/);
@@ -162,7 +170,8 @@ run(async () => {
   await J('POST', '/api/push/subscribe', { subscription: { endpoint: `https://127.0.0.1:${pushSrv.address().port}/dev`, keys: { p256dh: ecdh.getPublicKey().toString('base64url'), auth: authSecret.toString('base64url') } } });
   const host = (await (await fetch(BASE + '/api/hosts')).json()).find((h) => h.name === 'HK');
   const ws = new WebSocket(BASE.replace('http', 'ws') + '/ws');
-  const states = []; ws.on('message', (m) => { try { const x = JSON.parse(m); if (x.type === 'state') states.push(x.label); } catch {} });
+  const states = [], details = []; ws.on('message', (m) => { try { const x = JSON.parse(m); if (x.type === 'state') { states.push(x.label); details.push(x.detail || ''); } } catch {} });
+  const lastDetail = () => details[details.length - 1];
   await new Promise((r) => ws.on('open', r));
   // 第一个标签 (网页关了，会话还在后台) 已经在读这台主机的 hook.log：同一台主机只开一个通道，第二个标签的事件也从这里来
   const firstTail = tailCh;
@@ -190,8 +199,8 @@ run(async () => {
   tailCh.write(JSON.stringify({ v: 1, tabs: 'other-tab', hook_event_name: 'PermissionRequest', tool_name: 'Bash', command: 'x' }) + '\n'); await wait(600);
   ok(lastState() !== '待选择' && !pushed.length, '别的标签的事件不算到这个标签上');
 
-  emit({ hook_event_name: 'UserPromptSubmit' }); await wait(500);
-  ok(lastState() === '运行中', '开始干活 (UserPromptSubmit)：运行中');
+  emit({ hook_event_name: 'UserPromptSubmit', prompt: '修复登录页的样式问题\n细节……' }); await wait(500);
+  ok(lastState() === '运行中' && lastDetail() === '在做：修复登录页的样式问题', '开始干活 (UserPromptSubmit)：运行中，状态带上「在做：…」: ' + lastDetail());
 
   // 要权限 (不在 tmux 里)
   emit({ hook_event_name: 'PermissionRequest', tool_name: 'Bash', command: 'npm test' });
@@ -199,6 +208,7 @@ run(async () => {
   let pu = lastPush();
   ok(lastState() === '待选择' && pu.title === 'HK2-1 · 待选择' && pu.body === '要执行命令：npm test', '要权限：待选择，推送写出要执行的命令: ' + JSON.stringify(pu));
   ok(Array.isArray(pu.actions) && pu.actions.map((a) => a.action).join() === 'allow,deny' && pu.seq === 1 && pu.sessionId === sid, '推送带「允许 / 拒绝」和这是第几次确认');
+  ok(lastDetail() === '要执行命令：npm test', '要权限时状态上写着要执行什么');
   // 紧跟着的 permission_prompt 通知：不再推一次
   emit({ hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'Claude needs your permission to use Bash' }); await wait(600);
   ok(pushed.length === 1, '紧跟着的「要权限」通知不重复推送');
@@ -240,6 +250,7 @@ run(async () => {
   emit({ hook_event_name: 'Stop', last_assistant_message: '全部改好了，测试通过\n细节……' });
   await until(() => pushed.length >= 5, 5000);
   ok(lastState() === '完成' && lastPush().body === '做完了：全部改好了，测试通过' && lastPush().title === 'HK2-1 · 完成', '做完了 (Stop)：完成，推送附上回复的第一行: ' + lastPush().body);
+  ok(lastDetail() === '做完了：全部改好了，测试通过', '做完了：状态上也写着回复的第一行');
   ws.send(JSON.stringify({ type: 'data', data: 'x' })); await wait(1500);
   ok(lastState() !== '完成', '往这个标签发了内容：「完成」算看过了');
   emit({ hook_event_name: 'StopFailure', error: 'rate_limit', error_details: 'API Error: 429 rate limited' });
@@ -263,6 +274,28 @@ run(async () => {
   await until(() => pushed.length > n0, 5000); await wait(1000);
   ok(pushed.length === n0 + 1 && lastPush().body === '做完了：又做完了一件', '先响铃、后收到钩子的「做完了」：只推一条「完成」，不推「终端提示音」: ' + JSON.stringify(pushed.slice(n0).map((x) => x.body)));
   ok(!pushed.some((x) => x.error), '推送都能解密');
+
+  // 页面上：电脑的状态悬浮窗卡片、手机的「▾」标签列表里，卡片下面一行写着在做什么
+  const b2 = await launch();
+  const dp = await (await b2.newContext({ viewport: { width: 1280, height: 800 } })).newPage();
+  await dp.goto(BASE + '/'); await dp.waitForSelector('#app:not(.hidden)'); await wait(2000);
+  const card = await dp.evaluate(() => [...document.querySelectorAll('#hostFloat .dp-tab')].map((c) => [c.querySelector('.nm').textContent, c.querySelector('.dt')?.textContent || '']));
+  ok(card.some(([n, d]) => n === 'HK2-1' && d === '做完了：又做完了一件'), '电脑：状态悬浮窗的卡片下面写着在做什么: ' + JSON.stringify(card));
+  await dp.screenshot({ path: require('./helpers').shot('hooks-detail-desk.png'), clip: { x: 840, y: 36, width: 440, height: 160 } });
+  const mp = await (await b2.newContext({ ...require('./helpers').devices['Pixel 7'] })).newPage();
+  await mp.goto(BASE + '/'); await mp.waitForSelector('#app:not(.hidden)'); await wait(1500);
+  // 手机：状态卡片默认关着，「⋯ 更多 → 状态卡片」打开
+  ok(await mp.isHidden('#hostFloat'), '手机：状态卡片默认关着 (会盖住一部分终端)');
+  await mp.tap('#btnMore'); await mp.tap('#btnFloatM'); await wait(500);
+  const list = await mp.evaluate(() => [...document.querySelectorAll('#hostFloat .dp-tab')].map((c) => [c.querySelector('.nm').textContent, c.querySelector('.dt')?.textContent || '']));
+  const fr = await mp.evaluate(() => { const r = document.getElementById('hostFloat').getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth; });
+  ok(list.some(([n, d]) => n === 'HK2-1' && d === '做完了：又做完了一件') && fr, '手机：「⋯ 更多 → 状态卡片」打开，卡片下面也写着在做什么，在屏幕里: ' + JSON.stringify(list));
+  await mp.screenshot({ path: require('./helpers').shot('hooks-detail-mobile.png'), clip: { x: 0, y: 0, width: 412, height: 260 } });
+  await mp.tap('#btnMore');
+  ok(await mp.evaluate(() => document.getElementById('btnFloatM').classList.contains('on')), '手机：菜单里「状态卡片」打着勾 (开着)');
+  await mp.tap('#btnFloatM'); await wait(300);
+  ok(await mp.isHidden('#hostFloat'), '手机：再点一次关掉');
+  await b2.close(); await wait(500);
 
   // 钩子不是在网页上装的 (主机上已经有 hook.sh)：重新连上这台主机时认出来，同样只按钩子推送
   await J('POST', '/api/hooks/uninstall', { sid });

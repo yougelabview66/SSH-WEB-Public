@@ -129,9 +129,10 @@
   function renderTabList() {
     const html = tabOrder().map((x, i) => {
       const [st, cls] = !x.sid ? ['未连接', 'off'] : x.srvState ? [x.srvState.label, x.srvState.cls] : ['空闲', 'idle'];
+      const dt = x.sid && x.srvState?.detail; // Agent 在做什么 (同状态卡片)
       return `<div class="dp-tab${x === active ? ' cur' : ''}" data-k="${i}">
         <span class="${$('.dot', x.tab).className}"></span><span class="nm">${esc($('.title', x.tab).textContent)}</span>
-        <span class="stt ${cls}">${st}</span></div>`;
+        <span class="stt ${cls}">${st}</span>${dt ? `<span class="dt">${esc(dt)}</span>` : ''}</div>`;
     }).join('');
     if (tabListPop.innerHTML !== html) tabListPop.innerHTML = html;
     const r = btnTabList.getBoundingClientRect();

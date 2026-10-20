@@ -298,7 +298,8 @@
       } else if (m.type === 'cli') {
         s.cli.set(m); // 服务器算的终端输入框内容 (包括别的设备上打的字)
       } else if (m.type === 'state') {
-        s.srvState = { label: m.label, cls: m.cls };
+        s.srvState = { label: m.label, cls: m.cls, detail: m.detail || '' };
+        s.tab.title = s.srvState.detail ? `${s.title}\n${m.label}：${s.srvState.detail}` : s.title; // 鼠标移到标签上也看得到在做什么
         renderDeskTabs();
       } else if (m.type === 'pong') {
         if (Number.isFinite(m.t)) { s.rtt = latSample(s, 'web', Math.round(performance.now() - m.t)); if (s === active) updateLat(); }
