@@ -157,6 +157,7 @@
       },
     };
 
+    let pvTimer = 0;
     function render(items) {
       list.innerHTML = '';
       if (!items.length) list.innerHTML = '<div class="sftp-msg">空目录（可拖拽文件到这里上传）</div>';
@@ -168,6 +169,7 @@
           <span class="fn"></span>
           <span class="meta">${it.isDir ? '' : fmtSize(it.size) + '<br>'}${fmtTime(it.mtime)}</span>
           <span class="fops">
+            ${it.isDir ? '' : '<button data-op="pv" title="预览">👁</button>'}
             <button data-op="dl" title="${it.isDir ? '打包下载 (.tar.gz)' : '下载'}">⬇</button>
             <button data-op="mv" title="重命名 / 移动">✎</button>
             <button data-op="rm" title="删除">🗑</button>
@@ -177,6 +179,13 @@
         row.addEventListener('click', async (e) => {
           const op = e.target.dataset.op;
           if (op === 'dl') return download(full);
+          if (op === 'pv') return openPreview(s, full, it.size, download);
+          // 点文件名 / 图标：预览。双击照旧下载：电脑上等一下看是不是双击 (不然第二下点到了预览上)
+          if (!it.isDir && !op && e.target.closest('.fn, .ic')) {
+            clearTimeout(pvTimer);
+            if (e.detail <= 1) pvTimer = setTimeout(() => openPreview(s, full, it.size, download), isTouch ? 0 : 300);
+            return;
+          }
           if (op === 'mv') {
             const to = prompt('重命名 / 移动到：', full);
             if (!to || to === full) return;
@@ -191,7 +200,7 @@
           }
           if (it.isDir && e.target.closest('.fn, .ic')) self.load(full);
         });
-        row.addEventListener('dblclick', () => (it.isDir ? self.load(full) : download(full)));
+        row.addEventListener('dblclick', () => { clearTimeout(pvTimer); it.isDir ? self.load(full) : download(full); });
         list.appendChild(row);
       });
     }
