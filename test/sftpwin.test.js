@@ -20,7 +20,8 @@ function server(port, shell, mux) {
       s.on('shell', (a) => {
         const st = a();
         got[port] = '';
-        st.write(mux ? '\x1b[?1049h\x1b[?1000h\x1b[H\x1b[2JPS D:\\示例工作区> \x1b[999;1H\x1b[42m[0] 0:pwsh*\x1b[0m' : 'D:\\示例工作区> ');
+        // 终端屏幕上的提示符跟着 shell 走 (PowerShell 是 PS D:\…>)；psmux 里光标停在状态栏上，看不出提示符，要问 psmux
+        st.write(mux ? '\x1b[?1049h\x1b[?1000h\x1b[H\x1b[2JPS D:\\示例工作区> \x1b[999;1H\x1b[42m[0] 0:pwsh*\x1b[0m' : shell === 'powershell' ? 'PS D:\\示例工作区> ' : 'D:\\示例工作区> ');
         st.on('data', (d) => { got[port] += d; });
       });
       s.on('exec', (a, r, info) => {

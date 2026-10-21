@@ -30,13 +30,14 @@ put(`.claude/projects/D--proj-x/${ID}.jsonl`, [
 put('.grok/sessions/D%3A%5Cg/gk-01/summary.json', J({ info: { id: 'gk-01', cwd: 'D:\\g' }, generated_title: 'Grok 在 Windows' }), 9);
 put('.grok/sessions/D%3A%5Cg/gk-01/chat_history.jsonl', J({ type: 'user', content: '<user_query>Grok 你好</user_query>' }) + '\n', 9);
 
-function server(port, shell) {
+// shell：SSH 默认的命令行 (单独开通道执行命令时)；prompt：终端屏幕上的提示符 (终端里可能又进了别的 shell)
+function server(port, shell, prompt) {
   new Server({ hostKeys: [hostKey()] }, (c) => {
     c.on('authentication', (ctx) => ctx.accept());
     c.on('ready', () => c.on('session', (acc) => {
       const s = acc();
       s.on('pty', (a) => a()); s.on('window-change', (a) => a && a());
-      s.on('shell', (a) => a().write('C:\\Users\\me> '));
+      s.on('shell', (a) => a().write(prompt));
       s.on('exec', (a, r, info) => {
         const ch = a(), cmd = info.command;
         const out = (t, code) => { if (t) ch.write(t); ch.exit(code); ch.end(); };
@@ -71,15 +72,15 @@ function server(port, shell) {
     }));
   }).listen(port, '127.0.0.1');
 }
-server(2301, 'cmd'); server(2302, 'powershell');
+server(2301, 'cmd', 'C:\\Users\\me>'); server(2302, 'powershell', 'PS C:\\Users\\me> '); server(2303, 'cmd', 'PS C:\\Users\\me> ');
 
 run(async () => {
-  await addHost('AWC', 2301); await addHost('AWPS', 2302);
+  await addHost('AWC', 2301); await addHost('AWPS', 2302); await addHost('AWMIX', 2303);
   const browser = await launch();
   const p = await (await browser.newContext({ viewport: { width: 1280, height: 800 } })).newPage();
   const errors = []; p.on('pageerror', (e) => errors.push(e.message));
   await p.goto(BASE + '/'); await p.waitForSelector('#app:not(.hidden)');
-  await p.locator('.host', { hasText: 'AWPS' }).first().click(); await p.waitForSelector('.tab.active .dot.ok'); await wait(500);
+  for (const h of ['AWPS', 'AWMIX']) { await p.locator('.host', { hasText: h }).first().click(); await p.waitForSelector('.tab.active .dot.ok'); await wait(500); }
   await p.locator('.host', { hasText: 'AWC' }).first().click(); await p.waitForSelector('.tab.active .dot.ok'); await wait(800);
   const sids = await (await fetch(BASE + '/api/sessions')).json();
   const sidOf = (t) => sids.find((x) => x.title === t).id;
@@ -98,6 +99,11 @@ run(async () => {
   ok(r.sessions.length === 1 && r.sessions[0].title === 'Grok 在 Windows' && r.sessions[0].prompt === 'Grok 你好' && r.sessions[0].cmd === 'cd /d "D:\\g" && grok --resume gk-01', 'Grok 会话也读得到: ' + J(r.sessions[0]));
   r = await api('AWPS', 'claude');
   ok(r.sessions[0]?.cmd === `cd 'D:\\proj x'; claude --resume ${ID}`, "PowerShell：恢复命令 cd 'D:\\目录'; claude --resume (PowerShell 5 没有 &&): " + r.sessions[0]?.cmd);
+  r = await api('AWMIX', 'claude');
+  ok(r.sessions[0]?.cmd === `cd 'D:\\proj x'; claude --resume ${ID}`, "SSH 默认 cmd、终端里开的是 PowerShell (提示符 PS …>)：按 PowerShell 写: " + r.sessions[0]?.cmd);
+  // 第二次打开：文件没变，不再读文件内容 (只列目录)，结果一样
+  const t0 = Date.now(); r = await api('AWC', 'claude'); const dt = Date.now() - t0;
+  ok(r.sessions[0]?.title === 'Windows 修复', `第二次读：用记住的结果 (${dt}ms)`);
   // 页面上也列得出来
   await p.click('#btnMore'); await p.click('#btnSessions'); await p.waitForSelector('.agentsp .as-row', { timeout: 15000 });
   ok(await p.textContent('.agentsp .as-row .as-title') === 'Windows 修复', '页面：会话历史里列出 Windows 主机上的会话');
