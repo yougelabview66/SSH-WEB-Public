@@ -1,5 +1,5 @@
 'use strict';
-// Claude Code 钩子通知：钩子脚本 (sh) 把事件写成一行 JSON；在网页上安装 / 卸载 (原来的设置和自己的钩子都保留、有备份、
+// Agent 钩子通知 (Claude Code / Grok / Codex / Gemini / Antigravity / OpenCode)：钩子脚本 (sh) 把事件写成一行 JSON；在网页上安装 / 卸载 (原来的设置和自己的钩子都保留、有备份、
 // 格式不对不动)；事件按标签交给会话 —— 状态以钩子为准，推送写具体内容，要权限时通知带「允许 / 拒绝」；
 // 点了只在还是那一次、确认框还在时才发按键 (tmux 里直接发给事件所在的 pane)
 // @env PUSH_ALLOW_ANY_ENDPOINT=true NODE_TLS_REJECT_UNAUTHORIZED=0
@@ -14,7 +14,7 @@ const WebSocket = require('ws');
 const { BASE, ok, wait, run, launch, shot, hostKey, addHost } = require('./helpers');
 // 等测试这边的条件成立 (最多 ms 毫秒)
 const until = async (fn, ms) => { for (const end = Date.now() + ms; !fn() && Date.now() < end;) await wait(100); };
-const { HOOK_SH, HOOK_EVENTS } = require('../lib/hooks');
+const { HOOK_SH, HOOK_EVENTS, OPENCODE_PLUGIN } = require('../lib/hooks');
 
 const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sshweb-hk-')));
 const settingsF = path.join(home, '.claude', 'settings.json');
@@ -116,6 +116,51 @@ run(async () => {
   const l3 = JSON.parse(fs.readFileSync(path.join(fakeHome, '.cache/ssh-web/hook.log'), 'utf8').trim().split('\n').pop());
   ok(l3.tabs === '' && l3.pane === '%5', '在 tmux 里：不用残留的 LC_SSHWEB (按挂在这个 tmux 会话上的客户端找)，带上 pane');
 
+  // 别的 Agent：第一个参数是哪个 Agent；各家字段名不一样也认得出；只有要求回话的 Agent 才往外打印
+  const lastLine = () => JSON.parse(fs.readFileSync(path.join(fakeHome, '.cache/ssh-web/hook.log'), 'utf8').trim().split('\n').pop());
+  const runA = (args, json) => execFileSync('sh', [sh, ...args], { input: json, env: { HOME: fakeHome, PATH: '/usr/bin:/bin', LC_SSHWEB: 'tab-1' } }).toString();
+  let o = runA(['grok'], '{"hookEventName":"PreToolUse","toolName":"run_command","toolInput":{"command":"ls -la"},"sessionId":"s1"}');
+  let l = lastLine();
+  ok(o === '' && l.agent === 'grok' && l.hook_event_name === 'PreToolUse' && l.tool_name === 'run_command' && l.command === 'ls -la', 'Grok：驼峰写法的字段 (hookEventName / toolName) 也认得出，不往外打印: ' + JSON.stringify(l));
+  o = runA(['codex'], '{"hook_event_name":"PostToolUse","tool_name":"Bash","agent_id":"child-1"}');
+  ok(o === '' && lastLine().agent === 'codex' && lastLine().child === true, 'Codex：子 Agent 的事件标上 child (不算主会话的状态)');
+  o = runA(['gemini'], '{"hook_event_name":"AfterAgent","prompt_response":"全部完成"}');
+  ok(o === '{}\n' && lastLine().last_assistant_message === '全部完成', 'Gemini：先回 {} (它要求的)，回复 prompt_response 当成最后的回复');
+  o = runA(['antigravity', 'PreToolUse'], '{"toolCall":{"name":"run_command","args":{"CommandLine":"make"}}}');
+  l = lastLine();
+  ok(o === '{"decision":"ask"}\n' && l.hook_event_name === 'PreToolUse' && l.tool_name === 'run_command' && l.command === 'make', 'Antigravity：用工具前回 {"decision":"ask"} (不回当成拒绝)，事件名从命令参数来: ' + JSON.stringify(l));
+  o = runA(['antigravity', 'Stop'], '{"fullyIdle":false}');
+  ok(o === '{"decision":""}\n' && lastLine().busy === true, 'Antigravity：步骤之间的 Stop (fullyIdle=false) 标上 busy');
+  o = runA(['antigravity', 'PostInvocation'], '');
+  ok(o === '{}\n' && lastLine().hook_event_name === 'PostInvocation', 'Antigravity：没有内容的事件也记下来');
+  // OpenCode 插件：真的用 node 加载，喂它 OpenCode 的事件，看交给 hook.sh 的是什么
+  fs.mkdirSync(path.join(fakeHome, '.ssh-web'), { recursive: true }); fs.writeFileSync(path.join(fakeHome, '.ssh-web/hook.sh'), HOOK_SH);
+  const plug = path.join(home, 'sshweb-status.mjs'); fs.writeFileSync(plug, OPENCODE_PLUGIN);
+  const n1 = fs.readFileSync(path.join(fakeHome, '.cache/ssh-web/hook.log'), 'utf8').trim().split('\n').length;
+  execFileSync(process.execPath, ['--input-type=module', '-e', `
+    const { SshWebStatus } = await import(${JSON.stringify('file://' + plug)});
+    const h = await SshWebStatus(undefined);
+    const e = (type, properties) => h.event({ event: { type, properties } });
+    await e('session.created', { info: { id: 'kid', parentID: 'root' } });
+    await e('session.status', { sessionID: 'root', status: { type: 'busy' } });
+    await e('message.updated', { info: { id: 'm1', role: 'user', sessionID: 'root' } });
+    await e('message.part.updated', { part: { type: 'text', text: '修复登录页', messageID: 'm1', sessionID: 'root' } });
+    await e('message.part.updated', { part: { type: 'tool', tool: 'bash', callID: 'c1', state: { status: 'running', input: { command: 'npm test' } }, sessionID: 'root' } });
+    await e('message.part.updated', { part: { type: 'tool', tool: 'bash', callID: 'c9', state: { status: 'running', input: { command: 'child work' } }, sessionID: 'kid' } });
+    await e('permission.asked', { id: 'p1', sessionID: 'root', permission: 'bash', patterns: ['rm -rf x'], metadata: {} });
+    await e('question.asked', { id: 'q1', sessionID: 'root', questions: [{ question: '用哪个库？' }] });
+    await e('message.updated', { info: { id: 'm2', role: 'assistant', sessionID: 'root' } });
+    await e('message.part.updated', { part: { type: 'text', text: '改好了', messageID: 'm2', sessionID: 'root' } });
+    await e('session.status', { sessionID: 'root', status: { type: 'idle' } });
+    await e('session.idle', { sessionID: 'root' });
+    await new Promise((r) => setTimeout(r, 1500));
+  `], { env: { HOME: fakeHome, PATH: process.env.PATH, LC_SSHWEB: 'tab-oc' } });
+  const oc = fs.readFileSync(path.join(fakeHome, '.cache/ssh-web/hook.log'), 'utf8').trim().split('\n').slice(n1).map((x) => JSON.parse(x));
+  const ocEv = oc.map((x) => [x.hook_event_name, x.prompt || x.command || x.question || x.last_assistant_message || ''].join(':')).sort();
+  const wantEv = ['UserPromptSubmit:', 'UserPromptSubmit:修复登录页', 'PreToolUse:npm test', 'PermissionRequest:rm -rf x', 'PreToolUse:用哪个库？', 'Stop:改好了'].sort();
+  ok(oc.every((x) => x.agent === 'opencode' && x.tabs === 'tab-oc') && JSON.stringify(ocEv) === JSON.stringify(wantEv),
+    'OpenCode 插件：开始干活 / 你说的话 / 用工具 / 要权限 / 问问题 / 做完 (带最后的回复) 都交给 hook.sh，子会话的不算，做完只报一次: ' + JSON.stringify(ocEv));
+
   // ---- 2. 网页上安装 / 卸载
   await addHost('HK', 2293);
   fs.mkdirSync(path.dirname(settingsF), { recursive: true });
@@ -129,14 +174,15 @@ run(async () => {
   await p.goto(BASE + '/'); await p.waitForSelector('#app:not(.hidden)');
   await p.locator('.host', { hasText: 'HK' }).first().click(); await p.waitForSelector('.tab.active .dot.ok'); await wait(800);
   await p.click('#btnMore'); await p.click('#btnHooks');
-  const stateText = () => p.textContent('.hooksp .hk-state').catch(() => '');
+  const CL = '.hooksp .hk-row[data-agent=claude]';
+  const stateText = () => p.textContent(CL + ' .hk-state').catch(() => '');
   const waitState = async (re) => { for (let i = 0; i < 40 && !re.test(await stateText()); i++) await wait(200); };
   await waitState(/^(?!正在检查)/);
-  ok(await p.textContent('.hooksp .hk-state') === '未安装', '「⋯ 更多 → Claude 钩子通知」：显示未安装');
-  await p.click('.hooksp [data-a=install]');
+  ok(await stateText() === '未安装', '「⋯ 更多 → 钩子通知」：Claude Code 显示未安装');
+  await p.click(CL + ' [data-a=install]');
   await waitState(/已安装/);
   let st = JSON.parse(fs.readFileSync(settingsF, 'utf8'));
-  ok(dialogs.some((m) => m.includes('settings.json')) && await p.textContent('.hooksp .hk-state') === '✅ 已安装', '点「安装」先确认，装好后显示已安装');
+  ok(dialogs.some((m) => m.includes('settings.json')) && await stateText() === '✅ 已安装', '点「安装」先确认，装好后显示已安装');
   await p.screenshot({ path: shot('hooks-panel.png') });
   ok(st.theme === 'dark' && st.hooks.Stop.some((g) => g.hooks.some((h) => h.command === 'echo mine')) && ours(st).every((n) => n === 1),
     '安装：原来的设置和自己的钩子都在，每个事件加了一条 SSH-WEB 的钩子: ' + JSON.stringify(ours(st)));
@@ -151,16 +197,73 @@ run(async () => {
   ok(/有更新/.test(await stateText()), '装的钩子脚本是旧版本：提示「钩子脚本有更新，点重新安装」');
   // 重新安装：不会多出一份
   dialogs.length = 0;
-  await p.click('.hooksp [data-a=install]'); await wait(1500);
+  await p.click(CL + ' [data-a=install]'); await wait(1500);
   st = JSON.parse(fs.readFileSync(settingsF, 'utf8'));
   ok(ours(st).every((n) => n === 1) && fs.readFileSync(script, 'utf8') === HOOK_SH && await stateText() === '✅ 已安装', '重新安装：还是每个事件一条，不重复，脚本换成新版本');
   // 卸载：回到原来的样子
-  await p.click('.hooksp [data-a=uninstall]');
+  await p.click(CL + ' [data-a=uninstall]');
   await waitState(/^未安装$/);
   ok(JSON.stringify(JSON.parse(fs.readFileSync(settingsF, 'utf8'))) === JSON.stringify(original) && !fs.existsSync(script), '卸载：settings.json 回到原来的样子，hook.sh 删掉了');
+
+  // ---- 别的 Agent：面板里每个一行，各自安装 / 卸载；原来的设置和自己的钩子都保留，卸载回到原样
+  const R = (id) => `.hooksp .hk-row[data-agent=${id}]`;
+  const rowState = (id) => p.textContent(R(id) + ' .hk-state').catch(() => '');
+  const waitRow = async (id, re) => { for (let i = 0; i < 40 && !re.test(await rowState(id)); i++) await wait(200); };
+  const hf = (f) => path.join(home, f);
+  fs.mkdirSync(hf('.grok'), { recursive: true });
+  fs.mkdirSync(hf('.codex'), { recursive: true });
+  const codexOrig = { hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo codex-mine' }] }] } };
+  fs.writeFileSync(hf('.codex/hooks.json'), JSON.stringify(codexOrig));
+  fs.mkdirSync(hf('.gemini/config'), { recursive: true });
+  const gemOrig = { theme: 'Default', hooks: { AfterAgent: [{ hooks: [{ type: 'command', command: 'echo gem-mine' }] }] } };
+  fs.writeFileSync(hf('.gemini/settings.json'), JSON.stringify(gemOrig));
+  const agyOrig = { mine: { Stop: [{ type: 'command', command: 'echo agy-mine' }] } };
+  fs.writeFileSync(hf('.gemini/config/hooks.json'), JSON.stringify(agyOrig));
+  await p.keyboard.press('Escape'); await wait(200);
+  await p.click('#btnMore'); await p.click('#btnHooks'); await waitRow('grok', /未安装/);
+  const rowsInfo = await p.evaluate(() => [...document.querySelectorAll('.hooksp .hk-row')].map((r) => [r.dataset.agent, !!r.querySelector('.hk-tag'), r.classList.contains('absent')]));
+  ok(rowsInfo.length === 6 && rowsInfo[0][0] === 'claude' && !rowsInfo[0][1] && rowsInfo.slice(1).every(([, tag]) => tag)
+    && rowsInfo.find(([id]) => id === 'opencode')[2] && !rowsInfo.find(([id]) => id === 'grok')[2],
+  '面板：6 个 Agent 各一行，Claude Code 在第一个，别的标「未实测」，主机上没找到的变淡排后面: ' + JSON.stringify(rowsInfo));
+  await p.screenshot({ path: shot('hooks-agents.png') });
+  for (const id of ['grok', 'codex', 'gemini', 'antigravity', 'opencode']) { await p.click(R(id) + ' [data-a=install]'); await waitRow(id, /已安装/); }
+  ok((await Promise.all(['grok', 'codex', 'gemini', 'antigravity', 'opencode'].map(rowState))).every((t) => t === '✅ 已安装'), '每个 Agent 点「安装」后都显示已安装');
+  const cmdHas = (g, want) => (g.hooks ? g.hooks : [g]).some((h) => h.command === want);
+  const grok = JSON.parse(fs.readFileSync(hf('.grok/hooks/sshweb-status.json'), 'utf8'));
+  ok(Object.keys(grok.hooks).length === 10 && grok.hooks.PreToolUse[0].matcher === '.*' && grok.hooks.Notification.every((g) => cmdHas(g, 'sh "$HOME/.ssh-web/hook.sh" grok')),
+    'Grok：写进自己的 ~/.grok/hooks/sshweb-status.json，10 个事件，工具事件匹配 .*');
+  const codex = JSON.parse(fs.readFileSync(hf('.codex/hooks.json'), 'utf8'));
+  ok(Object.keys(codex).join() === 'hooks' && codex.hooks.Stop.some((g) => cmdHas(g, 'echo codex-mine')) && codex.hooks.Interrupt[0].hooks[0].timeout === 3
+    && codex.hooks.PermissionRequest.some((g) => cmdHas(g, 'sh "$HOME/.ssh-web/hook.sh" codex')) && fs.existsSync(hf('.codex/hooks.json.bak-sshweb')),
+  'Codex：合并进 ~/.codex/hooks.json (自己的钩子还在、顶层只有 hooks)，Interrupt 超时 3 秒，先备份');
+  const gem = JSON.parse(fs.readFileSync(hf('.gemini/settings.json'), 'utf8'));
+  ok(gem.theme === 'Default' && gem.hooks.AfterAgent.some((g) => cmdHas(g, 'echo gem-mine')) && gem.hooks.BeforeTool[0].hooks[0].timeout === 10000
+    && ['BeforeAgent', 'AfterAgent', 'BeforeTool', 'AfterTool', 'Notification'].every((e) => gem.hooks[e].some((g) => cmdHas(g, 'sh "$HOME/.ssh-web/hook.sh" gemini'))),
+  'Gemini：合并进 ~/.gemini/settings.json，原来的设置还在，超时按毫秒写 10000');
+  const agy = JSON.parse(fs.readFileSync(hf('.gemini/config/hooks.json'), 'utf8'));
+  const b = agy['sshweb-status'];
+  ok(JSON.stringify(agy.mine) === JSON.stringify(agyOrig.mine) && b.Stop[0].command === 'sh "$HOME/.ssh-web/hook.sh" antigravity Stop' && b.Stop[0].type === 'command'
+    && b.PreToolUse[0].matcher === '*' && b.PreToolUse[0].hooks[0].command.endsWith('antigravity PreToolUse'),
+  'Antigravity：~/.gemini/config/hooks.json 里加一个 sshweb-status 分组 (别的分组不动)，命令带上事件名: ' + JSON.stringify(b.Stop));
+  ok(fs.readFileSync(hf('.config/opencode/plugins/sshweb-status.js'), 'utf8') === OPENCODE_PLUGIN, 'OpenCode：插件写进 ~/.config/opencode/plugins/sshweb-status.js');
+  // Codex 的 hooks.json 有别的顶层内容：Codex 会整个文件不认，不改
+  fs.writeFileSync(hf('.codex/hooks.json'), JSON.stringify({ ...codexOrig, extra: 1 }));
+  await p.click(R('codex') + ' [data-a=install]'); await wait(1500);
+  ok(JSON.parse(fs.readFileSync(hf('.codex/hooks.json'), 'utf8')).extra === 1 && /hooks \/ description 以外/.test(await p.textContent('.hooksp .hk-msg')), 'Codex 的 hooks.json 有别的顶层内容：不改，说明原因');
+  fs.writeFileSync(hf('.codex/hooks.json'), JSON.stringify(codex));
+  // 卸载一个：别的还装着，hook.sh 留着
+  await p.click(R('grok') + ' [data-a=uninstall]'); await waitRow('grok', /^未安装$/);
+  ok(!fs.existsSync(hf('.grok/hooks/sshweb-status.json')) && fs.existsSync(script), '卸载 Grok：删掉它的钩子文件，别的 Agent 还装着，hook.sh 留着');
+  for (const id of ['codex', 'gemini', 'antigravity', 'opencode']) { await p.click(R(id) + ' [data-a=uninstall]'); await waitRow(id, /^未安装/); }
+  ok(JSON.stringify(JSON.parse(fs.readFileSync(hf('.codex/hooks.json'), 'utf8'))) === JSON.stringify(codexOrig)
+    && JSON.stringify(JSON.parse(fs.readFileSync(hf('.gemini/settings.json'), 'utf8'))) === JSON.stringify(gemOrig)
+    && JSON.stringify(JSON.parse(fs.readFileSync(hf('.gemini/config/hooks.json'), 'utf8'))) === JSON.stringify(agyOrig)
+    && !fs.existsSync(hf('.config/opencode/plugins/sshweb-status.js')) && !fs.existsSync(script),
+  '全部卸载：各 Agent 的设置回到原来的样子，插件删掉，都没装了才删 hook.sh');
+
   // settings.json 不是合法 JSON：不动它
   fs.writeFileSync(settingsF, '{ broken');
-  await p.click('.hooksp [data-a=install]'); await wait(1500);
+  await p.click(CL + ' [data-a=install]'); await wait(1500);
   ok(fs.readFileSync(settingsF, 'utf8') === '{ broken' && /不是合法的 JSON/.test(await p.textContent('.hooksp .hk-msg')), 'settings.json 格式不对：不改，提示先修好');
   await p.keyboard.press('Escape'); await wait(200);
   ok(!(await p.$('.hooksp')), 'Esc 关掉面板');
@@ -317,6 +420,34 @@ run(async () => {
   await mp.tap('#btnFloatM'); await wait(300);
   ok(await mp.isHidden('#hostFloat'), '手机：再点一次关掉');
   await b2.close(); await wait(500);
+
+  // 别的 Agent 的事件：换成同一套状态，推送前面写上是谁；通知上不带「允许 / 拒绝」(只给 Claude Code)
+  ws.send(JSON.stringify({ type: 'data', data: 'a' })); await wait(500);
+  emit({ agent: 'grok', hook_event_name: 'userPromptSubmit', prompt: '<user_query>修复 Grok 的问题</user_query>' }); await wait(500);
+  ok(lastState() === '运行中' && lastDetail() === '在做：修复 Grok 的问题', 'Grok 开始干活：运行中，你说的话去掉 <user_query> 包装: ' + lastDetail());
+  emit({ agent: 'grok', hook_event_name: 'PreToolUse', tool_name: 'run_command', command: 'ls' }); await wait(400);
+  n0 = pushed.length;
+  emit({ agent: 'grok', hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'tool permission requested', level: 'info' }); await wait(800);
+  ok(lastState() === '运行中' && pushed.length === n0, 'Grok 每次用工具前的「tool permission requested」提醒：不算要权限');
+  emit({ agent: 'grok', hook_event_name: 'Notification', message: 'Grok needs your approval to run rm -rf build' });
+  await until(() => pushed.length > n0, 5000);
+  ok(lastState() === '待选择' && lastPush().body === 'Grok · Grok needs your approval to run rm -rf build' && !lastPush().actions, 'Grok 真要你确认：待选择，推送写上 Grok，不带按钮: ' + JSON.stringify(lastPush()));
+  emit({ agent: 'codex', hook_event_name: 'PostToolUse', tool_name: 'Bash', child: true }); await wait(500);
+  ok(lastState() === '待选择', 'Codex 子 Agent 的事件不算');
+  emit({ agent: 'codex', hook_event_name: 'PermissionRequest', tool_name: 'Bash', command: 'npm test' });
+  await until(() => pushed.length > n0 + 1, 5000);
+  ok(lastPush().body === 'Codex · 要执行命令：npm test' && !lastPush().actions, 'Codex 要权限：推送写出命令和 Codex，不带按钮: ' + JSON.stringify(lastPush()));
+  r = await J('POST', `/api/sessions/${sid}/answer`, { choice: 'allow', seq: lastPush().seq || 0 });
+  ok(r.status === 409, '别的 Agent 的确认不能从通知上回答');
+  emit({ agent: 'antigravity', hook_event_name: 'Stop', busy: true }); await wait(500);
+  ok(lastState() === '运行中', 'Antigravity 步骤之间的 Stop：还是运行中');
+  emit({ agent: 'gemini', hook_event_name: 'AfterAgent', last_assistant_message: 'Gemini 做完了这件事' });
+  await until(() => lastPush()?.title === 'HK2-1 · 完成', 5000);
+  ok(lastState() === '完成' && lastPush().body === 'Gemini · 做完了：Gemini 做完了这件事' && lastDetail() === 'Gemini · 做完了：Gemini 做完了这件事', 'Gemini 做完 (AfterAgent)：完成，推送和状态都写上 Gemini 和回复');
+  ws.send(JSON.stringify({ type: 'data', data: 'b' })); await wait(500);
+  emit({ agent: 'codex', hook_event_name: 'UserPromptSubmit', prompt: '再来' }); await wait(300);
+  emit({ agent: 'codex', hook_event_name: 'Interrupt' }); await wait(500);
+  ok(lastState() === '完成' && lastDetail() === 'Codex · 已中断', 'Codex 被打断 (Interrupt)：显示已中断');
 
   // 钩子不是在网页上装的 (主机上已经有 hook.sh)：重新连上这台主机时认出来，同样只按钩子推送
   await J('POST', '/api/hooks/uninstall', { sid });
