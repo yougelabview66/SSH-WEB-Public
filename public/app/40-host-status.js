@@ -148,6 +148,7 @@
   hostFloat.addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (!b) return;
+    if (b.dataset.a === 'close') { if (hfOn) toggleHf(); return; } // 关掉 (同「⋯ 更多 → 状态卡片」，记住)
     if (b.dataset.a === 'min') {
       hfPos.min = hostFloat.classList.toggle('min');
       saveHf();

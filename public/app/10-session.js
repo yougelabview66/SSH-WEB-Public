@@ -301,6 +301,7 @@
         s.srvState = { label: m.label, cls: m.cls, detail: m.detail || '' };
         s.tab.title = s.srvState.detail ? `${s.title}\n${m.label}：${s.srvState.detail}` : s.title; // 鼠标移到标签上也看得到在做什么
         renderDeskTabs();
+        gitOnState(s, m); // Agent 做完了：代码改动面板开着就刷新 (见 66-git-changes.js)
       } else if (m.type === 'pong') {
         if (Number.isFinite(m.t)) { s.rtt = latSample(s, 'web', Math.round(performance.now() - m.t)); if (s === active) updateLat(); }
       } else if (m.type === 'lat') {

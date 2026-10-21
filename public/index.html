@@ -134,10 +134,38 @@
           <button data-a="pip" title="置顶到桌面：浏览器最小化、切到别的软件时也浮在最上面">📌</button>
           <button data-a="auto" class="hf-auto" title="自动钉住：打开网页后第一次点击或按键时，自动置顶到桌面">自动</button>
           <button data-a="min" title="收起 / 展开">–</button>
+          <button data-a="close" title="关闭状态卡片 (在「⋯ 更多 → 🖥️ 状态卡片」重新打开)">×</button>
         </div>
         <div class="dp-tabs"></div>
       </div>
     </main>
+    <!-- 右边栏：「项目」文件树 (带快速打开) 和「改动」(代码改动 + 批注)；展开时固定在右边，收起成右边缘一列图标；手机上全屏 (见 66-right-bar.js) -->
+    <aside id="rightBar" class="hidden">
+      <div class="rb-resize" title="拖动调整宽度"></div>
+      <div class="rb-head">
+        <div class="rb-tabs">
+          <button type="button" data-tab="files" title="项目文件 (Ctrl+Shift+P 搜索文件)"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7h-3a2 2 0 0 1-2-2V2"/><path d="M9 18a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h7l4 4v10a2 2 0 0 1-2 2Z"/><path d="M3 7.6v12.8A1.6 1.6 0 0 0 4.6 22h9.8"/></svg><span>项目</span></button>
+          <button type="button" data-tab="git" title="代码改动 (在改动的行上写批注发给 Agent)"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg><span>改动</span><b class="rb-count"></b></button>
+        </div>
+        <span class="spacer"></span>
+        <button type="button" data-a="refresh" title="刷新">⟳</button>
+        <button type="button" data-a="collapse" class="rb-desk" title="收起到右边">»</button>
+        <button type="button" data-a="close" title="关闭">×</button>
+      </div>
+      <div class="rb-dir"><input type="text" placeholder="项目目录（空着 = 自动：Agent 干活的目录 / 终端所在目录）" spellcheck="false" autocomplete="off" autocapitalize="off"><span class="rb-src"></span></div>
+      <div class="rb-pane" data-tab="files">
+        <div class="pf-search"><input type="search" placeholder="搜索文件名…（Ctrl+Shift+P）" enterkeyhint="search" spellcheck="false" autocomplete="off" autocapitalize="off"></div>
+        <div class="pf-body"></div>
+      </div>
+      <div class="rb-pane" data-tab="git">
+        <div class="gp-notes hidden"><span class="gp-ncount"></span><span class="spacer"></span><button type="button" data-a="clearnotes">清空</button><button type="button" data-a="send" class="primary">发给 Agent</button></div>
+        <div class="gp-body"></div>
+      </div>
+    </aside>
+    <div id="rightRail" class="hidden">
+      <button type="button" data-tab="files" title="项目文件"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7h-3a2 2 0 0 1-2-2V2"/><path d="M9 18a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h7l4 4v10a2 2 0 0 1-2 2Z"/><path d="M3 7.6v12.8A1.6 1.6 0 0 0 4.6 22h9.8"/></svg></button>
+      <button type="button" data-tab="git" title="代码改动"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg><b class="rb-count"></b></button>
+    </div>
   </div>
 
   <!-- 延迟详情 (点标签栏的信号图标) -->
@@ -152,6 +180,8 @@
     <button id="btnMon" class="mitem" title="性能监控">📊 性能监控</button>
     <button id="btnFwd" class="mitem" title="在浏览器里打开目标主机上的开发服务 (如 localhost:5173)">🌐 端口预览</button>
     <button id="btnSearch" class="mitem" title="在终端里查找 (Ctrl+Shift+F)；tmux 里会先打开历史视图再查">🔍 搜索历史</button>
+    <button id="btnProj" class="mitem" title="右边栏：项目文件夹里的文件 (Ctrl+Shift+P 搜索文件)">🗂️ 项目文件</button>
+    <button id="btnGit" class="mitem" title="右边栏：这个项目改了哪些文件、改了什么；在改动的行上写批注发给 Agent">📝 代码改动</button>
     <button id="btnSessions" class="mitem" title="这台主机上 Claude Code / Grok / Codex / Gemini / OpenCode 以前的会话：搜索、点「继续」接着聊">💬 会话历史</button>
     <button id="btnHooks" class="mitem" title="给这台主机的 Claude Code / Grok / Codex / Gemini / Antigravity / OpenCode 装钩子：状态更准、推送写具体内容">🔔 钩子通知</button>
   </div>
