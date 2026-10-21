@@ -14,13 +14,14 @@
     // 刚往下滚回实时画面：这一下滚动剩下的 (滚轮 / 触摸板末尾常带一两格反方向的抖动) 都不算，免得又打开历史视图
     if (s.lsWheelUntil > Date.now()) { s.lsWheelUntil = Date.now() + LS_WHEEL_QUIET; return false; }
     if (s.scrollLoading) { s.heldWheel += e.deltaY < 0 ? 1 : -1; return false; } // 等结果期间的滚动先记下 (往上为正)
-    const b = s.term.buffer.active;
-    if (e.deltaY >= 0 || !s.sid || s.term.modes.mouseTrackingMode === 'none' || b.type !== 'alternate') return true;
+    // 程序开了鼠标 (tmux / psmux) 才试；不要求备用屏幕：Windows 的 SSH 中间隔着 ConPTY，psmux 进备用屏幕不一定传得过来
+    // (不是 tmux 的话服务端很快回 no-tmux，一段时间内不再试)
+    if (e.deltaY >= 0 || !s.sid || s.term.modes.mouseTrackingMode === 'none') return true;
     if (s.noTmuxUntil > Date.now()) return true;
     s.scrollLoading = true;
     s.heldWheel = 1;
     send(s, { type: 'tmux-history', lines: LS_LINES });
-    s.lsTimer = setTimeout(() => onTmuxHistory(s, { ok: false, reason: 'timeout' }), 4000);
+    s.lsTimer = setTimeout(() => onTmuxHistory(s, { ok: false, reason: 'timeout' }), 6000); // Windows 的 SSH 开通道慢，多等一会儿
     return false;
   }
 
@@ -49,6 +50,12 @@
     // 用不了：一段时间内不再尝试，把刚才拦下的滚轮补发给程序 (会进入 tmux 自己的复制模式，不弹提示)
     const reason = m.ok ? 'mismatch' : m.reason;
     s.noTmuxUntil = Date.now() + ({ 'no-tmux': 300000, busy: 5000, 'in-mode': 3000 }[reason] || 30000);
+    if (m.win) s.winHost = true;
+    // Windows 主机 (psmux) 取不到历史、或者超时：提示一次原因 (真机上没法看，方便找问题)
+    if ((s.winHost || reason === 'timeout') && !s.winToastDone && !['busy', 'in-mode'].includes(reason)) {
+      s.winToastDone = true;
+      fontToast(s, `${s.winHost ? 'psmux' : 'tmux'} 的历史取不到（${{ 'no-tmux': '没找到 psmux 或 pane', timeout: '超时', mismatch: '取到的不是这个窗格的内容', failed: 'capture-pane 失败' }[reason] || reason}），这次滚轮交给它自己处理`, 4000);
+    }
     const target = s.term.element.querySelector('.xterm-screen') || s.term.element;
     const r = target.getBoundingClientRect();
     s.bypassWheel = true;

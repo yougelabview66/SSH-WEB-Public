@@ -58,7 +58,7 @@
       s.scrollLoading = true;
       s.heldWheel = 1;
       send(s, { type: 'tmux-history', lines: LS_LINES });
-      s.lsTimer = setTimeout(() => onTmuxHistory(s, { ok: false, reason: 'timeout' }), 4000);
+      s.lsTimer = setTimeout(() => onTmuxHistory(s, { ok: false, reason: 'timeout' }), 6000);
       ts.info.textContent = '正在取历史…';
       ts.wait = setInterval(() => {
         if (!ts || ts.s !== s) return;
