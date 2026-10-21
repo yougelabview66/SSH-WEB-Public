@@ -117,7 +117,9 @@
     s.lsLine = lh;
     syncLsBars();
     pre.scrollTop = pre.scrollHeight - pre.clientHeight - up * 3 * lh; // 和滚轮一样往回看几行
-    pre.focus({ preventScroll: true }); // 输入框藏起来了，焦点放这里：PageUp / PageDown / Home / 方向键直接滚历史
+    // 输入框藏起来了，焦点放这里：PageUp / PageDown / Home / 方向键直接滚历史。
+    // 是搜索打开的 (光标在搜索框里) 就不抢：手机上输入法会弹出来又收起
+    if (!document.activeElement?.closest?.('.tsearch')) pre.focus({ preventScroll: true });
     v.querySelector('.ls-close').addEventListener('click', () => closeLocalScroll(s));
     // 电脑：在最底下还往下滚 = 回到实时画面
     pre.addEventListener('wheel', (e) => {
