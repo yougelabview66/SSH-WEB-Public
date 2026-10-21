@@ -100,7 +100,10 @@ label.check { margin: 6px 0 10px; }
 #hostForm.key .auth-password { display: none; }
 
 /* layout */
-#app { display: flex; height: 100%; }
+/* iPhone 添加到主屏幕 (全屏 App)：页面铺到屏幕边上 (viewport-fit=cover)，顶部状态栏、横屏两边的圆角和刘海让出来；
+   底部小横条由输入栏 (#mobileBar) 自己让 */
+#app { display: flex; height: 100%; box-sizing: border-box;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left); }
 #sidebar { width: 250px; background: var(--panel); border-right: 1px solid var(--border);
   display: flex; flex-direction: column; padding: 12px; gap: 10px; flex-shrink: 0; }
 .side-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -344,7 +347,8 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 
 /* 手机输入栏 */
 #mobileBar { flex-shrink: 0; background: var(--panel); border-top: 1px solid var(--border);
-  padding-bottom: env(safe-area-inset-bottom); }
+  padding-bottom: env(safe-area-inset-bottom); } /* iPhone 底部小横条那一条让出来，输入框和 ↵ 不被圆角挡住、不误触小横条 */
+#app.kb #mobileBar { padding-bottom: 0; } /* 键盘开着时键盘盖住了小横条，不用再让 */
 .mkeys { display: flex; gap: 4px; padding: 5px 6px; overflow-x: auto; scrollbar-width: none; }
 .mkeys::-webkit-scrollbar { display: none; }
 .mkeys button { flex-shrink: 0; min-width: 40px; padding: 6px 8px; font: 13px ui-monospace, monospace;
@@ -725,7 +729,8 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 #rightBar { flex-shrink: 0; display: flex; flex-direction: column; min-width: 0; position: relative; background: var(--panel);
   border-left: 1px solid var(--border); font-size: 13px; }
 #rightBar.hidden { display: none; }
-#rightBar.mobile { position: fixed; inset: 0; z-index: 70; width: auto !important; border: none; }
+#rightBar.mobile { position: fixed; inset: 0; z-index: 70; width: auto !important; border: none;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
 #rightBar.mobile .rb-desk, #rightBar.mobile .rb-resize { display: none; }
 #rightBar.resizing { user-select: none; }
 .rb-resize { position: absolute; left: -4px; top: 0; bottom: 0; width: 8px; cursor: ew-resize; z-index: 2; touch-action: none; }

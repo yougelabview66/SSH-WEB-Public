@@ -205,6 +205,7 @@
       const typing = !!document.activeElement?.matches?.('input, textarea, [contenteditable]');
       const want = typing && h > 0 && h < full - 1 && vv.scale <= 1.01 ? h + 'px' : '';
       if (app.style.height !== want) app.style.height = want;
+      app.classList.toggle('kb', !!want); // 键盘开着：键盘已经盖住了 iPhone 底部的小横条，输入栏不再留安全区 (style.css)
       window.scrollTo(0, 0);
     }
     if (active && !active.scrollView) { // 历史视图打开时不重排 (见 55-local-scroll.js)
