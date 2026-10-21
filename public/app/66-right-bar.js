@@ -5,7 +5,7 @@
   //   最近打开的排前面；电脑上 Ctrl+Shift+P 直接跳到这里)。
   // 「改动」：改了哪些文件 (带增删行数)，点开看红绿对比；点一行写批注 (电脑上 Shift + 点 = 选一段)，「发给 Agent」整理成一段话填进输入框 (不发送)。
   // 电脑：展开时固定在右边 (终端变窄，左边缘拖动调宽度，拖的时候终端先不重排、松手再排)，最右边的「»」收起成右边缘一列图标 (点哪个展开到哪个)；
-  // 手机：全屏，最右边是「×」关掉。
+  // 手机：全屏，最右边同样是「»」收起 (手机上没有右边缘那列图标，收起就是关掉，从「⋯ 更多」再打开)。
   // Agent 做完时 (状态变成「完成」) 右边栏开着就刷新
   const rightBar = $('#rightBar'), rightRail = $('#rightRail');
   const rbDir = $('.rb-dir input', rightBar), pfSearch = $('.pf-search input', rightBar), pfBody = $('.pf-body', rightBar), gpBody = $('.gp-body', rightBar);
@@ -445,8 +445,7 @@
     if (tab) return setRbTab(tab.dataset.tab);
     const a = e.target.closest('.rb-head [data-a], .gp-notes [data-a]')?.dataset.a;
     if (a === 'refresh') { if (rb.s) rb.s.allFiles = null; return projLoad(true); }
-    if (a === 'collapse') return setRbState('collapsed');
-    if (a === 'close') return setRbState('closed');
+    if (a === 'collapse') return setRbState(isTouch ? 'closed' : 'collapsed');
     if (a === 'clearnotes') {
       if (!confirm('清空这个仓库的所有批注？')) return;
       gitNotes.delete(gp.data?.root);

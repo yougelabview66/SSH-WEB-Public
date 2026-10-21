@@ -741,7 +741,7 @@ body.no-select { user-select: none; -webkit-user-select: none; }
   border-left: 1px solid var(--border); font-size: 13px; }
 #rightBar.hidden { display: none; }
 #rightBar.mobile { position: fixed; inset: 0; z-index: 70; width: auto !important; border: none; }
-#rightBar.mobile .rb-desk, #rightBar.mobile .rb-resize, #rightBar:not(.mobile) .rb-mob { display: none; } /* 电脑只有「»」收起，手机只有「×」关掉 */
+#rightBar.mobile .rb-resize { display: none; }
 #rightBar.resizing { user-select: none; }
 .rb-resize { position: absolute; left: -4px; top: 0; bottom: 0; width: 8px; cursor: ew-resize; z-index: 2; touch-action: none; }
 .gp-notes { display: flex; align-items: center; gap: 6px; padding: 6px 8px; background: var(--bg); border-bottom: 1px solid var(--border); }
