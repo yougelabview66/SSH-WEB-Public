@@ -48,16 +48,22 @@
     verBar.dataset.v = v;
     verBar.classList.toggle('hidden', !old || verDismissed === v);
   }
-  $('.vb-reload', verBar).addEventListener('click', () => location.reload());
+  // 版本更新提示的「刷新页面」、红色版本号、侧边栏「清缓存刷新」都是清缓存再刷新 (见 hardReload)
+  $('.vb-reload', verBar).addEventListener('click', (e) => hardReload(e.currentTarget));
   $('.vb-close', verBar).addEventListener('click', () => { verDismissed = verBar.dataset.v; verBar.classList.add('hidden'); });
-  verEl.addEventListener('click', () => { if (verEl.classList.contains('old')) location.reload(); });
+  verEl.addEventListener('click', () => { if (verEl.classList.contains('old')) hardReload($('#btnHardReload')); });
+  $('#btnHardReload').addEventListener('click', (e) => hardReload(e.currentTarget));
   // 清缓存强制刷新：网页和它用到的文件都绕过浏览器缓存重新下载一遍 (写回缓存)，清掉 Cache Storage、
-  // 让 Service Worker 检查更新，再刷新。不注销 Service Worker (注销了推送订阅也没了)
-  $('#btnHardReload').addEventListener('click', async (e) => {
-    const b = e.currentTarget;
-    if (b.disabled) return;
-    b.disabled = true;
-    $('span', b).textContent = '正在刷新…'; // 图标转起来 (style.css)
+  // 让 Service Worker 检查更新，再刷新。不注销 Service Worker (注销了推送订阅也没了)。b：点的按钮 (显示「正在刷新…」)
+  let reloading = false;
+  async function hardReload(b) {
+    if (reloading) return;
+    reloading = true;
+    if (b) {
+      b.disabled = true;
+      const t = $('span', b) || b;
+      t.textContent = '正在刷新…'; // 侧边栏的按钮：图标转起来 (style.css)
+    }
     const urls = [location.pathname, ...[...document.querySelectorAll('script[src], link[rel=stylesheet][href], link[rel=manifest]')]
       .map((x) => new URL(x.src || x.href, location.href)).filter((u) => u.origin === location.origin).map((u) => u.pathname + u.search)];
     const jobs = urls.map((u) => fetch(u, { cache: 'reload', credentials: 'same-origin' }).catch(() => {}));
@@ -65,7 +71,7 @@
     if (navigator.serviceWorker) jobs.push(navigator.serviceWorker.getRegistrations().then((rs) => Promise.all(rs.map((r) => r.update()))).catch(() => {}));
     await Promise.race([Promise.all(jobs), new Promise((r) => setTimeout(r, 8000))]); // 网络卡住也照样刷新
     location.reload();
-  });
+  }
   // 保险：事件连接可能「假死」(以为还连着，其实服务器已经重启过) 收不到版本号，
   // 所以回到前台 / 窗口重新获得焦点 (最多 20 秒一次) / 网络恢复时，以及每 5 分钟，再主动问一次
   let verPolledAt = 0;
