@@ -135,6 +135,15 @@ run(async () => {
   ok(!(await p.$('.agentsp')), 'Esc 关掉');
   await p.click('#btnMore'); await p.click('#btnSessions'); await wait(1500);
   ok(await p.evaluate(() => document.querySelector('.agentsp .as-tabs .on')?.dataset.agent) === 'grok', '再打开：还是上次选的 Grok');
+  // 再打开：先显示上次读到的列表 (接口故意慢 1.5 秒)，后台刷新
+  await p.keyboard.press('Escape'); await wait(200);
+  await p.route('**/api/agent-sessions', async (rt) => { await new Promise((r) => setTimeout(r, 1500)); rt.continue(); });
+  await p.click('#btnMore'); await p.click('#btnSessions'); await wait(300);
+  const quick = await p.evaluate(() => ({ rows: document.querySelectorAll('.agentsp .as-row').length, info: document.querySelector('.agentsp .as-info').textContent }));
+  ok(quick.rows === 1 && /正在刷新/.test(quick.info), '再打开：马上显示上次读到的会话，提示正在刷新: ' + J(quick));
+  await wait(2500);
+  ok(!/正在刷新/.test(await p.textContent('.agentsp .as-info')) && await p.locator('.agentsp .as-row').count() === 1, '刷新完：提示消失，列表换成新读到的');
+  await p.unroute('**/api/agent-sessions');
   await p.keyboard.press('Escape');
 
   // ---- 「历史」面板里的「💬 会话历史」选项卡：同样的会话列表，「继续」后关掉历史面板

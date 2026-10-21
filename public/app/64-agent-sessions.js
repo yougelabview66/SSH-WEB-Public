@@ -5,6 +5,8 @@
   let asEl = null;
   const AS_AGENTS = [['claude', 'Claude'], ['grok', 'Grok'], ['codex', 'Codex'], ['gemini', 'Gemini'], ['opencode', 'OpenCode']];
   const AS_TESTED = ['claude', 'grok'];
+  // 上次读到的会话列表 (主机 + Agent → { items, info })：再打开时先显示它，后台再刷新
+  const asCache = new Map();
 
   $('#btnSessions').addEventListener('click', () => { if (active?.sid) openAgentSessions(active); });
 
@@ -66,17 +68,25 @@
     };
     const load = async () => {
       const my = ++seq;
-      info.textContent = q ? `正在搜索「${q}」…` : '正在读取…';
-      list.innerHTML = '';
+      const key = `${s.hostId || host}|${agent}`, old = !q && asCache.get(key);
+      if (old) { // 先显示上次的，后台刷新
+        items = old.items;
+        info.textContent = old.info + ' · 正在刷新…';
+        render();
+      } else {
+        info.textContent = q ? `正在搜索「${q}」…` : '正在读取…';
+        list.innerHTML = '';
+      }
       try {
         const r = await api('POST', '/api/agent-sessions', { sid: s.sid, agent, q, inMux: s.term.buffer.active.type === 'alternate' });
         if (my !== seq) return;
         items = r.sessions;
         info.textContent = `${host} · ${q ? `含「${q}」的 ` : '最近 '}${items.length} 个会话${r.more ? '（只列最近的）' : ''}${r.partial ? '（搜索超时，只搜了最近的一部分）' : ''}`
           + (AS_TESTED.includes(agent) ? '' : ' · 未实测：照着 Orca 的做法读的，有问题告诉我');
+        if (!q) asCache.set(key, { items, info: info.textContent });
         render();
       } catch (e) {
-        if (my === seq) { info.textContent = '读取失败：' + e.message; items = []; render(); }
+        if (my === seq) { info.textContent = '读取失败：' + e.message; if (!old) { items = []; render(); } }
       }
     };
     input.addEventListener('input', () => {
