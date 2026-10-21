@@ -59,7 +59,7 @@
   // keyboard-interactive / TOTP 验证码
   async function promptDialog(m, tag) {
     let html = '';
-    if (m.instructions) html += `<p class="muted">${esc(m.instructions)}</p>`;
+    if (m.instructions) html += `<p class="muted" style="white-space: pre-line">${esc(m.instructions)}</p>`;
     m.prompts.forEach((pr, i) => {
       const isCode = /code|otp|token|verif|验证/i.test(pr.prompt);
       html += `<label>${esc(pr.prompt)}<input name="a${i}" type="${pr.echo ? 'text' : 'password'}" autocomplete="${isCode ? 'one-time-code' : 'off'}"${isCode ? ' inputmode="numeric"' : ''}></label>`;

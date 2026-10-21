@@ -1,0 +1,177 @@
+'use strict';
+// Windows 常驻会话 (sshwebd)：主机设置里打开后，连上时把 sshwebd.exe 传到 ~/.ssh-web/，开一个不要终端的通道跑 bridge，
+// 终端在守护进程里。这里模拟一台 Windows 主机 (SSH 默认 cmd)，bridge 用真的 sshwebd (Linux 版，../sshwebd 编出来，
+// 或者 SSHWEBD_BIN 指定)：打字、断网后重新连上接着用 (只补发没收到的)、关了标签再开一个选「接上」、exit 结束
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { spawn, execFileSync } = require('child_process');
+const { Server, utils: { sftp: { OPEN_MODE, STATUS_CODE } } } = require('ssh2');
+const WebSocket = require('ws');
+const { BASE, ok, wait, run, launch, hostKey, addHost } = require('./helpers');
+
+const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sshweb-dw-')));
+const dhome = path.join(home, 'daemon'); // 守护进程的数据目录 (socket、日志)
+fs.mkdirSync(dhome);
+const HOME = '/C:/Users/me';
+const until = async (fn, ms) => { for (const end = Date.now() + ms; !fn() && Date.now() < end;) await wait(100); };
+const VENDOR = path.join(__dirname, '..', 'vendor', 'sshwebd');
+const VERSION = fs.readFileSync(path.join(VENDOR, 'VERSION'), 'utf8').trim();
+
+// Linux 版 sshwebd：SSHWEBD_BIN，或者用旁边的源码编一个
+function linuxBin() {
+  if (process.env.SSHWEBD_BIN) return process.env.SSHWEBD_BIN;
+  const src = path.join(__dirname, '..', '..', 'sshwebd');
+  const go = ['/root/.local/go/bin/go', '/usr/local/go/bin/go', 'go'].find((g) => { try { execFileSync(g, ['version'], { stdio: 'ignore' }); return true; } catch { return false; } });
+  if (!go || !fs.existsSync(path.join(src, 'main.go'))) return null;
+  const out = path.join(home, 'sshwebd');
+  execFileSync(go, ['build', '-o', out, '.'], { cwd: src, env: { ...process.env, CGO_ENABLED: '0' }, stdio: 'ignore' });
+  return out;
+}
+const BIN = linuxBin();
+
+let conns = [], shells = 0, bridges = [];
+new Server({ hostKeys: [hostKey()] }, (c) => {
+  conns.push(c);
+  c.on('error', () => {});
+  c.on('authentication', (ctx) => ctx.accept());
+  c.on('ready', () => c.on('session', (acc) => {
+    const s = acc();
+    s.on('pty', (a) => a()); s.on('window-change', (a) => a && a());
+    s.on('shell', (a) => { shells++; a().write('C:\\Users\\me>'); });
+    s.on('exec', (a, r, info) => {
+      const ch = a(), cmd = info.command;
+      const out = (t, code) => { if (t) ch.write(t); ch.exit(code); ch.end(); };
+      if (cmd === 'echo %OS%;$env:OS') return out('Windows_NT;$env:OS\r\n', 0);
+      if (cmd.includes('watch.ps1')) return out('SSHWEB_HOOKS=0\r\n', 0);
+      const m = /^"C:\\Users\\me\\\.ssh-web\\(sshwebd-[^"\\]+\.exe)" bridge$/.exec(cmd);
+      if (m && BIN) { // 真的跑 bridge (Windows 的 OpenSSH 在 SSH 断开时结束整个会话的进程：这里通道关了就杀掉它)
+        bridges.push({ cmd, exe: m[1] });
+        const pr = spawn(BIN, ['bridge'], { env: { ...process.env, SSHWEBD_HOME: dhome, SSHWEBD_IDLE: '3s', SHELL: '/bin/sh', PS1: '$ ', ENV: '' } });
+        ch.on('data', (d) => pr.stdin.write(d));
+        pr.stdout.on('data', (d) => { try { ch.write(d); } catch {} });
+        pr.on('exit', (code) => { try { ch.exit(code || 0); ch.end(); } catch {} });
+        ch.on('close', () => pr.kill('SIGKILL'));
+        return;
+      }
+      ch.stderr.write(`'${cmd.split(' ')[0]}' is not recognized as an internal or external command,\r\n`);
+      out('', 1);
+    });
+    s.on('sftp', (accept) => {
+      const sf = accept();
+      const hs = new Map(); let next = 1;
+      const loc = (p) => { const r = p === '.' || p === '' ? HOME : p; return path.join(home, r.startsWith(HOME) ? r.slice(HOME.length) : '/nope'); };
+      const handle = (v) => { const h = Buffer.alloc(4); h.writeUInt32BE(next); hs.set(next++, v); return h; };
+      const get = (h) => hs.get(h.readUInt32BE());
+      const okr = (id) => sf.status(id, STATUS_CODE.OK);
+      const err = (id, e) => sf.status(id, e && e.code === 'ENOENT' ? STATUS_CODE.NO_SUCH_FILE : STATUS_CODE.FAILURE);
+      const attrs = (st) => ({ mode: st.mode, uid: 0, gid: 0, size: st.size, atime: st.atimeMs / 1000 | 0, mtime: st.mtimeMs / 1000 | 0 });
+      const fsFlags = (f) => (f & OPEN_MODE.READ && f & OPEN_MODE.WRITE ? fs.constants.O_RDWR : f & OPEN_MODE.WRITE ? fs.constants.O_WRONLY : fs.constants.O_RDONLY)
+        | (f & OPEN_MODE.CREAT ? fs.constants.O_CREAT : 0) | (f & OPEN_MODE.TRUNC ? fs.constants.O_TRUNC : 0) | (f & OPEN_MODE.EXCL ? fs.constants.O_EXCL : 0);
+      sf.on('REALPATH', (id, p) => { const r = p === '.' ? HOME : p.replace(/\/+$/, ''); sf.name(id, [{ filename: r, longname: r, attrs: {} }]); });
+      sf.on('STAT', (id, p) => { try { sf.attrs(id, attrs(fs.statSync(loc(p)))); } catch (e) { err(id, e); } });
+      sf.on('LSTAT', (id, p) => { try { sf.attrs(id, attrs(fs.lstatSync(loc(p)))); } catch (e) { err(id, e); } });
+      sf.on('FSTAT', (id, h) => { try { sf.attrs(id, attrs(fs.fstatSync(get(h).fd))); } catch (e) { err(id, e); } });
+      sf.on('MKDIR', (id, p) => { try { fs.mkdirSync(loc(p)); okr(id); } catch (e) { err(id, e); } });
+      sf.on('OPEN', (id, p, flags) => { try { sf.handle(id, handle({ fd: fs.openSync(loc(p), fsFlags(flags), 0o644) })); } catch (e) { err(id, e); } });
+      sf.on('OPENDIR', (id, p) => { const l = loc(p); if (!fs.existsSync(l)) return err(id, { code: 'ENOENT' }); sf.handle(id, handle({ dir: l, done: false })); });
+      sf.on('READDIR', (id, h) => {
+        const d = get(h);
+        if (!d || d.done) return sf.status(id, STATUS_CODE.EOF);
+        d.done = true;
+        sf.name(id, fs.readdirSync(d.dir).map((n) => ({ filename: n, longname: n, attrs: attrs(fs.statSync(path.join(d.dir, n))) })));
+      });
+      sf.on('READ', (id, h, off, len) => { const buf = Buffer.alloc(len); const n = fs.readSync(get(h).fd, buf, 0, len, off); if (!n) return sf.status(id, STATUS_CODE.EOF); sf.data(id, buf.subarray(0, n)); });
+      sf.on('WRITE', (id, h, off, data) => { try { fs.writeSync(get(h).fd, data, 0, data.length, off); okr(id); } catch (e) { err(id, e); } });
+      sf.on('CLOSE', (id, h) => { const f = get(h); if (f && f.fd != null) fs.closeSync(f.fd); hs.delete(h.readUInt32BE()); okr(id); });
+      sf.on('RENAME', (id, a, b) => { if (fs.existsSync(loc(b))) return err(id); try { fs.renameSync(loc(a), loc(b)); okr(id); } catch (e) { err(id, e); } });
+      sf.on('REMOVE', (id, p) => { try { fs.unlinkSync(loc(p)); okr(id); } catch (e) { err(id, e); } });
+      sf.on('SETSTAT', (id) => okr(id)); sf.on('FSETSTAT', (id) => okr(id));
+    });
+  }));
+}).listen(2321, '127.0.0.1');
+
+// 一个标签 (直接用 WebSocket，和网页一样的消息)
+function tab(hostId, title) {
+  const ws = new WebSocket(BASE.replace('http', 'ws') + '/ws');
+  const t = { ws, out: '', msgs: [], prompts: [] };
+  ws.on('message', (d, bin) => {
+    if (bin) { t.out += d.toString(); return; }
+    const m = JSON.parse(d);
+    t.msgs.push(m);
+    if (m.type === 'prompt') t.prompts.push(m);
+  });
+  ws.on('open', () => ws.send(JSON.stringify({ type: 'connect', hostId, title, cols: 100, rows: 30 })));
+  t.send = (o) => ws.send(JSON.stringify(o));
+  t.type = (s) => t.send({ type: 'data', data: s });
+  t.last = (type) => [...t.msgs].reverse().find((m) => m.type === type);
+  t.count = (s) => t.out.split(s).length - 1;
+  return t;
+}
+
+run(async () => {
+  if (!BIN) { ok(true, '(没有 Go，也没设 SSHWEBD_BIN：跳过常驻会话测试)'); return; }
+  const host = await addHost('DW', 2321, { winDaemon: true });
+  ok(host.winDaemon === true, '主机设置里记下「Windows 常驻会话」');
+
+  // ---- 1. 连上：传 sshwebd.exe，跑 bridge，新建常驻会话 (不开普通 shell)
+  const a = tab(host.id, 'DW');
+  await until(() => /\$ $/.test(a.out) && a.last('status')?.status === 'connected', 15000);
+  const exe = path.join(home, '.ssh-web', `sshwebd-${VERSION}.exe`);
+  ok(fs.existsSync(exe) && fs.readFileSync(exe).equals(fs.readFileSync(path.join(VENDOR, 'sshwebd.exe'))) && !fs.existsSync(exe + '.part'),
+    `把 sshwebd.exe 传到 ~/.ssh-web/sshwebd-${VERSION}.exe (带版本号，正在运行的 exe 不能覆盖)`);
+  ok(bridges.length === 1 && shells === 0 && a.out.includes('新建常驻会话 1'), '开的是 bridge 通道 (cmd 写法 "C:\\…\\sshwebd-x.exe" bridge)，没开普通 shell: ' + JSON.stringify(bridges[0]));
+  ok(a.last('params')?.params?.daemonId === '1', '告诉网页接着的是哪个常驻会话 (服务重启后照原样接回去)');
+  a.type('echo hi-$((40+2)) $LC_SSHWEB\r');
+  const sid = a.msgs.find((m) => m.type === 'attached')?.session?.id;
+  await until(() => a.out.includes(`hi-42 ${sid}`), 5000);
+  ok(a.out.includes(`hi-42 ${sid}`), '打字、输出都通；会话里有 LC_SSHWEB (钩子按它找标签)');
+
+  // ---- 2. 断网 (SSH 连接断了)：会话在守护进程里继续跑；重新连上接着用，只补发没收到的
+  a.type('sleep 1; echo after-drop-$((1+1))\r');
+  await wait(300);
+  for (const c of conns) c.end();
+  await until(() => a.out.includes('连接已断开'), 5000);
+  await wait(1500);
+  ok(!a.out.includes('after-drop-2'), '断开期间的输出还没收到');
+  a.send({ type: 'reconnect' });
+  await until(() => a.out.includes('after-drop-2'), 15000);
+  ok(a.out.includes('接上常驻会话 1') && a.out.includes('after-drop-2'), '重新连上：接回同一个常驻会话，断开期间的输出补上了');
+  ok(a.count('hi-42') === 1, '之前收到过的不再重发 (hi-42 只出现一次): ' + a.count('hi-42'));
+  ok(bridges.length === 2 && fs.readdirSync(path.join(home, '.ssh-web')).length === 1, '第二次连接不再传 exe (已经有了)');
+
+  // ---- 3. 关掉标签 (常驻会话还在)，再开一个标签：问接哪个，选 1 接上 (全部补发)
+  await fetch(BASE + '/api/sessions/' + sid, { method: 'DELETE' });
+  a.ws.close();
+  await wait(800);
+  const b = tab(host.id, 'DW');
+  await until(() => b.prompts.length, 15000);
+  const pr = b.prompts[0] || {};
+  ok(pr.title === '接上常驻会话' && /1\. 会话 1 · .*有输出/.test(pr.instructions || ''), '新开标签：问要接上哪个没人接着的常驻会话: ' + JSON.stringify(pr.instructions));
+  b.send({ type: 'prompt-response', answers: ['1'] });
+  await until(() => b.out.includes('after-drop-2') && b.last('status')?.status === 'connected', 10000);
+  ok(b.out.includes('接上常驻会话 1') && b.out.includes('hi-42') && b.out.includes('after-drop-2'), '选 1：接上，之前的输出全部补发');
+
+  // ---- 4. exit：常驻会话结束
+  b.type('exit 5\r');
+  await until(() => b.out.includes('连接已断开'), 8000);
+  ok(b.out.includes('常驻会话 1 已结束 (退出码 5)'), '在会话里 exit：显示常驻会话结束和退出码');
+  ok(!b.last('params')?.params?.daemonId, '结束后不再记着这个常驻会话');
+
+  // ---- 5. 网页：主机列表上标「常驻」，编辑主机时勾着
+  const browser = await launch();
+  const p = await (await browser.newContext({ viewport: { width: 1280, height: 800 } })).newPage();
+  const errors = []; p.on('pageerror', (e) => errors.push(e.message));
+  await p.goto(BASE + '/'); await p.waitForSelector('#app:not(.hidden)');
+  const row = p.locator('.host', { hasText: 'DW' }).first();
+  ok(await row.locator('.badge', { hasText: '常驻' }).count() === 1, '主机列表上标「常驻」');
+  await row.hover(); await row.locator('[data-op=edit]').click();
+  ok(await p.isChecked('#hostForm [name=winDaemon]'), '编辑主机：「Windows 常驻会话」勾着');
+  ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
+  await browser.close();
+  b.ws.close();
+  for (const x of await (await fetch(BASE + '/api/sessions')).json()) await fetch(BASE + '/api/sessions/' + x.id, { method: 'DELETE' });
+  await wait(4000); // 守护进程没事做了自己退出 (SSHWEBD_IDLE=3s)
+  ok(/没有会话了，退出/.test(fs.readFileSync(path.join(dhome, 'sshwebd.log'), 'utf8')), '守护进程没有会话后自己退出');
+  fs.rmSync(home, { recursive: true, force: true });
+});
