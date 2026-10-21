@@ -64,11 +64,14 @@
   const hfPos = (() => { try { return JSON.parse(localStorage.getItem('sshweb.hostFloat')) || {}; } catch { return {}; } })();
   const saveHf = () => { try { localStorage.setItem('sshweb.hostFloat', JSON.stringify(hfPos)); } catch {} };
   if (hfPos.min) hostFloat.classList.add('min');
-  // 收起时按钮是「+」(展开)，展开时是「–」(收起)：收起了还显示「–」容易以为点了会再缩小
+  // 收起时按钮是「+」(展开)，展开时是「–」(收起)：收起了还显示「–」容易以为点了会再缩小。
+  // 用线条图标 (文字的「–」「×」字形偏下，和标题、「自动」对不齐)
+  const svgIc = (d) => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
   const syncMinBtn = () => {
     const b = hostFloat.querySelector('[data-a=min]'), min = hostFloat.classList.contains('min');
-    b.textContent = min ? '+' : '–';
+    b.innerHTML = svgIc(min ? '<path d="M5 12h14"/><path d="M12 5v14"/>' : '<path d="M5 12h14"/>');
     b.title = min ? '展开' : '收起';
+    b.setAttribute('aria-label', b.title);
   };
   syncMinBtn();
   // 电脑默认开，手机默认关

@@ -62,14 +62,14 @@ const B = BASE;
   // 收起
   await p.click('#hostFloat [data-a=min]'); await wait(700);
   ok(await p.evaluate(() => document.getElementById('hostFloat').classList.contains('min')) && await p.isHidden('#hostFloat .dp-tabs') && await p.locator('#hostFloat .hf-d').count() === 2, '点「–」收起：只剩标题栏，用小圆点显示 2 个标签的状态');
-  ok(await p.textContent('#hostFloat [data-a=min]') === '+' && await p.getAttribute('#hostFloat [data-a=min]', 'title') === '展开', '收起后按钮变成「+」(展开)，不再是「–」');
+  ok(await p.getAttribute('#hostFloat [data-a=min]', 'aria-label') === '展开' && await p.locator('#hostFloat [data-a=min] svg path').count() === 2, '收起后按钮变成「+」(展开)，不再是「–」');
   await p.screenshot({ path: shot('hfloat-min.png') });
   // 刷新后位置、收起状态保持
   await p.reload(); await p.waitForSelector('.tab'); await wait(1500);
   const b4 = await box();
   ok(Math.abs(b4.right - saved.right) <= 2 && Math.abs(b4.top - saved.top) <= 2 && await p.evaluate(() => document.getElementById('hostFloat').classList.contains('min')), '刷新后位置和收起状态都保持');
   await p.click('#hostFloat [data-a=min]'); await wait(500);
-  ok(await p.isVisible('#hostFloat .dp-tabs') && await p.textContent('#hostFloat [data-a=min]') === '–', '再点一次展开，按钮变回「–」');
+  ok(await p.isVisible('#hostFloat .dp-tabs') && await p.getAttribute('#hostFloat [data-a=min]', 'aria-label') === '收起' && await p.locator('#hostFloat [data-a=min] svg path').count() === 1, '再点一次展开，按钮变回「–」');
   // 标题栏按钮靠右，最右边的「×」和第一行最右边的卡片对齐
   const al0 = await p.evaluate(() => { const f = document.getElementById('hostFloat'), cs = [...f.querySelectorAll('.dp-tab')];
     const top = cs[0].offsetTop, right = Math.max(...cs.filter((c) => c.offsetTop === top).map((c) => c.getBoundingClientRect().right));
