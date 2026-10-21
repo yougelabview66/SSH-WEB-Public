@@ -36,15 +36,23 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   await p.evaluate((h) => window.__vv(h), full - 120); await wait(200);
   ok(await appH() === full, `焦点不在输入框里、可视区域短暂变矮：界面照样占满屏幕 (${await appH()} / ${full}px)`);
 
+  // iPhone 全屏 App：页面铺到屏幕边上 (viewport-fit=cover)，输入栏让出底部小横条 (模拟安全区 34px：Chromium 里 env() 是 0)
+  ok(/viewport-fit=cover/.test(await p.getAttribute('meta[name=viewport]', 'content')), 'viewport 设了 viewport-fit=cover (iPhone 才报出底部安全区)');
+  await p.addStyleTag({ content: '#mobileBar { padding-bottom: 34px; }' });
+  const barPad = () => p.evaluate(() => getComputedStyle(document.getElementById('mobileBar')).paddingBottom);
+  ok(await barPad() === '34px', '键盘收着：输入栏底部让出小横条那一条');
+
   // 点输入栏弹出键盘：可视区域矮 300px → 界面固定在键盘上方
   await p.evaluate(() => document.getElementById('mInput').focus());
   await p.evaluate((h) => window.__vv(h), full - 300); await wait(200);
   ok(await appH() === full - 300, `焦点在输入栏、键盘弹出：界面缩到键盘上方 (${await appH()} / ${full - 300}px)`);
+  ok(await barPad() === '0px' && await p.evaluate(() => document.getElementById('app').classList.contains('kb')), '键盘开着：键盘盖住了小横条，输入栏底部不再留空');
 
   // 收起键盘：可视区域恢复
   await p.evaluate(() => document.getElementById('mInput').blur());
   await p.evaluate(() => window.__vv(undefined)); await wait(200);
   ok(await appH() === full, `收起键盘：界面恢复占满 (${await appH()} / ${full}px)`);
+  ok(await barPad() === '34px', '收起键盘：输入栏底部又让出小横条');
 
   // 收起键盘时浏览器没报可视区域变化 (还停在矮的值)：离开输入框后过一会儿自己再算，也恢复
   await p.evaluate(() => document.getElementById('mInput').focus());
