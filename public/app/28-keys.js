@@ -67,6 +67,8 @@
       out = '\x1b';
     } else if (k === 'bs') {
       out = md.alt ? '\x1b\x7f' : md.ctrl ? '\x08' : '\x7f';
+    } else if (k === 'space') {
+      out = md.ctrl ? '\x00' : (md.alt ? '\x1b' : '') + ' ';
     } else if (k === 'enter') {
       out = (md.alt ? '\x1b' : '') + '\r';
     } else if (k === 'escesc') {

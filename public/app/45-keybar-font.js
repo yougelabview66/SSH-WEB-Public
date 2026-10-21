@@ -10,6 +10,7 @@
     copy: { label: '复制', k: 'copy' }, paste: { label: '粘贴', k: 'paste' },
     // 以下默认不显示，可以在设置里添加
     enter: { label: 'Enter', k: 'enter', desc: '回车' },
+    space: { label: '空格', k: 'space', desc: '输入框有字时插到光标处，空着时直接发给终端 (如 Claude Code 多选题勾选)' },
     escesc: { label: 'Esc Esc', k: 'escesc', desc: 'Claude Code 撤回' },
     '^b': { label: '^B', k: '^b', desc: 'tmux 前缀' }, '^r': { label: '^R', k: '^r', desc: '搜索历史' },
     '^a': { label: '^A', k: '^a', desc: '行首' }, '^e': { label: '^E', k: '^e', desc: '行尾' },

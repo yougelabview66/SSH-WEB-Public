@@ -322,6 +322,7 @@
       // 输入框有文字时 ⌫ ← → Home End 编辑输入框；回车 = 发送
       if (plain && k === 'bs') return at > 0 && setMobileText(text.slice(0, at - 1) + text.slice(at), at - 1);
       if (plain && CARET[k]) return setMobileText(text, CARET[k](at, text.length));
+      if (plain && k === 'space') return setMobileText(text.slice(0, at) + ' ' + text.slice(at), at + 1), onMobileText();
       if (plain && k === 'enter') return mobileEnter();
       // Esc、^C 等控制键不影响正在编辑的文字；其他键 (Tab 补全等) 先把文字发出去再发按键
       if (!['esc', 'escesc'].includes(k) && !/^\^/.test(k)) flushInput();
