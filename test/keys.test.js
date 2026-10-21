@@ -25,7 +25,7 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   await m.screenshot({ path: shot('keys1.png') });
   await m.locator('#keysCur .krow', { hasText: 'Home' }).locator('[data-op=del]').tap();
   await m.locator('#keysCur .krow', { hasText: 'Shift' }).locator('[data-op=del]').tap();
-  for (const k of ['^B', 'Esc Esc', 'F5']) await m.locator('#keysAvail button', { hasText: new RegExp('^' + k.replace(/[\^$]/g, '\\$&') + '$') }).tap();
+  for (const k of ['^B', 'Esc Esc', 'F5', '空格']) await m.locator('#keysAvail button', { hasText: new RegExp('^' + k.replace(/[\^$]/g, '\\$&') + '$') }).tap();
   await m.fill('#kcLabel', '压缩'); await m.fill('#kcSeq', '/compact\\r'); await m.tap('#keysCustom button');
   // 把「压缩」移到第 2 位
   for (let i = 0; i < 30; i++) {
@@ -35,7 +35,7 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   }
   await m.tap('#keysSave'); await wait(400);
   const now = await labels();
-  ok(now[1] === '压缩' && !now.includes('Home') && !now.includes('Shift') && now.includes('^B') && now.includes('Esc Esc') && now.includes('F5'),
+  ok(now[1] === '压缩' && !now.includes('Home') && !now.includes('Shift') && now.includes('^B') && now.includes('Esc Esc') && now.includes('F5') && now.includes('空格'),
     '保存后按键栏更新: ' + now.join(' '));
   got = '';
   await m.tap('#mobileBar .mkeys button:has-text("压缩")'); await wait(200);
@@ -46,6 +46,13 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   ok(got === '\x1b\x1b', 'Esc Esc 发送两次 Esc');
   got = ''; await m.tap('#mobileBar [data-k=f5]'); await wait(150);
   ok(got === '\x1b[15~', 'F5 发送 \\x1b[15~');
+  got = ''; await m.tap('#mobileBar [data-k=space]'); await wait(150);
+  ok(got === ' ', '空格：输入框空着时直接发给终端');
+  await m.fill('#mInput', 'ab'); await m.evaluate(() => { const i = document.getElementById('mInput'); i.setSelectionRange(i.value.length - 1, i.value.length - 1); i.dispatchEvent(new Event('input')); });
+  got = ''; await m.tap('#mobileBar [data-k=space]'); await wait(150);
+  const sp = await m.evaluate(() => document.getElementById('mInput').value.replace(/\u200b/g, ''));
+  ok(got === '' && sp === 'a b', '空格：输入框有字时插到光标处，不发出去: ' + JSON.stringify(sp));
+  await m.fill('#mInput', ''); await m.evaluate(() => document.getElementById('mInput').dispatchEvent(new Event('input')));
   got = ''; await m.tap('#mobileBar [data-mod=ctrl]'); await m.tap('#mobileBar [data-k=right]'); await wait(150);
   ok(got === '\x1b[1;5C', '删掉 Shift 后 Ctrl 组合键仍正常');
   // 重新打开 (换设备) 仍保持
