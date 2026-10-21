@@ -1,6 +1,6 @@
 'use strict';
 // 终端里搜索：Ctrl+Shift+F / 「⋯ 更多 → 搜索终端」—— 普通终端搜滚动记录 (不分大小写、中文按两格选中、折行接起来)，
-// 回车 = 上一个、Shift+回车 = 下一个、循环；没找到标红；Esc 关闭；tmux 里先打开历史视图再在里面搜
+// 打字时不搜，回车或点「搜索」才搜；搜过后回车 = 上一个、Shift+回车 = 下一个、循环；没找到标红；Esc 关闭；tmux 里先打开历史视图再在里面搜
 const { Server } = require('ssh2');
 const { BASE, ok, wait, run, launch, shot, hostKey, addHost, devices } = require('./helpers');
 
@@ -51,10 +51,22 @@ run(async () => {
   await p.locator('.host', { hasText: 'SP' }).first().click(); await p.waitForSelector('.tab.active .dot.ok'); await wait(1200);
   const info = () => p.textContent('.term.active .tsearch .ts-info');
   const rowsText = () => p.evaluate(() => document.querySelector('.term.active .xterm-rows').innerText);
-  const type = async (t) => { await p.fill('.term.active .tsearch input', t); await wait(400); };
+  const type = async (t) => { await p.fill('.term.active .tsearch input', t); await p.press('.term.active .tsearch input', 'Enter'); await wait(400); };
 
   await p.keyboard.press('Control+Shift+F'); await wait(200);
   ok(await p.isVisible('.term.active .tsearch') && await p.evaluate(() => document.activeElement.matches('.tsearch input')), 'Ctrl+Shift+F：打开搜索框，光标在搜索框里');
+  // 打字时不搜 (输入法组字不会被打断)，按回车 / 点「搜索」才搜
+  const cdp = await ctx.newCDPSession(p);
+  const compose = (t) => cdp.send('Input.imeSetComposition', { text: t, selectionStart: t.length, selectionEnd: t.length });
+  await compose('nee'); await wait(500);
+  ok(await info() === '' && await p.inputValue('.term.active .tsearch input') === 'nee', '输入法组字时：不搜');
+  await cdp.send('Input.insertText', { text: 'needle' }); await wait(500);
+  ok(await info() === '' && await p.inputValue('.term.active .tsearch input') === 'needle', '字上屏了也不自动搜，字完整');
+  await p.click('.term.active .tsearch [data-a=go]'); await wait(400);
+  ok(await info() === '3/3' && await p.evaluate(() => document.activeElement.matches('.tsearch input')), '点「搜索」：搜出来了，光标还在搜索框里: ' + await info());
+  await p.fill('.term.active .tsearch input', 'needle-'); await wait(300);
+  ok(await info() === '', '改了搜索词：上次的结果提示清掉，等回车');
+  await p.fill('.term.active .tsearch input', ''); await wait(300);
   ok(!(await rowsText()).includes('line 5 has'), '(needle-A 那行已经滚出屏幕)');
   await type('needle');
   ok(await info() === '3/3', '不分大小写，找到 3 个，先停在最新 (最下面) 的: ' + await info());
@@ -96,9 +108,19 @@ run(async () => {
   await p.locator('.host', { hasText: 'ST' }).first().click(); await p.waitForSelector('.tab.active .dot.ok'); await wait(1500);
   await p.keyboard.press('Control+Shift+F'); await wait(1500);
   ok(!!(await p.$('.term.active .lscroll')), 'tmux 里：打开搜索时先打开历史视图 (抓 tmux 历史)');
-  await type('DEEPWORD');
-  const v = await p.evaluate(() => { const pre = document.querySelector('.term.active .ls-body'); const r = getSelection().rangeCount && getSelection().getRangeAt(0).getBoundingClientRect(); const pr = pre.getBoundingClientRect(); return { sel: getSelection().toString(), inView: !!r && r.top >= pr.top && r.bottom <= pr.bottom, info: document.querySelector('.term.active .ts-info').textContent }; });
-  ok(v.info === '1/1' && v.sel === 'deepword' && v.inView, '在历史视图里找到早先的输出，选中并滚到那里: ' + JSON.stringify(v));
+  // 用输入法打：组字时不搜；上屏后搜到，焦点和字都还在搜索框里 (以前改选区标出匹配，把输入法正在组的字打断了)
+  await compose('deep'); await wait(500);
+  ok(await info() === '' && await p.inputValue('.term.active .tsearch input') === 'deep', 'tmux 历史视图：输入法组字时不搜');
+  await cdp.send('Input.insertText', { text: 'DEEPWORD' }); await wait(500);
+  ok(await info() === '', 'tmux 历史视图：字上屏了也不自动搜');
+  await p.press('.term.active .tsearch input', 'Enter'); await wait(500);
+  const v = await p.evaluate(() => {
+    const pre = document.querySelector('.term.active .ls-body'), hl = CSS.highlights.get('tsearch'), rg = hl && [...hl][0];
+    const r = rg && rg.getBoundingClientRect(), pr = pre.getBoundingClientRect();
+    return { hl: rg ? rg.toString() : '', inView: !!r && r.top >= pr.top && r.bottom <= pr.bottom, focus: document.activeElement.matches('.tsearch input'),
+      val: document.activeElement.value, info: document.querySelector('.term.active .ts-info').textContent };
+  });
+  ok(v.info === '1/1' && v.hl === 'deepword' && v.inView && v.focus && v.val === 'DEEPWORD', '在历史视图里找到早先的输出，高亮并滚到那里，焦点和字都留在搜索框里: ' + JSON.stringify(v));
   await p.press('.term.active .tsearch input', 'Escape'); await wait(300);
   ok(!(await p.$('.term.active .tsearch')) && !!(await p.$('.term.active .lscroll')), 'Esc 先只关搜索框，历史视图还在');
   await p.keyboard.press('Escape'); await wait(300);

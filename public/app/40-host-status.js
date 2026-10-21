@@ -56,7 +56,7 @@
   }
 
   // ------------------------------------------------------------ 主机状态悬浮窗 (状态卡片)
-  // 电脑：顶部「🖥️ 状态」开关；手机：「⋯ 更多 → 状态卡片」开关 (默认关，会盖住一部分终端)。
+  // 「⋯ 更多 → 状态卡片」开关 (电脑默认开；手机默认关，会盖住一部分终端)。
   // 显示在终端上 (和输入框模式无关)，按住标题栏拖动，开关 / 位置 / 收起状态每台设备各自记住；
   // 📌 置顶到桌面 (电脑)：浏览器的文档画中画 (Chrome / Edge 116+)，浏览器最小化后也浮在最上面
   const hostFloat = $('#hostFloat'), hfTabs = $('#hostFloat .dp-tabs'), hfSum = $('#hostFloat .hf-sum');
@@ -66,14 +66,13 @@
   if (hfPos.min) hostFloat.classList.add('min');
   // 电脑默认开，手机默认关
   let hfOn = (() => { try { const v = localStorage.getItem('sshweb.hfOn'); return isTouch ? v === '1' : v !== '0'; } catch { return !isTouch; } })();
-  const btnFloat = $('#btnFloat'), btnFloatM = $('#btnFloatM');
+  const btnFloatM = $('#btnFloatM'); // 开关在「⋯ 更多」菜单里 (电脑、手机一样)
   const toggleHf = () => {
     hfOn = !hfOn;
     try { localStorage.setItem('sshweb.hfOn', hfOn ? '1' : '0'); } catch {}
     if (!hfOn && pipWin) pipWin.close(); // 关掉时置顶小窗口也一起关
     updateHostFloat();
   };
-  btnFloat.addEventListener('click', toggleHf);
   btnFloatM.addEventListener('click', toggleHf);
   const pipOk = 'documentPictureInPicture' in window;
   // 置顶到桌面只给电脑 (手机浏览器不支持，手机上的状态卡片也放不下这两个按钮)
@@ -104,9 +103,7 @@
   }
 
   function updateHostFloat() {
-    btnFloat.classList.toggle('hidden', !(!isTouch && active));
-    btnFloat.classList.toggle('on', hfOn);
-    btnFloatM.classList.toggle('hidden', !(isTouch && active)); // 手机上开关在「⋯ 更多」菜单里
+    btnFloatM.classList.toggle('hidden', !active);
     btnFloatM.classList.toggle('on', hfOn);
     const show = !!active && hfOn && !pipWin;
     const was = !hostFloat.classList.contains('hidden');

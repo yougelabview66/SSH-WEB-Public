@@ -1,7 +1,8 @@
   // ------------------------------------------------------------ 终端里搜索
   // Ctrl+Shift+F (终端里 Ctrl+F 留给程序：bash 光标右移、vim 翻页) 或「⋯ 更多 → 搜索终端」。
   // 普通终端搜终端自己的滚动记录；tmux 里终端只有当前一屏，历史在 tmux 手里：先像往上滚一样打开历史视图
-  // (抓 3000 行，见 55-local-scroll.js)，在历史视图里搜。回车 = 上一个 (往旧的找)，Shift+回车 = 下一个，Esc 关闭
+  // (抓 3000 行，见 55-local-scroll.js)，在历史视图里搜。打字时不搜 (输入法组字会被打断)，按回车或点「搜索」才搜；
+  // 搜过之后回车 = 上一个 (往旧的找)，Shift+回车 = 下一个，Esc 关闭
   let ts = null; // { s, el, input, info, matches, cur, mode: 'term' | 'view' }
 
   window.addEventListener('keydown', (e) => {
@@ -18,26 +19,37 @@
     closeTermSearch();
     const el = document.createElement('div');
     el.className = 'tsearch';
-    el.innerHTML = `<input type="text" placeholder="搜索终端…" spellcheck="false" autocomplete="off" autocapitalize="off">
+    el.innerHTML = `<input type="text" placeholder="搜索终端…" enterkeyhint="search" spellcheck="false" autocomplete="off" autocapitalize="off">
+      <button type="button" data-a="go" class="primary" title="搜索 (回车)">搜索</button>
       <span class="ts-info"></span>
       <button type="button" data-a="prev" title="上一个 (回车)">↑</button>
       <button type="button" data-a="next" title="下一个 (Shift+回车)">↓</button>
       <button type="button" data-a="close" title="关闭 (Esc)">×</button>`;
     s.box.appendChild(el);
-    ts = { s, el, input: $('input', el), info: $('.ts-info', el), matches: [], cur: -1, mode: 'term' };
+    ts = { s, el, input: $('input', el), info: $('.ts-info', el), matches: [], cur: -1, mode: 'term', dirty: true };
     const { input } = ts;
-    let timer = 0;
-    input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => runSearch(true), 150); });
+    // 改了搜索词：清掉上次的结果提示，等回车 / 「搜索」
+    let composing = false;
+    input.addEventListener('compositionstart', () => { composing = true; });
+    input.addEventListener('compositionend', () => { composing = false; });
+    input.addEventListener('input', () => {
+      if (!ts) return;
+      ts.dirty = true;
+      ts.info.textContent = '';
+      ts.el.classList.remove('none');
+    });
     input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); step(e.shiftKey ? 1 : -1); }
+      if (e.key === 'Enter' && (e.isComposing || composing || e.keyCode === 229)) { e.stopPropagation(); return; } // 回车是在选字
+      if (e.key === 'Enter') { e.preventDefault(); go(e.shiftKey ? 1 : -1); }
       else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeTermSearch(); }
       e.stopPropagation(); // 打的字只进搜索框，不算在终端里打字 (历史视图里打字会回到实时画面)
     });
     el.addEventListener('mousedown', (e) => { if (e.target.closest('button')) e.preventDefault(); }); // 焦点留在搜索框
     el.addEventListener('click', (e) => {
       const a = e.target.closest('[data-a]')?.dataset.a;
-      if (a === 'prev') step(-1);
-      else if (a === 'next') step(1);
+      if (a === 'go') runSearch(true);
+      else if (a === 'prev') go(-1);
+      else if (a === 'next') go(1);
       else if (a === 'close') closeTermSearch();
     });
     // tmux 里：打开历史视图再搜 (同往上滚的第一下)
@@ -58,10 +70,22 @@
     input.focus({ preventScroll: true });
   }
 
+  // 历史视图里标出匹配：搜索框有焦点时用 CSS 高亮 (改选区会把焦点 / 输入法组的字从搜索框里抢走)，没有这个接口的浏览器才用选中
+  const canHL = !!(window.CSS && CSS.highlights && window.Highlight);
+  function markView(range) {
+    if (canHL) CSS.highlights.delete('tsearch');
+    if (!range) return;
+    if (canHL && document.activeElement === ts?.input) { CSS.highlights.set('tsearch', new Highlight(range)); return; }
+    const sel = getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
   function closeTermSearch() {
     if (!ts) return;
     clearInterval(ts.wait);
     ts.el.remove();
+    if (canHL) CSS.highlights.delete('tsearch');
     if (ts.mode === 'term') ts.s.term.clearSelection();
     else getSelection()?.removeAllRanges();
     const s = ts.s;
@@ -72,10 +96,18 @@
     }
   }
 
+  // 回车 / ↑↓：搜索词改过 (还没搜) 就先搜，搜过了就跳到上一个 / 下一个
+  function go(d) {
+    if (!ts) return;
+    if (ts.dirty) runSearch(true);
+    else step(d);
+  }
+
   // fresh：搜索词变了，从最新 (最下面) 的一个开始
   function runSearch(fresh) {
     if (!ts) return;
     const q = ts.input.value;
+    ts.dirty = false;
     const s = ts.s;
     ts.mode = s.scrollView ? 'view' : 'term';
     ts.matches = q ? (ts.mode === 'view' ? viewMatches(s, q) : termMatches(s.term, q)) : [];
@@ -96,15 +128,13 @@
     const alt = ts.mode === 'term' && s.term.buffer.active.type === 'alternate';
     ts.info.textContent = ts.input.value ? (matches.length ? `${cur + 1}/${matches.length}` : '没找到') + (alt ? ' · 只搜当前一屏' : '') : '';
     ts.el.classList.toggle('none', !!ts.input.value && !matches.length);
-    if (cur < 0) { if (ts.mode === 'term') s.term.clearSelection(); else getSelection()?.removeAllRanges(); return; }
+    if (cur < 0) { if (ts.mode === 'term') s.term.clearSelection(); else markView(null); return; }
     const m = matches[cur];
     if (ts.mode === 'term') {
       s.term.select(m.col, m.row, m.len);
       s.term.scrollToLine(Math.max(0, m.row - Math.floor(s.term.rows / 2)));
     } else {
-      const sel = getSelection();
-      sel.removeAllRanges();
-      sel.addRange(m.range);
+      markView(m.range);
       const pre = s.scrollView.querySelector('.ls-body');
       const r = m.range.getBoundingClientRect(), pr = pre.getBoundingClientRect();
       pre.scrollTop += r.top - pr.top - pre.clientHeight / 2;

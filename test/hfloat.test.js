@@ -78,13 +78,15 @@ const B = BASE;
   await p.click('#dMode'); await wait(500);
   ok(await p.isVisible('#hostFloat'), '输入框浮动模式：悬浮窗照样显示');
   await p.click('#dMode'); await wait(300);
-  // 顶部「🖥️ 状态」开关
-  ok(await p.isVisible('#btnFloat') && await p.evaluate(() => document.getElementById('btnFloat').classList.contains('on')), '顶部有「🖥️ 状态」按钮，默认打开 (高亮)');
-  await p.click('#btnFloat'); await wait(300);
-  ok(await p.isHidden('#hostFloat') && !await p.evaluate(() => document.getElementById('btnFloat').classList.contains('on')), '点「🖥️ 状态」关掉悬浮窗');
+  // 「⋯ 更多 → 状态卡片」开关 (顶栏上不再单独放「🖥️ 状态」按钮，同手机)
+  const toggleHf = async () => { await p.click('#btnMore'); await p.click('#btnFloatM'); await wait(300); };
+  const hfBtnOn = () => p.evaluate(() => document.getElementById('btnFloatM').classList.contains('on'));
+  ok(!(await p.$('#btnFloat')) && await hfBtnOn(), '顶栏上没有单独的「🖥️ 状态」按钮，菜单里的「状态卡片」默认打着勾');
+  await toggleHf();
+  ok(await p.isHidden('#hostFloat') && !await hfBtnOn(), '「⋯ 更多 → 状态卡片」关掉悬浮窗');
   await p.reload(); await p.waitForSelector('.tab'); await wait(1500);
   ok(await p.isHidden('#hostFloat'), '刷新后保持关闭');
-  await p.click('#btnFloat'); await wait(300);
+  await toggleHf();
   ok(await p.isVisible('#hostFloat'), '再点一次打开');
   // 置顶到桌面 (文档画中画)
   const hasPip = await p.evaluate(() => 'documentPictureInPicture' in window);
@@ -117,9 +119,9 @@ const B = BASE;
     await p.evaluate(() => window.documentPictureInPicture.window?.close()); await wait(800);
     ok(await p.isVisible('#hostFloat'), '关掉置顶窗口后，网页里的悬浮窗重新出现');
     await p.click('#hostFloat [data-a=pip]'); await wait(1200);
-    await p.click('#btnFloat'); await wait(800);
-    ok(await p.evaluate(() => !window.documentPictureInPicture.window) && await p.isHidden('#hostFloat'), '置顶窗口开着时点「🖥️ 状态」：小窗口也一起关掉');
-    await p.click('#btnFloat'); await wait(300);
+    await toggleHf(); await wait(500);
+    ok(await p.evaluate(() => !window.documentPictureInPicture.window) && await p.isHidden('#hostFloat'), '置顶窗口开着时关掉「状态卡片」：小窗口也一起关掉');
+    await toggleHf();
     // 自动钉住
     await p.click('#hostFloat [data-a=auto]'); await wait(1200);
     ok(await p.evaluate(() => document.querySelector('#hostFloat [data-a=auto]').classList.contains('on')) && await p.evaluate(() => !!window.documentPictureInPicture.window), '打开「自动」：按钮高亮，并马上钉住');
