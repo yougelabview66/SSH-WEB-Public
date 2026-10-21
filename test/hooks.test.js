@@ -222,9 +222,9 @@ run(async () => {
   await p.keyboard.press('Escape'); await wait(200);
   await p.click('#btnMore'); await p.click('#btnHooks'); await waitRow('grok', /未安装/);
   const rowsInfo = await p.evaluate(() => [...document.querySelectorAll('.hooksp .hk-row')].map((r) => [r.dataset.agent, !!r.querySelector('.hk-tag'), r.classList.contains('absent')]));
-  ok(rowsInfo.length === 6 && rowsInfo[0][0] === 'claude' && !rowsInfo[0][1] && rowsInfo.slice(1).every(([, tag]) => tag)
+  ok(rowsInfo.length === 6 && rowsInfo[0][0] === 'claude' && rowsInfo.every(([id, tag]) => tag === !['claude', 'grok'].includes(id))
     && rowsInfo.find(([id]) => id === 'opencode')[2] && !rowsInfo.find(([id]) => id === 'grok')[2],
-  '面板：6 个 Agent 各一行，Claude Code 在第一个，别的标「未实测」，主机上没找到的变淡排后面: ' + JSON.stringify(rowsInfo));
+  '面板：6 个 Agent 各一行，Claude Code 在第一个，除了实测过的 Claude Code 和 Grok 都标「未实测」，主机上没找到的变淡排后面: ' + JSON.stringify(rowsInfo));
   await p.screenshot({ path: shot('hooks-agents.png') });
   for (const id of ['grok', 'codex', 'gemini', 'antigravity', 'opencode']) { await p.click(R(id) + ' [data-a=install]'); await waitRow(id, /已安装/); }
   ok((await Promise.all(['grok', 'codex', 'gemini', 'antigravity', 'opencode'].map(rowState))).every((t) => t === '✅ 已安装'), '每个 Agent 点「安装」后都显示已安装');
