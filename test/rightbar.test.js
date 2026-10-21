@@ -225,10 +225,10 @@ run(async () => {
   if (await m.isVisible('.term.active .owner-notice button')) { await m.tap('.term.active .owner-notice button'); await wait(800); }
   await m.tap('#btnMore'); await m.tap('#btnProj'); await m.waitForSelector(`${RB} .pf-row`);
   const mb = await m.evaluate(() => { const r = document.getElementById('rightBar').getBoundingClientRect(); return { l: r.left, t: r.top, w: Math.round(r.width), iw: innerWidth }; });
-  ok(mb.l === 0 && mb.t === 0 && mb.w === mb.iw && await m.isHidden(`${RB} [data-a=collapse]`) && await m.isVisible(`${RB} [data-a=close]`), '手机：全屏显示，右上角是「×」关闭 (没有收起): ' + JSON.stringify(mb));
+  ok(mb.l === 0 && mb.t === 0 && mb.w === mb.iw && await m.isVisible(`${RB} [data-a=collapse]`) && !(await m.$(`${RB} [data-a=close]`)), '手机：全屏显示，右上角和电脑一样是「»」收起 (没有「×」): ' + JSON.stringify(mb));
   await m.screenshot({ path: shot('rb-mobile-files.png') });
   await m.screenshot({ path: shot('rb-head-mobile.png'), clip: { x: 0, y: 0, width: 412, height: 80 } });
-  ok(await m.evaluate(() => Math.round(innerWidth - document.querySelector('#rightBar [data-a=close]').getBoundingClientRect().right)) <= 10, '手机：「×」贴着屏幕右边');
+  ok(await m.evaluate(() => Math.round(innerWidth - document.querySelector('#rightBar [data-a=collapse]').getBoundingClientRect().right)) <= 10, '手机：「»」贴着屏幕右边');
   await m.tap(`${RB} .rb-tabs [data-tab=git]`); await m.waitForSelector(`${RB} .gp-file`);
   await m.tap(`${RB} .gp-file:has-text("a.txt")`); await m.waitForSelector(`${RB} .gl.add`);
   await m.tap(`${RB} .gl.add:has-text("d")`);
@@ -237,6 +237,9 @@ run(async () => {
   await m.tap(`${RB} [data-a=send]`); await wait(400);
   const mt = await m.evaluate(() => document.getElementById('mInput').value.replace(/​/g, ''));
   ok(await m.isHidden(RB) && mt.includes('a.txt 第 4 行（d）：手机上的批注'), '手机：发给 Agent 后右边栏关掉，批注在输入栏里: ' + JSON.stringify(mt));
+  await m.tap('#btnMore'); await m.tap('#btnProj'); await m.waitForSelector(RB);
+  await m.tap(`${RB} [data-a=collapse]`); await wait(400);
+  ok(await m.isHidden(RB) && await m.isHidden('#rightRail'), '手机：点「»」收起 = 右边栏关掉 (手机上没有右边缘那列图标)');
 
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
   await browser.close();
