@@ -433,7 +433,9 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
   -webkit-user-select: none; touch-action: none; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--border); }
 .hf-head .hf-title { font-weight: 600; white-space: nowrap; }
 .hf-head button:first-of-type { margin-left: auto; }
-.hf-head button { border: none; background: none; padding: 2px 6px; font-size: 13px; line-height: 1; color: var(--muted); cursor: pointer; }
+.hf-head button { border: none; background: none; padding: 2px 6px; font-size: 13px; line-height: 1; color: var(--muted); cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; min-height: 20px; }
+.hf-head button svg.ic { width: 13px; height: 13px; }
 .hf-head button:hover { color: var(--text); background: var(--panel2); }
 .hf-head .hf-auto { font-size: 11px; padding: 2px 6px; border-radius: 8px; }
 .hf-head .hf-auto.on { color: #fff; background: var(--accent2); }
