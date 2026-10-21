@@ -272,7 +272,11 @@
       else if (a === 'refresh') self.load(self.path);
       else if (a === 'close') { self.toggle(); updateSftpBtn(); }
       else if (a === 'upload') fileInput.click();
-      else if (a === 'cd') { send(s, { type: 'data', data: `cd ${shellQuote(self.path)}\r` }); focusTerm(s); }
+      else if (a === 'cd') { // Windows 主机 (默认 cmd)：cd /d "D:\目录" (换盘符也切得过去)
+        const win = /^\/[A-Za-z]:/.test(self.path);
+        send(s, { type: 'data', data: win ? `cd /d "${showPath(self.path).replace(/\//g, '\\')}"\r` : `cd ${shellQuote(self.path)}\r` });
+        focusTerm(s);
+      }
       else if (a === 'mkdir') {
         const name = prompt('新文件夹名称：');
         if (!name) return;

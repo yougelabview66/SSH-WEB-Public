@@ -7,12 +7,13 @@ const { BASE, ok, wait, run, launch, hostKey, addHost } = require('./helpers');
 // 模拟 Windows 的 SFTP：主目录 /D:/示例工作区，下面有个文件夹「项目」；只认 /D:/… 这种路径
 const DIRS = { '/D:/示例工作区': ['项目', 'a.txt'], '/D:/示例工作区/项目': ['b.txt'], '/D:': ['示例工作区'] };
 const asked = [];
+let got = '';
 new Server({ hostKeys: [hostKey()] }, (c) => {
   c.on('authentication', (ctx) => ctx.accept());
   c.on('ready', () => c.on('session', (acc) => {
     const s = acc();
     s.on('pty', (a) => a()); s.on('window-change', (a) => a && a());
-    s.on('shell', (a) => a().write('PS D:\\示例工作区> '));
+    s.on('shell', (a) => { const st = a(); st.write('D:\\示例工作区> '); st.on('data', (d) => { got += d; }); });
     s.on('exec', (a) => { a(); });
     s.on('sftp', (accept) => {
       const sf = accept();
@@ -58,6 +59,9 @@ run(async () => {
   asked.length = 0;
   await p.fill('.sftp .path', 'D:/示例工作区'); await p.press('.sftp .path', 'Enter'); await wait(800);
   ok(asked.includes('/D:/示例工作区') && await pathVal() === 'D:/示例工作区' && await p.locator('.sftp .frow').count() === 2, '手动输入 D:/示例工作区 回车：发给服务端时补回 /D:/…，能打开: ' + JSON.stringify(asked));
+  got = '';
+  await p.click('.sftp [data-a=cd]'); await wait(600);
+  ok(got === 'cd /d "D:\\示例工作区"\r', '「cd 到这里」：按 cmd 的写法发 cd /d "D:\\示例工作区": ' + JSON.stringify(got));
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
   await browser.close();
 });
