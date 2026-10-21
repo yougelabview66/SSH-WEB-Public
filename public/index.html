@@ -8,6 +8,8 @@
   <meta name="theme-color" content="#111827">
   <link rel="manifest" href="/manifest.json">
   <meta name="apple-mobile-web-app-capable" content="yes">
+  <!-- iPhone 全屏 App：状态栏透明 (不画磨砂)，页面铺到状态栏底下，那一条由标签栏顶上的深色条盖住 (见 style.css 的 --sb) -->
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="SSH-WEB">
   <!-- 尽早应用手动选择的主题，避免页面先闪一下深色 (单独的文件：安全策略不允许内联脚本) -->
@@ -181,7 +183,7 @@
     <button id="btnFwd" class="mitem" title="在浏览器里打开目标主机上的开发服务 (如 localhost:5173)">🌐 端口预览</button>
     <button id="btnSearch" class="mitem" title="在终端里查找 (Ctrl+Shift+F)；tmux 里会先打开历史视图再查">🔍 搜索历史</button>
     <button id="btnSessions" class="mitem" title="这台主机上 Claude Code / Grok / Codex / Gemini / OpenCode 以前的会话：搜索、点「继续」接着聊">💬 会话历史</button>
-    <button id="btnProj" class="mitem" title="右边栏：项目文件夹里的文件 (Ctrl+Shift+P 搜索文件)"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7h-3a2 2 0 0 1-2-2V2"/><path d="M9 18a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h7l4 4v10a2 2 0 0 1-2 2Z"/><path d="M3 7.6v12.8A1.6 1.6 0 0 0 4.6 22h9.8"/></svg> 项目文件</button>
+    <button id="btnProj" class="mitem" title="右边栏：项目文件夹里的文件 (Ctrl+Shift+P 搜索文件)"><svg class="emo" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5v12.7a1.8 1.8 0 0 0 1.8 1.8h9.6" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round"/><path d="M9 18a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h7l4 4v10a2 2 0 0 1-2 2Z" fill="#bfdbfe" stroke="#2563eb" stroke-width="1.6" stroke-linejoin="round"/><path d="M16 2v3a1 1 0 0 0 1 1h3Z" fill="#60a5fa" stroke="#2563eb" stroke-width="1.6" stroke-linejoin="round"/><path d="M10.5 10h6M10.5 13.5h6" stroke="#3b82f6" stroke-width="1.5" stroke-linecap="round"/></svg> 项目文件</button>
     <button id="btnGit" class="mitem" title="右边栏：这个项目改了哪些文件、改了什么；在改动的行上写批注发给 Agent">📝 代码改动</button>
     <button id="btnHooks" class="mitem" title="给这台主机的 Claude Code / Grok / Codex / Gemini / Antigravity / OpenCode 装钩子：状态更准、推送写具体内容">🔔 钩子通知</button>
   </div>

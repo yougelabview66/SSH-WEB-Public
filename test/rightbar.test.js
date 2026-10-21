@@ -91,12 +91,19 @@ run(async () => {
   const RB = '#rightBar';
 
   // ======== 项目：文件夹树
-  await p.click('#btnMore'); await p.click('#btnProj');
+  await p.click('#btnMore'); await wait(200);
+  { const r = await p.locator('#morePop').boundingBox(); await p.screenshot({ path: shot('menu-icons.png'), clip: { x: r.x - 4, y: r.y - 4, width: r.width + 8, height: r.height + 8 } }); }
+  await p.click('#btnProj');
   await p.waitForSelector(`${RB} .pf-row`);
   const tabs = await p.$$eval(`${RB} .rb-tabs button`, (xs) => xs.map((x) => [x.dataset.tab, x.classList.contains('on'), !!x.querySelector('svg.ic')]));
   ok(JSON.stringify(tabs) === JSON.stringify([['files', true, true], ['git', false, true]]), '右边栏两个选项卡：项目 (第一个，打开着)、改动，都是线条图标: ' + JSON.stringify(tabs));
-  ok(await p.evaluate(() => document.querySelector('#btnProj svg.ic').innerHTML === document.querySelector('#rightBar .rb-tabs [data-tab=files] svg.ic').innerHTML), '「⋯ 更多」里「项目文件」的图标和选项卡上的一样');
+  const emo = await p.evaluate(() => { const ic = document.querySelector('#btnProj svg.emo').getBoundingClientRect(), mon = document.getElementById('btnMon');
+    const t = document.createRange(); t.setStart(mon.firstChild, 0); t.setEnd(mon.firstChild, 2); const e = t.getBoundingClientRect(); return { w: Math.round(ic.width), ew: Math.round(e.width), filled: !!document.querySelector('#btnProj svg.emo path[fill="#bfdbfe"]') }; });
+  ok(emo.filled && Math.abs(emo.w - emo.ew) <= 4, '「⋯ 更多」里「项目文件」的图标：彩色、大小和其他 emoji 图标一样: ' + JSON.stringify(emo));
   const headBtns = await p.$$eval(`${RB} .rb-head > button`, (xs) => xs.filter((x) => getComputedStyle(x).display !== 'none').map((x) => x.dataset.a));
+  await p.screenshot({ path: shot('rb-head-desk.png'), clip: { x: 840, y: 0, width: 440, height: 90 } });
+  const edge = await p.evaluate(() => { const b = document.querySelector('#rightBar [data-a=collapse]').getBoundingClientRect(), r = document.getElementById('rightBar').getBoundingClientRect(); return Math.round(r.right - b.right); });
+  ok(edge <= 10, `「»」贴着右边栏的右边 (离右边 ${edge}px)`);
   ok(JSON.stringify(headBtns) === JSON.stringify(['refresh', 'collapse']), '电脑：右上角只有刷新和「»」收起 (没有重复的关闭)，「»」在最右边: ' + JSON.stringify(headBtns));
   const rowLook = await p.evaluate(() => { const r = document.querySelector('#rightBar .pf-row[data-rel="a.txt"]'); return { icon: !!r.querySelector('svg.ic'), fs: getComputedStyle(r).fontSize, color: getComputedStyle(r.querySelector('.pf-name')).color, st: r.querySelector('.pf-st').textContent }; });
   ok(rowLook.icon && rowLook.fs === '12px' && rowLook.st === 'M' && rowLook.color !== 'rgb(15, 23, 42)', '文件树样式同 Orca：类型图标、12px 小字、改过的文件名用 git 状态色、右边状态字母: ' + JSON.stringify(rowLook));
@@ -217,6 +224,8 @@ run(async () => {
   const mb = await m.evaluate(() => { const r = document.getElementById('rightBar').getBoundingClientRect(); return { l: r.left, t: r.top, w: Math.round(r.width), iw: innerWidth }; });
   ok(mb.l === 0 && mb.t === 0 && mb.w === mb.iw && await m.isHidden(`${RB} [data-a=collapse]`) && await m.isVisible(`${RB} [data-a=close]`), '手机：全屏显示，右上角是「×」关闭 (没有收起): ' + JSON.stringify(mb));
   await m.screenshot({ path: shot('rb-mobile-files.png') });
+  await m.screenshot({ path: shot('rb-head-mobile.png'), clip: { x: 0, y: 0, width: 412, height: 80 } });
+  ok(await m.evaluate(() => Math.round(innerWidth - document.querySelector('#rightBar [data-a=close]').getBoundingClientRect().right)) <= 10, '手机：「×」贴着屏幕右边');
   await m.tap(`${RB} .rb-tabs [data-tab=git]`); await m.waitForSelector(`${RB} .gp-file`);
   await m.tap(`${RB} .gp-file:has-text("a.txt")`); await m.waitForSelector(`${RB} .gl.add`);
   await m.tap(`${RB} .gl.add:has-text("d")`);
