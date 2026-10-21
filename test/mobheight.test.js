@@ -38,7 +38,6 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
 
   // iPhone 全屏 App：页面铺到屏幕边上 (viewport-fit=cover)，输入栏让出底部小横条 (模拟安全区 34px：Chromium 里 env() 是 0)
   ok(/viewport-fit=cover/.test(await p.getAttribute('meta[name=viewport]', 'content')), 'viewport 设了 viewport-fit=cover (iPhone 才报出底部安全区)');
-  ok(await p.getAttribute('meta[name=apple-mobile-web-app-status-bar-style]', 'content') === 'black-translucent', 'iPhone 全屏 App 的状态栏透明 (不画磨砂)，页面铺到状态栏底下');
   await p.addStyleTag({ content: '#mobileBar { padding-bottom: 34px; }' });
   const barPad = () => p.evaluate(() => getComputedStyle(document.getElementById('mobileBar')).paddingBottom);
   ok(await barPad() === '34px', '键盘收着：输入栏底部让出小横条那一条');

@@ -225,7 +225,6 @@
     const resync = () => { onVV(); setTimeout(onVV, 150); setTimeout(() => { onVV(); if (active) syncSize(active); }, 500); };
     document.addEventListener('visibilitychange', () => { if (!document.hidden) resync(); });
     window.addEventListener('pageshow', resync);
-    window.addEventListener('load', () => window.scrollTo(0, 0)); // 打开时就在最顶上 (iPhone 全屏 App：内容不跑到状态栏底下)
     window.addEventListener('focus', resync);
     window.addEventListener('orientationchange', resync);
   }
