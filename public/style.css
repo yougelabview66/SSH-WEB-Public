@@ -352,7 +352,7 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 
 /* 手机输入栏 */
 #mobileBar { flex-shrink: 0; background: var(--panel); border-top: 1px solid var(--border);
-  padding-bottom: env(safe-area-inset-bottom); } /* iPhone 底部小横条那一条让出来，输入框和 ↵ 不被圆角挡住、不误触小横条 */
+  padding-bottom: max(0px, calc(env(safe-area-inset-bottom) - 14px)); } /* iPhone 底部小横条那一条让出来 (比整个安全区少 14px：约 20px，太高了不好按)，输入框和 ↵ 不被圆角挡住、不误触小横条 */
 #app.kb #mobileBar { padding-bottom: 0; } /* 键盘开着时键盘盖住了小横条，不用再让 */
 .mkeys { display: flex; gap: 4px; padding: 5px 6px; overflow-x: auto; scrollbar-width: none; }
 .mkeys::-webkit-scrollbar { display: none; }
