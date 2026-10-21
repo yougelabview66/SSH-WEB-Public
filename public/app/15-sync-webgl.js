@@ -57,7 +57,7 @@
     const b = e.currentTarget;
     if (b.disabled) return;
     b.disabled = true;
-    b.textContent = '正在刷新…';
+    $('span', b).textContent = '正在刷新…'; // 图标转起来 (style.css)
     const urls = [location.pathname, ...[...document.querySelectorAll('script[src], link[rel=stylesheet][href], link[rel=manifest]')]
       .map((x) => new URL(x.src || x.href, location.href)).filter((u) => u.origin === location.origin).map((u) => u.pathname + u.search)];
     const jobs = urls.map((u) => fetch(u, { cache: 'reload', credentials: 'same-origin' }).catch(() => {}));

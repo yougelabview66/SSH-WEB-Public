@@ -659,7 +659,13 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 .sidebar-foot .ver { color: var(--muted); font-size: 11px; opacity: .7; padding: 0 2px; }
 .sidebar-foot .ver.old { color: var(--danger); opacity: 1; font-weight: 600; cursor: pointer; }
 .ver-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.ver-row #btnHardReload { font-size: 11px; padding: 0 2px; }
+.ver-row #btnHardReload { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; line-height: 1; padding: 3px 8px 3px 6px;
+  border: 1px solid var(--border); border-radius: 999px; color: var(--muted); transition: color .15s, border-color .15s; }
+.ver-row #btnHardReload:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+.ver-row #btnHardReload svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.ver-row #btnHardReload:disabled { cursor: default; color: var(--accent); }
+.ver-row #btnHardReload:disabled svg { animation: hr-spin .8s linear infinite; }
+@keyframes hr-spin { to { transform: rotate(360deg); } }
 /* 服务器更新了，网页还是旧版本 */
 #verBar { position: fixed; z-index: 70; top: 46px; left: 8px; right: 8px; width: fit-content; margin: 0 auto;
   display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 12px; font-size: 13px; background: var(--panel);

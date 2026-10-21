@@ -12,7 +12,13 @@ run(async () => {
     if (name === '手机') { await p.tap('#btnToggle'); await wait(500); }
     const pos = await p.evaluate(() => { const v = document.querySelector('.sidebar-foot .ver').getBoundingClientRect(), b = document.getElementById('btnHardReload').getBoundingClientRect(); return { right: b.left >= v.right, row: Math.abs((b.top + b.bottom) / 2 - (v.top + v.bottom) / 2) < 4, inView: b.right <= innerWidth && b.width > 0 }; });
     ok(pos.right && pos.row && pos.inView, `${name}：「清缓存刷新」在版本号右边、同一行: ` + JSON.stringify(pos));
-    if (name === '手机') await p.screenshot({ path: shot('hardreload-mobile.png') });
+    if (name === '手机') {
+      const r = await p.locator('.ver-row').boundingBox();
+      await p.screenshot({ path: shot('hardreload-mobile.png'), clip: { x: 0, y: r.y - 10, width: 300, height: r.height + 20 } });
+      await p.emulateMedia({ colorScheme: 'dark' }); await wait(200);
+      await p.screenshot({ path: shot('hardreload-mobile-dark.png'), clip: { x: 0, y: r.y - 10, width: 300, height: r.height + 20 } });
+      await p.emulateMedia({ colorScheme: 'light' });
+    }
     // 放一个缓存进 Cache Storage、注册 Service Worker，看刷新后缓存没了、Service Worker 还在
     await p.evaluate(async () => { await (await caches.open('old-cache')).put('/x', new Response('old')); await navigator.serviceWorker.register('/sw.js'); await navigator.serviceWorker.ready; });
     const reqs = [];
