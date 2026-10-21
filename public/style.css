@@ -202,7 +202,7 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
   white-space: nowrap; flex-shrink: 0; }
 #btnMore.open { background: var(--bg); }
 /* 「⋯ 更多」菜单 (样式同标签列表 #tabListPop) */
-#morePop { position: fixed; z-index: 60; width: max-content; min-width: 150px; padding: 6px; display: flex; flex-direction: column; gap: 2px;
+#morePop { position: fixed; z-index: 60; width: max-content; min-width: 140px; padding: 6px; display: flex; flex-direction: column; gap: 2px;
   background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 24px var(--shadow); font-size: 14px; }
 #morePop.hidden { display: none; }
 #morePop .mitem { border: none; background: none; text-align: center; padding: 9px 14px; border-radius: 6px; white-space: nowrap; }
