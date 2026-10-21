@@ -376,7 +376,7 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 #hostFloat .hf-head { touch-action: none; } /* 手机：按住标题栏拖动时页面不跟着滚 */
 /* 有「在做什么」时 (手机 / 平板上一直)：卡片竖着一张一行，展开固定宽度，不随着那行字变宽；收起照旧按内容宽 */
 #hostFloat.col:not(.min) { width: 375px; }
-@media (pointer: coarse) { #hostFloat.col:not(.min) { width: 300px; } } /* 手机 / 平板 */
+@media (pointer: coarse) { #hostFloat.col:not(.min) { width: 250px; } } /* 手机 / 平板 */
 .dp-tabs.col .dp-tab { flex: 1 1 100%; min-width: 0; }
 .dp-tabs.col .dp-tab .nm { max-width: none; flex: 1; }
 .dp-tabs.col .dp-tab .dt { max-width: none; }
