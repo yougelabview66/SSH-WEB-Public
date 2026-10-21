@@ -3,11 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="sshweb-version" content="{{VERSION}}">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, interactive-widget=resizes-content, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, interactive-widget=resizes-content">
   <title>SSH-WEB</title>
   <meta name="theme-color" content="#111827">
   <link rel="manifest" href="/manifest.json">
   <meta name="apple-mobile-web-app-capable" content="yes">
+  <!-- iPhone 全屏 App 的状态栏：纯黑底白字，没有磨砂，页面从状态栏下面开始 (不要 black-translucent：那样状态栏盖在页面上，iOS 加磨砂挡住主机标签)。
+       iOS 在「添加到主屏幕」时记下这个设置，改了以后要删掉主屏幕图标重新添加 -->
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="SSH-WEB">
   <!-- 尽早应用手动选择的主题，避免页面先闪一下深色 (单独的文件：安全策略不允许内联脚本) -->

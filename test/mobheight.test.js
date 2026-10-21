@@ -14,6 +14,7 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   const errors = [];
   const ctx = await browser.newContext({ ...devices['iPhone 13'] });
   // 假的可视区域：测试里自己控制高度、发 resize
+  await ctx.addInitScript(() => { try { Object.defineProperty(navigator, 'standalone', { value: true }); } catch {} }); // 从主屏幕以 App 方式打开
   await ctx.addInitScript(() => {
     const vv = new EventTarget();
     vv.scale = 1; vv.height = 0;
@@ -36,14 +37,12 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   await p.evaluate((h) => window.__vv(h), full - 120); await wait(200);
   ok(await appH() === full, `焦点不在输入框里、可视区域短暂变矮：界面照样占满屏幕 (${await appH()} / ${full}px)`);
 
-  // iPhone 全屏 App：页面铺到屏幕边上 (viewport-fit=cover)，输入栏让出底部小横条 (模拟安全区 34px：Chromium 里 env() 是 0)
-  ok(/viewport-fit=cover/.test(await p.getAttribute('meta[name=viewport]', 'content')), 'viewport 设了 viewport-fit=cover (iPhone 才报出底部安全区)');
-  // 顶部安全区：iOS 刚打开时报 0、过一会儿才更新，页面会在打开后几秒内自己重新算几次 (Chromium 里安全区一直是 0，只能检查重新算完没有把值写死)
-  const topPad = () => p.evaluate(() => getComputedStyle(document.getElementById('app')).paddingTop);
-  ok(await p.evaluate(() => document.getElementById('app').style.paddingTop) === '' && await topPad() === '0px', '顶部留空用 CSS 的安全区 (没有被写死)');
-  await p.addStyleTag({ content: '#mobileBar { padding-bottom: 34px; }' });
+  // iPhone 全屏 App (有底部小横条的机型)：输入栏底部让出 34px；不用 viewport-fit=cover (那样状态栏会盖在页面上，iOS 加磨砂挡住主机标签)
+  ok(!/viewport-fit/.test(await p.getAttribute('meta[name=viewport]', 'content')), '不用 viewport-fit=cover：顶部由 iOS 自己让出状态栏，不会有磨砂挡住标签');
+  ok(await p.getAttribute('meta[name=apple-mobile-web-app-status-bar-style]', 'content') === 'black', '状态栏是纯黑底白字 (black)：没有磨砂，不盖在页面上');
+  ok(await p.evaluate(() => document.documentElement.classList.contains('ios-app')), '从主屏幕打开 (iPhone 13)：认出是 iOS 全屏 App');
   const barPad = () => p.evaluate(() => getComputedStyle(document.getElementById('mobileBar')).paddingBottom);
-  ok(await barPad() === '34px', '键盘收着：输入栏底部让出小横条那一条');
+  ok(await barPad() === '34px', '键盘收着：输入栏底部让出小横条 34px');
 
   // 点输入栏弹出键盘：可视区域矮 300px → 界面固定在键盘上方
   await p.evaluate(() => document.getElementById('mInput').focus());
