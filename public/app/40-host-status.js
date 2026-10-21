@@ -24,8 +24,8 @@
         <span class="${$('.dot', x.tab).className}"></span><span class="nm">${esc($('.title', x.tab).textContent)}</span>
         <span class="stt ${cls}">${st}</span>${dt ? `<span class="dt" title="${esc(dt)}">${esc(dt)}</span>` : ''}</div>`;
     }).join('');
-    // 电脑：有主机要显示在做什么时，卡片竖着一张一行，悬浮窗固定宽度 (不随着那行字变宽，太长的省略)
-    const col = !isTouch && deskTabList.some((x) => x.sid && x.srvState?.detail);
+    // 有主机要显示在做什么时 (手机 / 平板上一直这样)，卡片竖着一张一行，悬浮窗展开时固定宽度 (不随着那行字变宽，太长的省略)
+    const col = isTouch || deskTabList.some((x) => x.sid && x.srvState?.detail);
     for (const box of boxes) {
       if (box.innerHTML !== html) box.innerHTML = html;
       box.classList.toggle('col', col);
@@ -77,7 +77,6 @@
   btnFloatM.addEventListener('click', toggleHf);
   const pipOk = 'documentPictureInPicture' in window;
   // 置顶到桌面只给电脑 (手机浏览器不支持，手机上的状态卡片也放不下这两个按钮)
-  const HF_GAP_M = 4;
   if (!pipOk || isTouch) { hostFloat.querySelector('[data-a=pip]').remove(); hostFloat.querySelector('[data-a=auto]').remove(); }
   // 自动钉住：浏览器规定置顶窗口只能在用户点击 / 按键时打开，所以在打开网页后的第一次操作时顺手打开；
   // 这次手动关掉了就不再自动打开，下次打开网页再说
@@ -93,16 +92,12 @@
   window.addEventListener('keydown', tryAutoPin, true);
 
   // 位置用「离 main 右边 / 上边的距离」保存，窗口大小变了也贴着右上角；超出范围时收回来
-  // 手机上展开时横向占满屏幕 (两边留一点)，只能上下拖；收起后和电脑一样按内容宽、贴着右边
   function placeHostFloat() {
     const main = hostFloat.parentElement;
     const top0 = $('#tabbar').offsetHeight;
-    const full = isTouch && !hostFloat.classList.contains('min');
-    hostFloat.classList.toggle('full', full);
-    hostFloat.style.left = full ? HF_GAP_M + 'px' : '';
     const maxR = Math.max(0, main.clientWidth - hostFloat.offsetWidth);
     const maxT = Math.max(top0, main.clientHeight - hostFloat.offsetHeight);
-    const r = full ? HF_GAP_M : Math.min(Math.max(0, hfPos.r ?? 12), maxR);
+    const r = Math.min(Math.max(0, hfPos.r ?? 12), maxR);
     const t = Math.min(Math.max(top0, hfPos.t ?? top0 + 8), maxT);
     hostFloat.style.right = r + 'px';
     hostFloat.style.top = t + 'px';
@@ -143,7 +138,7 @@
       head.removeEventListener('pointerup', up);
       head.removeEventListener('pointercancel', up);
       hostFloat.classList.remove('dragging');
-      if (!hostFloat.classList.contains('full')) hfPos.r = parseFloat(hostFloat.style.right); // 手机上展开时只能上下拖，左右位置留给收起时用
+      hfPos.r = parseFloat(hostFloat.style.right);
       hfPos.t = parseFloat(hostFloat.style.top);
       saveHf();
       if (active) focusTerm(active);
