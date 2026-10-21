@@ -243,12 +243,14 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 .frow:not(.dir) .fn { cursor: pointer; }
 
 /* 终端里搜索 (见 58-term-search.js)：终端区域顶部居中 (右上角常放着主机状态悬浮窗)，盖在历史视图上面 */
+::highlight(tsearch) { background: #f59e0b; color: #000; } /* 历史视图里搜到的 (搜索框有焦点时) */
 .tsearch { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); z-index: 25; display: flex; align-items: center; gap: 4px;
   padding: 4px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 4px 16px var(--shadow); }
 .tsearch input { width: 220px; margin: 0; padding: 4px 8px; font-size: 13px; }
 .tsearch.none input { border-color: var(--danger); }
 .tsearch .ts-info { font-size: 12px; color: var(--muted); white-space: nowrap; min-width: 36px; text-align: center; }
 .tsearch button { padding: 2px 9px; font-size: 13px; }
+.tsearch [data-a=go] { padding: 2px 10px; }
 @media (max-width: 760px) {
   .tsearch { left: 8px; right: 8px; transform: none; }
   .tsearch input { flex: 1; width: auto; min-width: 0; font-size: 16px; }
@@ -272,6 +274,24 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 .hk-btns { display: flex; gap: 6px; flex-shrink: 0; }
 .hk-btns button { padding: 4px 10px; font-size: 13px; }
 @media (max-width: 520px) { .hk-row { flex-wrap: wrap; } .hk-btns { margin-left: auto; } }
+/* 会话历史 */
+.as-card { width: 640px; display: flex; flex-direction: column; max-height: 86vh; }
+.as-card .hist-head button { padding: 2px 10px; }
+.as-tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
+.as-tabs button { padding: 4px 12px; font-size: 13px; border-radius: 14px; }
+.as-tabs button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.as-search { display: flex; gap: 6px; }
+.as-search input { flex: 1; min-width: 0; box-sizing: border-box; }
+.as-search button { flex-shrink: 0; padding: 4px 14px; }
+.as-info { margin: 6px 0; }
+.as-list { flex: 1; min-height: 120px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.as-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
+.as-main { flex: 1; min-width: 0; font-size: 13px; }
+.as-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.as-prompt, .as-meta { margin-top: 2px; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.as-btns { display: flex; gap: 6px; flex-shrink: 0; }
+.as-btns button { padding: 4px 10px; font-size: 13px; }
+.as-empty { padding: 24px 0; text-align: center; color: var(--muted); font-size: 13px; }
 
 /* 端口预览 (见 27-forward.js) */
 .fwd-card { width: 560px; }
@@ -492,7 +512,7 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 .lp-row b.r { color: var(--danger); }
 .lp-sub { margin: 2px 0 8px; font-size: 12px; color: var(--muted); }
 .lp-tip { padding-top: 6px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); line-height: 1.5; }
-#btnInput, #btnFloat { border: none; border-left: 1px solid var(--border); border-radius: 0; background: none;
+#btnInput { border: none; border-left: 1px solid var(--border); border-radius: 0; background: none;
   white-space: nowrap; flex-shrink: 0; }
 .tbtn.on { background: var(--bg); color: var(--accent); }
 @media (max-width: 760px) { .tbtn .lbl { display: none; } .tbtn { padding: 6px 10px; } }
