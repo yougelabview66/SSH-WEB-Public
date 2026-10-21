@@ -202,7 +202,7 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
   white-space: nowrap; flex-shrink: 0; }
 #btnMore.open { background: var(--bg); }
 /* 「⋯ 更多」菜单 (样式同标签列表 #tabListPop) */
-#morePop { position: fixed; z-index: 60; width: max-content; min-width: 210px; padding: 6px; display: flex; flex-direction: column; gap: 2px;
+#morePop { position: fixed; z-index: 60; width: max-content; min-width: 150px; padding: 6px; display: flex; flex-direction: column; gap: 2px;
   background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 24px var(--shadow); font-size: 14px; }
 #morePop.hidden { display: none; }
 #morePop .mitem { border: none; background: none; text-align: center; padding: 9px 14px; border-radius: 6px; white-space: nowrap; }
@@ -354,7 +354,7 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 .dp-tab { display: flex; align-items: center; gap: 8px; padding: 5px 8px 5px 10px; border-radius: 8px; cursor: pointer;
   font-size: 13px; border: 1px solid var(--border); background: var(--bg); }
 .dp-tab:hover { border-color: var(--muted); }
-.dp-tab.cur { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.dp-tab.cur { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); } /* 描边画在框里面：和别的卡片一样宽 */
 .dp-tab .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); flex-shrink: 0; }
 .dp-tab .dot.ok { background: var(--accent); }
 .dp-tab .dot.bad { background: var(--danger); }
@@ -366,7 +366,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 /* Agent 在做什么 (卡片下面一行小字，太长省略) */
 .dp-tab:has(.dt) { flex-wrap: wrap; row-gap: 2px; }
 .dp-tab .dt { flex-basis: 100%; min-width: 0; max-width: 280px; font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-left: 16px; }
-#tabListPop .dp-tab .dt { max-width: none; }
 .dp-tab .stt.idle { color: var(--muted); background: var(--panel2); border: 1px solid var(--border); }
 .dp-tab .stt.off { color: var(--muted); border: 1px dashed var(--muted); }
 @keyframes dp-blink { 50% { opacity: .35; } }
@@ -375,6 +374,10 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
   border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 6px 24px var(--shadow); font-size: 13px; }
 #hostFloat.dragging { opacity: .85; }
 #hostFloat .hf-head { touch-action: none; } /* 手机：按住标题栏拖动时页面不跟着滚 */
+#hostFloat.full { max-width: none; } /* 手机：横向占满屏幕，每张卡片一整行，「在做什么」那行字显示得更长 */
+#hostFloat.full .dp-tab { flex: 1 1 100%; min-width: 0; }
+#hostFloat.full .dp-tab .nm { max-width: none; flex: 1; }
+#hostFloat.full .dp-tab .dt { max-width: none; }
 .hf-head { display: flex; align-items: center; gap: 6px; padding: 4px 4px 4px 10px; cursor: move; user-select: none;
   -webkit-user-select: none; touch-action: none; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--border); }
 .hf-head .hf-title { font-weight: 600; white-space: nowrap; }
