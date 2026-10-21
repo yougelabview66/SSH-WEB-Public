@@ -272,9 +272,11 @@
       else if (a === 'refresh') self.load(self.path);
       else if (a === 'close') { self.toggle(); updateSftpBtn(); }
       else if (a === 'upload') fileInput.click();
-      else if (a === 'cd') { // Windows 主机 (默认 cmd)：cd /d "D:\目录" (换盘符也切得过去)
-        const win = /^\/[A-Za-z]:/.test(self.path);
-        send(s, { type: 'data', data: win ? `cd /d "${showPath(self.path).replace(/\//g, '\\')}"\r` : `cd ${shellQuote(self.path)}\r` });
+      else if (a === 'cd') { // 服务端按终端里的 shell (Linux sh / Windows cmd / PowerShell) 给出命令；在 psmux 里时以它当前 pane 的 shell 为准
+        try {
+          const r = await api2('POST', 'cd', { path: self.path, inMux: s.term.buffer.active.type === 'alternate' });
+          send(s, { type: 'data', data: r.cmd + '\r' });
+        } catch (err) { alert(err.message); }
         focusTerm(s);
       }
       else if (a === 'mkdir') {
