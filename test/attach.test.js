@@ -132,16 +132,11 @@ run(async () => {
   const f5 = uploads().find((f) => f.endsWith('-desk-pick.png'));
   ok(!!f5 && await dval() === path.join(upDir, f5) + ' ' && got === '' && await d.evaluate(() => document.activeElement.id) === 'dInput', '电脑选的文件传上去了，路径填进下方输入框，没有发送，光标在输入框里: ' + JSON.stringify(await dval()));
   await d.screenshot({ path: shot('attach-desk-button.png'), clip: { x: 250, y: 720, width: 1030, height: 80 } });
-  // 📎 是方形的，跟输入框上下居中 (输入框调高了也不变成长条)
+  // 📎：窄一点，和旁边的按钮一样高、一样带边框
   const box = () => d.evaluate(() => { const a = document.getElementById('dAttach'), r = a.getBoundingClientRect(), sd = document.getElementById('dSend').getBoundingClientRect(), cs = getComputedStyle(a);
     return { w: Math.round(r.width), h: Math.round(r.height), sh: Math.round(sd.height), top: Math.abs(r.top - sd.top), border: cs.borderTopStyle !== 'none' && cs.borderTopWidth !== '0px' }; });
   let bx = await box();
-  ok(bx.w === bx.h && bx.h === bx.sh && bx.top < 1 && bx.border, '📎 是正方形，和发送按钮一样高、一样带边框: ' + JSON.stringify(bx));
-  await d.evaluate(() => document.getElementById('deskBar').style.setProperty('--desk-h', '60px')); await wait(200);
-  bx = await box();
-  ok(bx.w === bx.h && bx.h === bx.sh && bx.h === 60, '输入框调到最高：📎 还是正方形 (60×60)，不变成长条: ' + JSON.stringify(bx));
-  await d.screenshot({ path: shot('attach-desk-button-tall.png'), clip: { x: 250, y: 700, width: 1030, height: 100 } });
-  await d.evaluate(() => document.getElementById('deskBar').style.removeProperty('--desk-h'));
+  ok(bx.w === 34 && bx.h === bx.sh && bx.top < 1 && bx.border, '📎 宽 34px，和发送按钮一样高、一样带边框: ' + JSON.stringify(bx));
 
   // 手机：点 📎 选图片
   const m = await (await browser.newContext({ ...devices['Pixel 7'] })).newPage();

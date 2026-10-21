@@ -380,8 +380,8 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 #deskBar.cmd #dInput::placeholder { color: var(--accent); }
 #mobileBar.cmd #mInput { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
 #deskBar #dHide { width: 32px; color: var(--muted); }
-/* 📎：和旁边的按钮一样的边框底色、一样高，宽度跟高度一样 (正方形，输入框调高了也不变成长条) */
-#deskBar #dAttach { width: min(var(--desk-h, 40px), 60px); color: var(--muted); }
+/* 📎：和旁边的按钮一样的边框底色、一样高，窄一点 */
+#deskBar #dAttach { width: 34px; color: var(--muted); }
 #deskBar #dAttach:hover { color: var(--accent); }
 #deskBar #dAttach svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 #deskBar #dMode { font-size: 13px; }
