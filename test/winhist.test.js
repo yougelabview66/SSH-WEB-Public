@@ -52,7 +52,7 @@ run(async () => {
   // 程序发来的询问 (psmux 会转给外面的终端)：终端型号、模式、背景色、光标位置 —— Windows 上只回答光标位置，别的回答会被当成键盘输入
   shellIn = '';
   shellSt.write('\x1b[c\x1b[?2026$p\x1b]11;?\x07\x1b[6n'); await wait(800);
-  ok(/^\x1b\[\d+;\d+R$/.test(shellIn), 'Windows 主机：只回答光标位置，终端型号 / 模式 / 颜色的回答不发 (不会变成乱文字打进 Claude 的输入框): ' + JSON.stringify(shellIn));
+  ok(/^\x1b\[\?[\d;]*c\x1b\[\d+;\d+R$/.test(shellIn), 'Windows 主机：回答终端型号和光标位置 (程序等着它们)，模式 / 颜色的回答不发 (不会变成乱文字打进 Claude 的输入框): ' + JSON.stringify(shellIn));
   const overTerm = async () => { const b = await p.locator('.term.active .term-box').boundingBox(); await p.mouse.move(b.x + b.width / 2, b.y + b.height / 2); };
   const viewText = () => p.evaluate(() => document.querySelector('.term.active .lscroll .ls-body')?.textContent || '');
   await overTerm(); await p.mouse.wheel(0, -100); await wait(2500);
