@@ -296,7 +296,7 @@ run(async () => {
   await mp.tap('#btnMore');
   ok(await mp.evaluate(() => document.getElementById('btnFloatM').classList.contains('on')), '手机：菜单里「状态卡片」打着勾 (开着)');
   const mw = await mp.evaluate(() => { const r = document.getElementById('morePop').getBoundingClientRect(), b = document.getElementById('btnHooks').getBoundingClientRect(); const t = document.createRange(); t.selectNodeContents(document.getElementById('btnHooks')); const x = t.getBoundingClientRect(); return { w: Math.round(r.width), mid: Math.abs((x.left + x.right) / 2 - (b.left + b.right) / 2) }; });
-  ok(mw.w >= 140 && mw.w < 200 && mw.mid < 2, '手机：「⋯ 更多」菜单不太宽，文字居中: ' + JSON.stringify(mw));
+  ok(mw.w === 140 && mw.mid < 2, '手机：「⋯ 更多」菜单宽 140px，文字居中: ' + JSON.stringify(mw));
   await mp.screenshot({ path: require('./helpers').shot('hooks-more-mobile.png'), clip: { x: 0, y: 0, width: 412, height: 320 } });
   await mp.tap('#btnFloatM'); await wait(300);
   ok(await mp.isHidden('#hostFloat'), '手机：再点一次关掉');
