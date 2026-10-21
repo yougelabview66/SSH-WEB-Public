@@ -48,6 +48,7 @@ function mockServer(port, mode) {
       s.on('exec', (a, r, info) => {
         const ch = a();
         if (info.command.includes('hook.log')) return; // 读 Claude Code 钩子事件的通道 (tail -F 一直开着)，不是抓历史
+        if (info.command === 'echo %OS%;$env:OS') { ch.write('%OS%\n'); ch.exit(0); ch.end(); return; } // 认 SSH 默认的 shell (像 Linux 的 sh)，不是抓历史
         opens++;
         const code = mode === 'none' ? 3 : mode === 'busy' || mode === 'claude' ? 4 : 0;
         const out = code ? '' : mode === 'other' ? OTHER : hist;
