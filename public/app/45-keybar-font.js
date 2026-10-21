@@ -222,12 +222,7 @@
     // 从后台回来 / 旋转屏幕：键盘可能在后台收起了，浏览器却没通知 (或报的是过时的高度)，
     // 主动重新算几次 (有的浏览器回到前台后过一会儿才更新可视区域)
     // 最后按这台设备的尺寸同步一次：你回到这台设备上用了，排版就按它的
-    // iPhone 全屏 App：刚打开 (或从后台回来) 时 iOS 报的顶部安全区可能还是 0，标签栏顶到状态栏底下被磨砂挡住；
-    // iOS 过一会儿才更新这个值，但页面不会自己重排 (展开再关一次侧边栏能好也是这个原因)。主动让 #app 重新算几次顶部留空
-    const refreshInsets = () => { app.style.paddingTop = '0px'; void app.offsetHeight; app.style.paddingTop = ''; };
-    const insetsSoon = () => { for (const t of [50, 300, 1000, 2500]) setTimeout(refreshInsets, t); };
-    insetsSoon();
-    const resync = () => { insetsSoon(); onVV(); setTimeout(onVV, 150); setTimeout(() => { onVV(); if (active) syncSize(active); }, 500); };
+    const resync = () => { onVV(); setTimeout(onVV, 150); setTimeout(() => { onVV(); if (active) syncSize(active); }, 500); };
     document.addEventListener('visibilitychange', () => { if (!document.hidden) resync(); });
     window.addEventListener('pageshow', resync);
     window.addEventListener('focus', resync);
