@@ -85,6 +85,7 @@
 
   async function openHistory() {
     histPanel.classList.remove('hidden');
+    histAgentsFor = null; // 会话历史每次打开都重新读
     $('#histSearch').value = '';
     $('#favInput').value = '';
     $('#histAll').checked = !active;
@@ -138,8 +139,26 @@
     }
   }
 
+  // 「💬 会话历史」选项卡：Agent 以前的会话 (部件见 64-agent-sessions.js)，换了标签 / 重新打开面板时重新读
+  let histAgentsFor = null;
+  function renderAgentsTab() {
+    const box = $('#histAgents');
+    const on = histTab === 'agents';
+    for (const x of ['#histSearch', '#histList', '#favAdd', '#histClear', '.hist-head label.check']) histPanel.querySelector(x).classList.toggle('hidden', on || (x === '#favAdd' && histTab !== 'fav'));
+    box.classList.toggle('hidden', !on);
+    if (!on) return false;
+    if (!active?.sid) { box.innerHTML = '<div class="sftp-msg">先连上一台主机，才能看它上面的会话</div>'; histAgentsFor = null; return true; }
+    if (histAgentsFor !== active) {
+      histAgentsFor = active;
+      box.innerHTML = '';
+      box.appendChild(agentSessionsView(active, closeHistory).el);
+    }
+    return true;
+  }
+
   function renderHistory() {
     histPanel.querySelectorAll('.htabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === histTab));
+    if (renderAgentsTab()) return;
     $('#favAdd').classList.toggle('hidden', histTab !== 'fav');
     const list = $('#histList');
     const items = visibleItems();

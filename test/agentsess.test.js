@@ -136,6 +136,24 @@ run(async () => {
   ok(await p.evaluate(() => document.querySelector('.agentsp .as-tabs .on')?.dataset.agent) === 'grok', '再打开：还是上次选的 Grok');
   await p.keyboard.press('Escape');
 
+  // ---- 「历史」面板里的「💬 会话历史」选项卡：同样的会话列表，「继续」后关掉历史面板
+  await p.click('#btnHistory'); await wait(500);
+  const tabs = await p.$$eval('#history .htabs button', (xs) => xs.map((x) => x.textContent.trim()));
+  ok(J(tabs) === J(['★ 收藏', '🕘 历史', '💬 会话历史']), '历史面板：「🕘 历史」右边有「💬 会话历史」: ' + J(tabs));
+  await p.click('#history .htabs [data-tab=agents]'); await p.waitForSelector('#histAgents .as-row');
+  const hv = await p.evaluate(() => ({ list: getComputedStyle(document.getElementById('histList')).display, search: getComputedStyle(document.getElementById('histSearch')).display,
+    titles: [...document.querySelectorAll('#histAgents .as-row .as-title')].map((x) => x.textContent) }));
+  ok(hv.list === 'none' && hv.search === 'none' && J(hv.titles) === J(['Grok 修 bug']), '切到「💬 会话历史」：命令列表藏起来，显示 Agent 会话 (记得上次选的 Grok): ' + J(hv));
+  await p.screenshot({ path: shot('history-agents.png') });
+  await p.click('#histAgents .as-tabs [data-agent=claude]'); await p.waitForSelector('#histAgents .as-row'); await wait(500);
+  got = ''; dialogs.length = 0;
+  await p.click('#histAgents .as-row [data-a=resume] >> nth=1'); await wait(800);
+  ok(got === c1.cmd + '\r' && await p.isHidden('#history'), '在历史面板里点「继续」：在终端执行恢复命令，历史面板关掉: ' + J(got));
+  await p.click('#btnHistory'); await wait(500);
+  await p.click('#history .htabs [data-tab=hist]'); await wait(300);
+  ok(await p.isVisible('#histList') && await p.isVisible('#histSearch') && await p.isHidden('#histAgents'), '切回「🕘 历史」：命令列表回来了');
+  await p.keyboard.press('Escape'); await wait(300);
+
   // ---- 手机：面板在屏幕里
   const m = await (await browser.newContext({ ...devices['Pixel 7'] })).newPage();
   m.on('pageerror', (e) => errors.push(e.message));

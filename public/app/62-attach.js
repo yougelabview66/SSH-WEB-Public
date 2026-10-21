@@ -99,12 +99,15 @@
     attachFiles(cd.files);
   }, true);
 
-  // 手机：输入栏的 📎
+  // 手机输入栏、电脑下方输入框的 📎：从相册 / 文件里选
   const mAttachFile = $('#mAttachFile');
-  $('#mAttach').addEventListener('click', () => {
+  const pickFiles = () => {
     if (!active?.sid || inputLocked(active)) return;
     mAttachFile.click();
-  });
+  };
+  $('#mAttach').addEventListener('click', pickFiles);
+  $('#dAttach').addEventListener('mousedown', (e) => e.preventDefault()); // 不抢走下方输入框的焦点
+  $('#dAttach').addEventListener('click', pickFiles);
   mAttachFile.addEventListener('change', () => {
     attachFiles(mAttachFile.files);
     mAttachFile.value = '';

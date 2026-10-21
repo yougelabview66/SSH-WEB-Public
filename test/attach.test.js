@@ -120,6 +120,19 @@ run(async () => {
   await wait(800);
   ok(canceled && uploads().length === n1, '拖到页面别处：不上传，也不让浏览器打开这个文件');
 
+  // 电脑：下方输入框的 📎 (同手机)
+  await d.evaluate(() => { const t = document.getElementById('dInput'); t.value = ''; t.dispatchEvent(new Event('input')); });
+  got = '';
+  const dch = d.waitForEvent('filechooser', { timeout: 5000 }).catch(() => null);
+  await d.click('#dAttach');
+  const dfc = await dch;
+  ok(!!dfc && await d.isVisible('#dAttach'), '电脑下方输入框也有 📎，点了弹出选择文件');
+  if (dfc) await dfc.setFiles({ name: 'desk-pick.png', mimeType: 'image/png', buffer: Buffer.from('PNG') });
+  await wait(1500);
+  const f5 = uploads().find((f) => f.endsWith('-desk-pick.png'));
+  ok(!!f5 && await dval() === path.join(upDir, f5) + ' ' && got === '' && await d.evaluate(() => document.activeElement.id) === 'dInput', '电脑选的文件传上去了，路径填进下方输入框，没有发送，光标在输入框里: ' + JSON.stringify(await dval()));
+  await d.screenshot({ path: shot('attach-desk-button.png'), clip: { x: 250, y: 720, width: 1030, height: 80 } });
+
   // 手机：点 📎 选图片
   const m = await (await browser.newContext({ ...devices['Pixel 7'] })).newPage();
   m.on('pageerror', (e) => errors.push(e.message));
