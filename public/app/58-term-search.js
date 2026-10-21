@@ -1,5 +1,5 @@
   // ------------------------------------------------------------ 终端里搜索
-  // Ctrl+Shift+F (终端里 Ctrl+F 留给程序：bash 光标右移、vim 翻页) 或「⋯ 更多 → 搜索终端」。
+  // Ctrl+Shift+F (终端里 Ctrl+F 留给程序：bash 光标右移、vim 翻页) 或「⋯ 更多 → 搜索历史」。
   // 普通终端搜终端自己的滚动记录；tmux 里终端只有当前一屏，历史在 tmux 手里：先像往上滚一样打开历史视图
   // (抓 3000 行，见 55-local-scroll.js)，在历史视图里搜。打字时不搜 (输入法组字会被打断)，按回车或点「搜索」才搜；
   // 搜过之后回车 = 上一个 (往旧的找)，Shift+回车 = 下一个，Esc 关闭
@@ -19,7 +19,7 @@
     closeTermSearch();
     const el = document.createElement('div');
     el.className = 'tsearch';
-    el.innerHTML = `<input type="text" placeholder="搜索终端…" enterkeyhint="search" spellcheck="false" autocomplete="off" autocapitalize="off">
+    el.innerHTML = `<input type="text" placeholder="搜索历史…" enterkeyhint="search" spellcheck="false" autocomplete="off" autocapitalize="off">
       <button type="button" data-a="go" class="primary" title="搜索 (回车)">搜索</button>
       <span class="ts-info"></span>
       <button type="button" data-a="prev" title="上一个 (回车)">↑</button>

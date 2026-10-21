@@ -140,7 +140,7 @@ run(async () => {
   const m = await (await browser.newContext({ ...devices['Pixel 7'] })).newPage();
   m.on('pageerror', (e) => errors.push(e.message));
   await m.goto(BASE + '/'); await m.waitForSelector('#app:not(.hidden)'); await wait(1500);
-  if (await m.isVisible('.own-take')) { await m.click('.own-take'); await wait(300); }
+  if (await m.isVisible('.term.active .owner-notice button')) { await m.tap('.term.active .owner-notice button'); await wait(800); }
   await m.tap('#btnMore'); await m.tap('#btnSessions'); await m.waitForSelector('.agentsp .as-row');
   const mb = await m.evaluate(() => { const c = document.querySelector('.as-card').getBoundingClientRect(), b = document.querySelector('.as-row [data-a=resume]').getBoundingClientRect(); return { l: c.left, r: c.right, w: innerWidth, br: b.right }; });
   ok(mb.l >= 0 && mb.r <= mb.w && mb.br <= mb.r, '手机：面板和「继续」按钮都在屏幕里: ' + J(mb));

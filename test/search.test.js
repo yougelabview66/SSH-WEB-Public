@@ -1,5 +1,5 @@
 'use strict';
-// 终端里搜索：Ctrl+Shift+F / 「⋯ 更多 → 搜索终端」—— 普通终端搜滚动记录 (不分大小写、中文按两格选中、折行接起来)，
+// 终端里搜索：Ctrl+Shift+F / 「⋯ 更多 → 搜索历史」—— 普通终端搜滚动记录 (不分大小写、中文按两格选中、折行接起来)，
 // 打字时不搜，回车或点「搜索」才搜；搜过后回车 = 上一个、Shift+回车 = 下一个、循环；没找到标红；Esc 关闭；tmux 里先打开历史视图再在里面搜
 const { Server } = require('ssh2');
 const { BASE, ok, wait, run, launch, shot, hostKey, addHost, devices } = require('./helpers');
@@ -100,7 +100,9 @@ run(async () => {
   ok(!(await p.$('.term.active .tsearch')) && await p.evaluate(() => document.activeElement.id) === 'dInput', 'Esc 关掉搜索框，光标回到输入框');
   // 菜单里打开
   await p.click('#btnMore'); await p.click('#btnSearch'); await wait(200);
-  ok(await p.isVisible('.term.active .tsearch'), '「⋯ 更多 → 搜索终端」也能打开');
+  ok(await p.isVisible('.term.active .tsearch'), '「⋯ 更多 → 搜索历史」也能打开');
+  await p.click('#dInput'); await p.click('.term.active .tsearch input'); await wait(300);
+  ok(await p.evaluate(() => document.activeElement.matches('.tsearch input')), '点搜索框：光标在搜索框里 (不被拉回下方输入框)');
   await p.click('.term.active .tsearch [data-a=close]'); await wait(200);
   ok(!(await p.$('.term.active .tsearch')), '× 关掉搜索框');
 
@@ -130,9 +132,16 @@ run(async () => {
   const m = await (await browser.newContext({ ...devices['Pixel 7'] })).newPage();
   m.on('pageerror', (e) => errors.push(e.message));
   await m.goto(BASE + '/'); await m.waitForSelector('#app:not(.hidden)'); await wait(1500);
+  // 先接管标签 (被电脑页锁着时点终端本来就不拉焦点，测不出来)
+  // 在普通终端的标签上测 (tmux 里会先打开历史视图，下方输入栏藏起来了)
+  await m.tap('.tab:has-text("SP-1")'); await wait(800);
+  if (await m.isVisible('.term.active .owner-notice button')) { await m.tap('.term.active .owner-notice button'); await wait(800); }
   await m.tap('#btnMore'); await m.tap('#btnSearch'); await wait(300);
+  await m.tap('#mInput'); await wait(200);
+  await m.tap('.term.active .tsearch input'); await wait(400);
+  ok(await m.evaluate(() => document.activeElement.matches('.tsearch input')), '手机：点搜索框，光标在搜索框里 (不跑到下方输入栏)');
   const mb = await m.evaluate(() => { const r = document.querySelector('.term.active .tsearch')?.getBoundingClientRect(); return r && { l: r.left, r: r.right, w: innerWidth }; });
-  ok(!!mb && mb.l >= 0 && mb.r <= mb.w, '手机：「⋯ → 搜索终端」打开，搜索框在屏幕里: ' + JSON.stringify(mb));
+  ok(!!mb && mb.l >= 0 && mb.r <= mb.w, '手机：「⋯ → 搜索历史」打开，搜索框在屏幕里: ' + JSON.stringify(mb));
   await m.screenshot({ path: shot('search-mobile.png'), clip: { x: 0, y: 0, width: 412, height: 140 } });
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
   await browser.close();

@@ -58,14 +58,14 @@
       // 这一下 click 冒泡上来再聚焦输入框就会弹出输入法
       s.box.addEventListener('click', (e) => {
         if (s.longPressed) { s.longPressed = false; return; }
-        if (!isLocked(s) && !e.target.closest('button, .lscroll')) mInput.focus();
+        if (!isLocked(s) && !e.target.closest('button, .lscroll, .tsearch')) mInput.focus(); // 搜索框自己要焦点
       });
     } else {
       // 电脑：下方输入框开着时，点终端后光标回到下方输入框；点击本身照常交给 tmux / Claude Code。
       // 不抢的情况：选中了文字 (方便复制)、连按两下 Alt 进终端直接打字、
       // 终端的输入框里打过字、还没删光也没发送 (锁定，想改里面的内容；见 lib/cli-input.js，任何设备上打的都算)
       s.box.addEventListener('click', (e) => {
-        if (e.button !== 0 || !deskOn || termDirect || s.term.hasSelection() || e.target.closest('button, .lscroll')) return;
+        if (e.button !== 0 || !deskOn || termDirect || s.term.hasSelection() || e.target.closest('button, .lscroll, .tsearch')) return;
         if (s.cli.locked()) { // 拖动选字松开也有 click，那不是想回输入框，不提示
           if (!selectingText()) fontToast(s, '终端的输入框里有没发送的字，光标留在终端 · 连按两下 Alt 回到下方输入框', 2500);
           return;
