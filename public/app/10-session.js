@@ -257,6 +257,8 @@
         if (isNew) saveTabOrder();
         if (active === s) saveActive();
         reportWatching();
+      } else if (m.type === 'params') { // 接上了常驻会话 (见 lib/session/daemon.js)：记下是哪个，服务重启后照原样接回去
+        s.params = m.params || s.params;
       } else if (m.type === 'snapshot') {
         // 还原服务端保存的画面和滚动记录
         predClear(s, false);
