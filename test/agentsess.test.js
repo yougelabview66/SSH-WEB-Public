@@ -61,8 +61,9 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
     s.on('shell', (a) => { const st = a(); st.write('$ '); st.on('data', (d) => { got += d; }); });
     s.on('exec', (a, r, info) => {
       const ch = a();
-      if (!info.command.startsWith('sh -c ')) return; // 读钩子事件、常驻通道：不管
-      const p = execFile('sh', ['-c', info.command.slice(6).replace(/^'|'$/g, '').replace(/'\\''/g, "'")], { env: { HOME: home, PATH: process.env.PATH }, encoding: 'buffer', maxBuffer: 1 << 26 }, () => {});
+      if (info.command.includes('hook.log') || info.command === 'sh') return; // 读钩子事件、常驻通道：不管
+      // 像 OpenSSH：命令交给用户的 shell (sh -c) 执行
+      const p = execFile('sh', ['-c', info.command], { env: { HOME: home, PATH: process.env.PATH }, encoding: 'buffer', maxBuffer: 1 << 26 }, () => {});
       p.stdout.on('data', (d) => ch.write(d));
       p.on('close', (code) => { ch.exit(code || 0); ch.end(); });
     });

@@ -69,10 +69,10 @@
       info.textContent = q ? `正在搜索「${q}」…` : '正在读取…';
       list.innerHTML = '';
       try {
-        const r = await api('POST', '/api/agent-sessions', { sid: s.sid, agent, q });
+        const r = await api('POST', '/api/agent-sessions', { sid: s.sid, agent, q, inMux: s.term.buffer.active.type === 'alternate' });
         if (my !== seq) return;
         items = r.sessions;
-        info.textContent = `${host} · ${q ? `含「${q}」的 ` : '最近 '}${items.length} 个会话${r.more ? '（只列最近的）' : ''}`
+        info.textContent = `${host} · ${q ? `含「${q}」的 ` : '最近 '}${items.length} 个会话${r.more ? '（只列最近的）' : ''}${r.partial ? '（搜索超时，只搜了最近的一部分）' : ''}`
           + (AS_TESTED.includes(agent) ? '' : ' · 未实测：照着 Orca 的做法读的，有问题告诉我');
         render();
       } catch (e) {
