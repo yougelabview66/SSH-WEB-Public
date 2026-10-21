@@ -38,18 +38,20 @@
       <div class="hint hk-note">装上后，Agent 开始干活、要权限、问问题、做完、出错时会直接告诉 SSH-WEB：主机状态更准，
         推送写得出具体内容（比如「要执行命令：npm test」「做完了：……」）。<br>
         会改这台主机上对应 Agent 的设置（原来的设置和你自己的钩子都保留，第一次安装前备份为 <code>…bak-sshweb</code>），
-        并写入 <code>~/.ssh-web/hook.sh</code>。装好后新开的 Agent 才生效，已经开着的要退出重开。<br>
+        并写入 <code class="hk-sname">~/.ssh-web/hook.sh</code>。装好后新开的 Agent 才生效，已经开着的要退出重开。<br>
         标「未实测」的是照着 Orca 的做法写的，还没在真的 Agent 上试过，有问题把 <code>~/.cache/ssh-web/hook.log</code> 发给我。</div>
       <div class="hk-rows"></div>
       <div class="hk-msg"></div>
     </div>`;
     $('.hk-name', el).textContent = host;
     const rows = $('.hk-rows', el), msg = $('.hk-msg', el), scriptEl = $('.hk-script', el);
-    let busy = false;
+    let busy = false, sname = 'hook.sh'; // Windows 主机装的是 hook.ps1 (PowerShell 版)
     const refresh = async () => {
       try {
         const r = await api('POST', '/api/hooks/status', { sid: s.sid });
         if (hooksEl !== el) return;
+        sname = r.win ? 'hook.ps1' : 'hook.sh';
+        $('.hk-sname', el).textContent = `~/.ssh-web/${sname}`;
         scriptEl.textContent = !r.scriptOk ? '还没装钩子脚本' : r.outdated ? '钩子脚本有更新' : '钩子脚本已装好';
         // 主机上有的 Agent 排前面 (Claude Code 一直在第一个)
         const list = [...r.agents].sort((a, b) => (b.id === 'claude') - (a.id === 'claude') || b.present - a.present);
@@ -74,7 +76,7 @@
       if (busy) return;
       const { agent, file, name } = row.dataset;
       const ask = what === 'install'
-        ? `要在「${host}」上安装 ${name} 的钩子吗？\n会修改 ${file}${agent === 'opencode' || agent === 'grok' ? '' : '（第一次安装前备份为 .bak-sshweb）'}，并写入 ~/.ssh-web/hook.sh。`
+        ? `要在「${host}」上安装 ${name} 的钩子吗？\n会修改 ${file}${agent === 'opencode' || agent === 'grok' ? '' : '（第一次安装前备份为 .bak-sshweb）'}，并写入 ~/.ssh-web/${sname}。`
         : `要从「${host}」上卸载 SSH-WEB 的 ${name} 钩子吗？\n只删 SSH-WEB 加的条目，其他设置不动。`;
       if (!confirm(ask)) return;
       busy = true;
@@ -85,7 +87,7 @@
         if (hooksEl !== el) return;
         msg.textContent = what === 'install'
           ? `${name} 已安装${r.backup ? `（原来的设置备份在 ${r.backup}）` : ''}。新开的 ${name} 生效，已经开着的要退出重开。${agent === 'codex' ? '在 Codex 里输入 /hooks 批准一次。' : ''}`
-          : `${name} 已卸载。已经开着的退出重开后就不再报事件。${r.scriptRemoved ? '别的 Agent 都没装了，hook.sh 也删了。' : ''}`;
+          : `${name} 已卸载。已经开着的退出重开后就不再报事件。${r.scriptRemoved ? `别的 Agent 都没装了，${sname} 也删了。` : ''}`;
       } catch (e) {
         if (hooksEl === el) msg.textContent = (what === 'install' ? '安装失败：' : '卸载失败：') + e.message;
       }
