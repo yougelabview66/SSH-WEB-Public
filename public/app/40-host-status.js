@@ -68,6 +68,8 @@
   btnFloatM.addEventListener('click', toggleHf);
   const pipOk = 'documentPictureInPicture' in window;
   // 置顶到桌面只给电脑 (手机浏览器不支持，手机上的状态卡片也放不下这两个按钮)
+  const HF_GAP_M = 4;
+  if (isTouch) hostFloat.classList.add('full');
   if (!pipOk || isTouch) { hostFloat.querySelector('[data-a=pip]').remove(); hostFloat.querySelector('[data-a=auto]').remove(); }
   // 自动钉住：浏览器规定置顶窗口只能在用户点击 / 按键时打开，所以在打开网页后的第一次操作时顺手打开；
   // 这次手动关掉了就不再自动打开，下次打开网页再说
@@ -83,14 +85,16 @@
   window.addEventListener('keydown', tryAutoPin, true);
 
   // 位置用「离 main 右边 / 上边的距离」保存，窗口大小变了也贴着右上角；超出范围时收回来
+  // 手机上横向占满屏幕 (两边留一点)，只能上下拖
   function placeHostFloat() {
     const main = hostFloat.parentElement;
     const top0 = $('#tabbar').offsetHeight;
     const maxR = Math.max(0, main.clientWidth - hostFloat.offsetWidth);
     const maxT = Math.max(top0, main.clientHeight - hostFloat.offsetHeight);
-    const r = Math.min(Math.max(0, hfPos.r ?? 12), maxR);
+    const r = isTouch ? HF_GAP_M : Math.min(Math.max(0, hfPos.r ?? 12), maxR);
     const t = Math.min(Math.max(top0, hfPos.t ?? top0 + 8), maxT);
     hostFloat.style.right = r + 'px';
+    if (isTouch) hostFloat.style.left = HF_GAP_M + 'px';
     hostFloat.style.top = t + 'px';
   }
 

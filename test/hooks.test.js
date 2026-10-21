@@ -275,7 +275,7 @@ run(async () => {
   ok(pushed.length === n0 + 1 && lastPush().body === '做完了：又做完了一件', '先响铃、后收到钩子的「做完了」：只推一条「完成」，不推「终端提示音」: ' + JSON.stringify(pushed.slice(n0).map((x) => x.body)));
   ok(!pushed.some((x) => x.error), '推送都能解密');
 
-  // 页面上：电脑的状态悬浮窗卡片、手机的「▾」标签列表里，卡片下面一行写着在做什么
+  // 页面上：电脑的状态悬浮窗、手机的状态卡片里，卡片下面一行写着在做什么 (▾ 标签列表只显示主机名和状态)
   const b2 = await launch();
   const dp = await (await b2.newContext({ viewport: { width: 1280, height: 800 } })).newPage();
   await dp.goto(BASE + '/'); await dp.waitForSelector('#app:not(.hidden)'); await wait(2000);
@@ -288,11 +288,16 @@ run(async () => {
   ok(await mp.isHidden('#hostFloat'), '手机：状态卡片默认关着 (会盖住一部分终端)');
   await mp.tap('#btnMore'); await mp.tap('#btnFloatM'); await wait(500);
   const list = await mp.evaluate(() => [...document.querySelectorAll('#hostFloat .dp-tab')].map((c) => [c.querySelector('.nm').textContent, c.querySelector('.dt')?.textContent || '']));
-  const fr = await mp.evaluate(() => { const r = document.getElementById('hostFloat').getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth; });
-  ok(list.some(([n, d]) => n === 'HK2-1' && d === '做完了：又做完了一件') && fr, '手机：「⋯ 更多 → 状态卡片」打开，卡片下面也写着在做什么，在屏幕里: ' + JSON.stringify(list));
+  // 横向占满屏幕 (两边各留 4px)，卡片一张一整行、左右边正好对齐 (当前标签的描边也不能凸出来)
+  const fr = await mp.evaluate(() => { const r = document.getElementById('hostFloat').getBoundingClientRect(), c = document.querySelector('#hostFloat .dp-tab').getBoundingClientRect(); const cs = [...document.querySelectorAll('#hostFloat .dp-tab')].map((x) => { const b = x.getBoundingClientRect(), sh = getComputedStyle(x).boxShadow, w = /inset/.test(sh) || sh === 'none' ? 0 : 1; return [b.left - w, b.right + w]; });
+    return r.left >= 0 && r.left <= 6 && r.right <= innerWidth && r.right >= innerWidth - 6 && c.width > innerWidth - 40 && cs.every(([l, rr]) => Math.abs(l - cs[0][0]) < 0.5 && Math.abs(rr - cs[0][1]) < 0.5); });
+  ok(list.some(([n, d]) => n === 'HK2-1' && d === '做完了：又做完了一件') && fr, '手机：「⋯ 更多 → 状态卡片」打开，横向占满屏幕，卡片下面也写着在做什么: ' + JSON.stringify(list));
   await mp.screenshot({ path: require('./helpers').shot('hooks-detail-mobile.png'), clip: { x: 0, y: 0, width: 412, height: 260 } });
   await mp.tap('#btnMore');
   ok(await mp.evaluate(() => document.getElementById('btnFloatM').classList.contains('on')), '手机：菜单里「状态卡片」打着勾 (开着)');
+  const mw = await mp.evaluate(() => { const r = document.getElementById('morePop').getBoundingClientRect(), b = document.getElementById('btnHooks').getBoundingClientRect(); const t = document.createRange(); t.selectNodeContents(document.getElementById('btnHooks')); const x = t.getBoundingClientRect(); return { w: Math.round(r.width), mid: Math.abs((x.left + x.right) / 2 - (b.left + b.right) / 2) }; });
+  ok(mw.w >= 140 && mw.w < 200 && mw.mid < 2, '手机：「⋯ 更多」菜单不太宽，文字居中: ' + JSON.stringify(mw));
+  await mp.screenshot({ path: require('./helpers').shot('hooks-more-mobile.png'), clip: { x: 0, y: 0, width: 412, height: 320 } });
   await mp.tap('#btnFloatM'); await wait(300);
   ok(await mp.isHidden('#hostFloat'), '手机：再点一次关掉');
   await b2.close(); await wait(500);
