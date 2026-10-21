@@ -138,5 +138,8 @@
   };
   const joinPath = (dir, name) => (dir.endsWith('/') ? dir : dir + '/') + name;
   const parentPath = (p) => p.replace(/\/[^/]+\/?$/, '') || '/';
+  // Windows 的 SFTP (OpenSSH) 路径是 /D:/xxx：显示时去掉盘符前面的 /；手动输入的 D:/xxx 发给服务端前补回去
+  const showPath = (p) => (/^\/[A-Za-z]:/.test(p) ? p.slice(1) : p);
+  const sftpPath = (p) => (/^[A-Za-z]:/.test(p) ? '/' + p : p);
   const shellQuote = (x) => `'${x.replace(/'/g, `'\\''`)}'`;
 
