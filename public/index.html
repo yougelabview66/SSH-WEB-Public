@@ -150,11 +150,11 @@
         <span class="spacer"></span>
         <button type="button" data-a="refresh" title="刷新">⟳</button>
         <button type="button" data-a="collapse" class="rb-desk" title="收起到右边">»</button>
-        <button type="button" data-a="close" title="关闭">×</button>
+        <button type="button" data-a="close" class="rb-mob" title="关闭">×</button>
       </div>
       <div class="rb-dir"><input type="text" placeholder="项目目录（空着 = 自动：Agent 干活的目录 / 终端所在目录）" spellcheck="false" autocomplete="off" autocapitalize="off"><span class="rb-src"></span></div>
       <div class="rb-pane" data-tab="files">
-        <div class="pf-search"><input type="search" placeholder="搜索文件名…（Ctrl+Shift+P）" enterkeyhint="search" spellcheck="false" autocomplete="off" autocapitalize="off"></div>
+        <div class="pf-search"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><input type="search" placeholder="筛选文件…（Ctrl+Shift+P）" enterkeyhint="search" spellcheck="false" autocomplete="off" autocapitalize="off"></div>
         <div class="pf-body"></div>
       </div>
       <div class="rb-pane" data-tab="git">
@@ -180,9 +180,9 @@
     <button id="btnMon" class="mitem" title="性能监控">📊 性能监控</button>
     <button id="btnFwd" class="mitem" title="在浏览器里打开目标主机上的开发服务 (如 localhost:5173)">🌐 端口预览</button>
     <button id="btnSearch" class="mitem" title="在终端里查找 (Ctrl+Shift+F)；tmux 里会先打开历史视图再查">🔍 搜索历史</button>
-    <button id="btnProj" class="mitem" title="右边栏：项目文件夹里的文件 (Ctrl+Shift+P 搜索文件)">🗂️ 项目文件</button>
-    <button id="btnGit" class="mitem" title="右边栏：这个项目改了哪些文件、改了什么；在改动的行上写批注发给 Agent">📝 代码改动</button>
     <button id="btnSessions" class="mitem" title="这台主机上 Claude Code / Grok / Codex / Gemini / OpenCode 以前的会话：搜索、点「继续」接着聊">💬 会话历史</button>
+    <button id="btnProj" class="mitem" title="右边栏：项目文件夹里的文件 (Ctrl+Shift+P 搜索文件)"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7h-3a2 2 0 0 1-2-2V2"/><path d="M9 18a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h7l4 4v10a2 2 0 0 1-2 2Z"/><path d="M3 7.6v12.8A1.6 1.6 0 0 0 4.6 22h9.8"/></svg> 项目文件</button>
+    <button id="btnGit" class="mitem" title="右边栏：这个项目改了哪些文件、改了什么；在改动的行上写批注发给 Agent">📝 代码改动</button>
     <button id="btnHooks" class="mitem" title="给这台主机的 Claude Code / Grok / Codex / Gemini / Antigravity / OpenCode 装钩子：状态更准、推送写具体内容">🔔 钩子通知</button>
   </div>
 

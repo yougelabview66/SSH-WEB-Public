@@ -85,6 +85,7 @@ run(async () => {
   const sid = (await (await fetch(BASE + '/api/sessions')).json())[0].id;
   // 终端里「正在跑的程序」：带这个标签的标记 (LC_SSHWEB)，当前目录在仓库的子目录里
   kids.push(spawn('sleep', ['300'], { cwd: path.join(repo, 'sub'), env: { LC_SSHWEB: sid, PATH: process.env.PATH }, stdio: 'ignore' }));
+  ok(!(await p.evaluate(() => document.querySelector('.term.active').dataset.winpty)), 'Linux 主机：不开 windowsPty (照常重新折行)');
   const termW = () => p.evaluate(() => Math.round(document.querySelector('.term.active .term-box').getBoundingClientRect().width));
   const w0 = await termW();
   const RB = '#rightBar';
@@ -94,6 +95,11 @@ run(async () => {
   await p.waitForSelector(`${RB} .pf-row`);
   const tabs = await p.$$eval(`${RB} .rb-tabs button`, (xs) => xs.map((x) => [x.dataset.tab, x.classList.contains('on'), !!x.querySelector('svg.ic')]));
   ok(JSON.stringify(tabs) === JSON.stringify([['files', true, true], ['git', false, true]]), '右边栏两个选项卡：项目 (第一个，打开着)、改动，都是线条图标: ' + JSON.stringify(tabs));
+  ok(await p.evaluate(() => document.querySelector('#btnProj svg.ic').innerHTML === document.querySelector('#rightBar .rb-tabs [data-tab=files] svg.ic').innerHTML), '「⋯ 更多」里「项目文件」的图标和选项卡上的一样');
+  const headBtns = await p.$$eval(`${RB} .rb-head > button`, (xs) => xs.filter((x) => getComputedStyle(x).display !== 'none').map((x) => x.dataset.a));
+  ok(JSON.stringify(headBtns) === JSON.stringify(['refresh', 'collapse']), '电脑：右上角只有刷新和「»」收起 (没有重复的关闭)，「»」在最右边: ' + JSON.stringify(headBtns));
+  const rowLook = await p.evaluate(() => { const r = document.querySelector('#rightBar .pf-row[data-rel="a.txt"]'); return { icon: !!r.querySelector('svg.ic'), fs: getComputedStyle(r).fontSize, color: getComputedStyle(r.querySelector('.pf-name')).color, st: r.querySelector('.pf-st').textContent }; });
+  ok(rowLook.icon && rowLook.fs === '12px' && rowLook.st === 'M' && rowLook.color !== 'rgb(15, 23, 42)', '文件树样式同 Orca：类型图标、12px 小字、改过的文件名用 git 状态色、右边状态字母: ' + JSON.stringify(rowLook));
   const rows = () => p.$$eval(`${RB} .pf-row`, (xs) => xs.map((x) => [x.querySelector('.pf-name').textContent, x.dataset.dir ? 'd' : 'f', (x.className.match(/st-(\w+)/) || [])[1] || '', !!x.querySelector('.pf-dot'), x.classList.contains('heavy')]));
   let rs = await rows();
   ok(rs.some(([n, t, , dot]) => n === 'sub' && t === 'd' && dot) && rs.some(([n, , st]) => n === 'a.txt' && st === 'modified') && rs.some(([n, , st]) => n === 'new.txt' && st === 'untracked')
@@ -178,12 +184,18 @@ run(async () => {
 
   // ======== 刷新、拖宽度、收起成一列图标、展开、关闭
   fs.writeFileSync(path.join(repo, 'later.txt'), 'x\n');
-  await p.click(`${RB} [data-a=refresh]`); await wait(1500);
+  await p.click(`${RB} [data-a=refresh]`);
+  for (let i = 0; i < 50 && await p.locator(`${RB} .gp-file`).count() !== 5; i++) await wait(100);
   ok(await p.locator(`${RB} .gp-file`).count() === 5, '⟳ 刷新：新改的文件出现了');
   const pb = await p.locator(RB).boundingBox();
-  await p.mouse.move(pb.x + 1, pb.y + 300); await p.mouse.down(); await p.mouse.move(pb.x - 99, pb.y + 300, { steps: 5 }); await p.mouse.up(); await wait(300);
-  const nw = Math.round((await p.locator(RB).boundingBox()).width);
+  const screenW = () => p.evaluate(() => Math.round(document.querySelector('.term.active .xterm-screen').getBoundingClientRect().width));
+  const sw0 = await screenW();
+  await p.mouse.move(pb.x + 1, pb.y + 300); await p.mouse.down(); await p.mouse.move(pb.x - 99, pb.y + 300, { steps: 5 }); await wait(300);
+  const swMid = await screenW();
+  await p.mouse.up(); await wait(400);
+  const nw = Math.round((await p.locator(RB).boundingBox()).width), sw1 = await screenW();
   ok(Math.abs(nw - (pb.width + 100)) <= 2 && await p.evaluate(() => localStorage.getItem('sshweb.rbW')) == nw, `拖左边缘调宽度并记住 (${Math.round(pb.width)} → ${nw})`);
+  ok(swMid === sw0 && sw1 < sw0 - 50, `拖的过程中终端不重排 (不卡)，松手才按新宽度排一次 (${sw0} → 拖着 ${swMid} → 松手 ${sw1})`);
   await p.click(`${RB} [data-a=collapse]`); await wait(500);
   const rail = await p.$$eval('#rightRail button', (xs) => xs.map((x) => [x.dataset.tab, x.textContent.trim()]));
   ok(await p.isHidden(RB) && JSON.stringify(rail) === JSON.stringify([['files', ''], ['git', '5']]) && await termW() > w0 - 100, '「»」收起：右边缘一列两个图标 (改动带数字)，终端恢复宽度: ' + JSON.stringify(rail));
@@ -195,8 +207,6 @@ run(async () => {
   await p.fill(`${RB} .rb-dir input`, '/'); await p.press(`${RB} .rb-dir input`, 'Enter'); await wait(1500);
   ok(await p.locator(`${RB} .pf-row`).count() > 0 && /不是 git 仓库/.test(await p.evaluate(() => { document.querySelector('#rightBar .rb-tabs [data-tab=git]').click(); return document.querySelector('#rightBar .gp-body').textContent; })), '手动填不是仓库的目录：「项目」照样能看文件，「改动」提示不是 git 仓库');
   await p.fill(`${RB} .rb-dir input`, ''); await p.press(`${RB} .rb-dir input`, 'Enter'); await wait(1200);
-  await p.click(`${RB} [data-a=close]`); await wait(300);
-  ok(await p.isHidden(RB) && await p.isHidden('#rightRail'), '「×」关掉：右边栏和图标都不显示');
 
   // ======== 手机：全屏
   const m = await (await browser.newContext({ ...devices['Pixel 7'] })).newPage();
@@ -205,7 +215,7 @@ run(async () => {
   if (await m.isVisible('.term.active .owner-notice button')) { await m.tap('.term.active .owner-notice button'); await wait(800); }
   await m.tap('#btnMore'); await m.tap('#btnProj'); await m.waitForSelector(`${RB} .pf-row`);
   const mb = await m.evaluate(() => { const r = document.getElementById('rightBar').getBoundingClientRect(); return { l: r.left, t: r.top, w: Math.round(r.width), iw: innerWidth }; });
-  ok(mb.l === 0 && mb.t === 0 && mb.w === mb.iw && await m.isHidden(`${RB} [data-a=collapse]`), '手机：全屏显示，没有收起按钮: ' + JSON.stringify(mb));
+  ok(mb.l === 0 && mb.t === 0 && mb.w === mb.iw && await m.isHidden(`${RB} [data-a=collapse]`) && await m.isVisible(`${RB} [data-a=close]`), '手机：全屏显示，右上角是「×」关闭 (没有收起): ' + JSON.stringify(mb));
   await m.screenshot({ path: shot('rb-mobile-files.png') });
   await m.tap(`${RB} .rb-tabs [data-tab=git]`); await m.waitForSelector(`${RB} .gp-file`);
   await m.tap(`${RB} .gp-file:has-text("a.txt")`); await m.waitForSelector(`${RB} .gl.add`);

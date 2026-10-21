@@ -4,7 +4,8 @@
   //   点文件预览，「⋯」里发路径给 Agent / 复制路径 / 下载 / 看改动；顶部搜索框 = 快速打开 (按文件名模糊搜索，↑↓ 选、回车打开，
   //   最近打开的排前面；电脑上 Ctrl+Shift+P 直接跳到这里)。
   // 「改动」：改了哪些文件 (带增删行数)，点开看红绿对比；点一行写批注 (电脑上 Shift + 点 = 选一段)，「发给 Agent」整理成一段话填进输入框 (不发送)。
-  // 电脑：展开时固定在右边 (终端变窄，左边缘拖动调宽度)，「»」收起成右边缘一列图标 (点哪个展开到哪个)，「×」关掉；手机：全屏。
+  // 电脑：展开时固定在右边 (终端变窄，左边缘拖动调宽度，拖的时候终端先不重排、松手再排)，最右边的「»」收起成右边缘一列图标 (点哪个展开到哪个)；
+  // 手机：全屏，最右边是「×」关掉。
   // Agent 做完时 (状态变成「完成」) 右边栏开着就刷新
   const rightBar = $('#rightBar'), rightRail = $('#rightRail');
   const rbDir = $('.rb-dir input', rightBar), pfSearch = $('.pf-search input', rightBar), pfBody = $('.pf-body', rightBar), gpBody = $('.gp-body', rightBar);
@@ -13,6 +14,7 @@
   let rbState = isTouch ? 'closed' : lsGet('sshweb.rbState', 'closed'); // open / collapsed / closed (手机上每次都从关着开始)
   let rbTab = lsGet('sshweb.rbTab', 'files');
   const rb = { s: null, seq: 0 }; // rb.s：右边栏现在显示的是哪个标签的项目
+  let rbResizing = false; // 正在拖右边栏的宽度：终端先不跟着重排 (每动一下都重排、整屏重画会卡)，松手再排一次
   const gp = { data: null, file: null, diff: null, sel: null, lines: [] }; // 「改动」
   const gitNotes = new Map(); // 仓库 → [{ path, side, from, to, code, text }]
   const winPath = (p) => (/^\/[A-Za-z]:/.test(p) ? p.slice(1) : p); // 给 git / 显示用的路径 (Windows 去掉 SFTP 的前导 /)
@@ -45,7 +47,7 @@
     rightRail.classList.toggle('hidden', !(rbState === 'collapsed' && active && !isTouch));
     rightBar.querySelectorAll('.rb-tabs [data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === rbTab));
     rightBar.querySelectorAll('.rb-pane').forEach((p) => p.classList.toggle('hidden', p.dataset.tab !== rbTab));
-    if (!isTouch) rightBar.style.width = Math.min(Math.max(+lsGet('sshweb.rbW', 440) || 440, 300), Math.round(innerWidth * 0.6)) + 'px';
+    if (!isTouch && !rbResizing) rightBar.style.width = Math.min(Math.max(+lsGet('sshweb.rbW', 440) || 440, 300), Math.round(innerWidth * 0.6)) + 'px'; // 拖着的时候不改回去
   }
   // 换了标签：右边栏跟着换成那个标签的项目
   function rbSync(force) {
@@ -79,7 +81,7 @@
       gp.data.root = info.root; // 和文件树用同一种写法 (SFTP 路径)
       rightBar.querySelectorAll('.rb-count').forEach((b) => { b.textContent = gp.data.files?.length || ''; });
       rightRail.querySelectorAll('.rb-count').forEach((b) => { b.textContent = gp.data.files?.length || ''; });
-      if (keep) { for (const rel of [...s.pf.kids.keys()]) await pfFetch(s, rel); s.allFiles = null; }
+      if (keep) { await Promise.all([...s.pf.kids.keys()].map((rel) => pfFetch(s, rel).catch(() => s.pf.kids.delete(rel)))); s.allFiles = null; } // 展开过的文件夹一起重新读
       if (gp.file) { const f = gp.data.files?.find((x) => x.path === gp.file.path); if (f) return gpOpenFile(f, true); gp.file = null; }
       pfRender(); gpRender();
     } catch (e) {
@@ -98,6 +100,27 @@
   };
   const STATUS = { modified: ['M', '修改'], added: ['A', '新增'], deleted: ['D', '删除'], renamed: ['R', '改名'], untracked: ['U', '未跟踪的新文件'], conflict: ['!', '有冲突'] };
   const abs = (s, rel) => (rel ? `${s.proj.root.replace(/\/$/, '')}/${rel}` : s.proj.root);
+  // 线条图标 (lucide，同 Orca)：箭头、文件夹 / 打开的文件夹、按类型的文件图标
+  const svg = (d) => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
+  const FILE = '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>';
+  const ICON = {
+    chev: svg('<path d="m9 18 6-6-6-6"/>'),
+    folder: svg('<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>'),
+    open: svg('<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>'),
+    file: svg(FILE),
+    code: svg(FILE + '<path d="m10 13-2 2 2 2"/><path d="m14 17 2-2-2-2"/>'),
+    text: svg(FILE + '<path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>'),
+    image: svg(FILE + '<circle cx="10" cy="12" r="2"/><path d="m20 17-1.296-1.296a2.41 2.41 0 0 0-3.408 0L9 22"/>'),
+    json: svg(FILE + '<path d="M10 12a1 1 0 0 0-1 1v1a1 1 0 0 1-1 1 1 1 0 0 1 1 1v1a1 1 0 0 0 1 1"/><path d="M14 18a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1 1 1 0 0 1-1-1v-1a1 1 0 0 0-1-1"/>'),
+  };
+  const fileIcon = (name) => {
+    const ext = (/\.([^.]+)$/.exec(name.toLowerCase()) || [])[1] || '';
+    if (/^(png|jpe?g|gif|webp|svg|bmp|ico|avif)$/.test(ext)) return ICON.image;
+    if (/^(json|jsonc|json5|lock)$/.test(ext)) return ICON.json;
+    if (/^(md|markdown|txt|log|rst|csv|tsv)$/.test(ext) || /^(readme|license|changelog)/i.test(name)) return ICON.text;
+    if (/^(js|mjs|cjs|ts|tsx|jsx|py|go|rs|java|kt|c|h|cpp|hpp|cc|cs|rb|php|sh|bash|zsh|ps1|bat|cmd|lua|swift|vue|svelte|html|css|scss|less|sql|yaml|yml|toml|ini|xml|conf)$/.test(ext)) return ICON.code;
+    return ICON.file;
+  };
   async function pfFetch(s, rel) {
     const r = await api('POST', '/api/project/ls', { sid: s.sid, path: abs(s, rel) });
     s.pf.kids.set(rel, r.entries);
@@ -116,8 +139,8 @@
       for (const e of s.pf.kids.get(rel) || []) {
         const p = rel ? `${rel}/${e.name}` : e.name, st = m.get(p);
         const open = e.dir && s.pf.open.has(p);
-        rows.push(`<div class="pf-row${e.dir ? ' dir' : ''}${e.heavy ? ' heavy' : ''}${st ? ' st-' + st : ''}" data-rel="${esc(p)}" data-dir="${e.dir ? 1 : ''}" data-size="${e.size || 0}" style="padding-left:${8 + depth * 14}px">
-          <span class="pf-chev">${e.dir ? (open ? '▾' : '▸') : ''}</span><span class="pf-name">${esc(e.name)}</span>
+        rows.push(`<div class="pf-row${e.dir ? ' dir' : ''}${e.heavy ? ' heavy' : ''}${st ? ' st-' + st : ''}" data-rel="${esc(p)}" data-dir="${e.dir ? 1 : ''}" data-size="${e.size || 0}" style="padding-left:${6 + depth * 16}px">
+          <span class="pf-chev${e.dir ? (open ? ' open' : '') : ' none'}">${ICON.chev}</span>${e.dir ? (open ? ICON.open : ICON.folder) : fileIcon(e.name)}<span class="pf-name">${esc(e.name)}</span>
           ${e.dir && dirs.has(p) ? '<span class="pf-dot" title="里面有改动"></span>' : ''}${st ? `<span class="pf-st" title="${esc(STATUS[st]?.[1] || st)}">${STATUS[st]?.[0] || '?'}</span>` : ''}
           ${e.dir ? '' : '<button type="button" class="pf-more" data-a="more" title="更多操作">⋯</button>'}</div>`);
         if (open) walk(p, depth + 1);
@@ -175,7 +198,7 @@
       const k = h.f.lastIndexOf('/'), st = m.get(h.f);
       const namePos = h.pos.filter((x) => x > k).map((x) => x - k - 1), dirPos = h.pos.filter((x) => x < k);
       return `<div class="pf-hit${i === pfSel ? ' sel' : ''}${st ? ' st-' + st : ''}" data-rel="${esc(h.f)}" data-i="${i}">
-        <span class="pf-name">${mark(h.f.slice(k + 1), namePos)}</span><span class="pf-dirp">${mark(h.f.slice(0, Math.max(0, k)), dirPos)}</span>
+        ${fileIcon(h.f.slice(k + 1))}<span class="pf-name">${mark(h.f.slice(k + 1), namePos)}</span><span class="pf-dirp">${mark(h.f.slice(0, Math.max(0, k)), dirPos)}</span>
         ${st ? `<span class="pf-st">${STATUS[st]?.[0] || '?'}</span>` : ''}<button type="button" class="pf-more" data-a="more" title="更多操作">⋯</button></div>`;
     }).join('') || `<div class="gp-msg">没有名字像「${esc(q)}」的文件</div>`;
     if (s.allFiles.more) pfBody.insertAdjacentHTML('beforeend', '<div class="gp-msg hint">文件太多，只搜了前 5 万个</div>');
@@ -219,6 +242,13 @@
       else if (m === 'diff') { setRbTab('git'); gpOpenFile(changed); }
     });
   }
+  pfBody.addEventListener('contextmenu', (e) => { // 右键 = 「⋯」(同 Orca)
+    const row = e.target.closest('.pf-row:not(.dir), .pf-hit');
+    if (!row) return;
+    e.preventDefault();
+    openPfMenu(row);
+    pfMenu.dataset.rel = row.dataset.rel;
+  });
   document.addEventListener('pointerdown', (e) => { if (pfMenu && !pfMenu.contains(e.target) && !e.target.closest('[data-a=more]')) closePfMenu(); }, true);
 
   pfBody.addEventListener('click', async (e) => {
@@ -446,11 +476,14 @@
     h.setPointerCapture(e.pointerId);
     const x0 = e.clientX, w0 = rightBar.getBoundingClientRect().width;
     rightBar.classList.add('resizing');
+    rbResizing = true;
     const move = (ev) => { rightBar.style.width = Math.min(Math.max(w0 - (ev.clientX - x0), 300), Math.round(innerWidth * 0.6)) + 'px'; };
     const up = () => {
       h.removeEventListener('pointermove', move); h.removeEventListener('pointerup', up); h.removeEventListener('pointercancel', up);
       rightBar.classList.remove('resizing');
+      rbResizing = false;
       lsSet('sshweb.rbW', Math.round(rightBar.getBoundingClientRect().width));
+      if (active && !active.scrollView) active.fit.fit(); // 松手：终端按新宽度排一次
     };
     h.addEventListener('pointermove', move); h.addEventListener('pointerup', up); h.addEventListener('pointercancel', up);
   });

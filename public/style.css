@@ -24,6 +24,8 @@
   --warn-box-fg: #fecaca;
   --dl: #3987e5; /* 网速图: 下载 */
   --ul: #d95926; /* 网速图: 上传 */
+  /* 文件树的 git 状态色 (同 Orca / VS Code) */
+  --git-mod: #e2c08d; --git-add: #81b88b; --git-del: #c74e39; --git-ren: #73c991; --git-new: #73c991; --git-ign: #8c8c8c;
 }
 /* 浅色主题：跟随系统 (未手动选深色时) 或手动选择浅色 */
 @media (prefers-color-scheme: light) {
@@ -36,6 +38,7 @@
     --tab-active-bg: #dbeafe; --tab-active-fg: #1e3a8a; --tab-active-bar: #2563eb;
     --dir: #1d4ed8; --warn-box-bg: rgba(220,38,38,.08); --warn-box-fg: #991b1b;
     --dl: #2a78d6; --ul: #eb6834;
+    --git-mod: #895503; --git-add: #587c0c; --git-del: #ad0707; --git-ren: #007acc; --git-new: #007100; --git-ign: #8c8c8c;
   }
 }
 :root[data-theme="light"] {
@@ -47,6 +50,7 @@
   --tab-active-bg: #dbeafe; --tab-active-fg: #1e3a8a; --tab-active-bar: #2563eb;
   --dir: #1d4ed8; --warn-box-bg: rgba(220,38,38,.08); --warn-box-fg: #991b1b;
   --dl: #2a78d6; --ul: #eb6834;
+  --git-mod: #895503; --git-add: #587c0c; --git-del: #ad0707; --git-ren: #007acc; --git-new: #007100; --git-ign: #8c8c8c;
 }
 * { box-sizing: border-box; }
 /* 禁用手机浏览器的下拉刷新 / 边缘回弹 */
@@ -100,10 +104,10 @@ label.check { margin: 6px 0 10px; }
 #hostForm.key .auth-password { display: none; }
 
 /* layout */
-/* iPhone 添加到主屏幕 (全屏 App)：页面铺到屏幕边上 (viewport-fit=cover)，顶部状态栏、横屏两边的圆角和刘海让出来；
-   底部小横条由输入栏 (#mobileBar) 自己让 */
-#app { display: flex; height: 100%; box-sizing: border-box;
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left); }
+/* iPhone 添加到主屏幕 (全屏 App)：页面铺到屏幕边上 (viewport-fit=cover)。横屏两边的圆角和刘海让出来；
+   顶部状态栏那一块由标签栏 (#tabbar) 往上延伸盖住 (和原生 App 一样连成一体：以前留一段空白，iOS 在那里显示磨砂效果)，
+   手机上的左边栏也让出状态栏；底部小横条由输入栏 (#mobileBar) 自己让 */
+#app { display: flex; height: 100%; box-sizing: border-box; padding: 0 env(safe-area-inset-right) 0 env(safe-area-inset-left); }
 #sidebar { width: 250px; background: var(--panel); border-right: 1px solid var(--border);
   display: flex; flex-direction: column; padding: 12px; gap: 10px; flex-shrink: 0; }
 .side-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -126,7 +130,7 @@ label.check { margin: 6px 0 10px; }
 
 main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
 #tabbar { display: flex; align-items: stretch; background: var(--panel); border-bottom: 1px solid var(--border);
-  height: 38px; flex-shrink: 0; }
+  height: calc(38px + env(safe-area-inset-top)); flex-shrink: 0; padding-top: env(safe-area-inset-top); } /* iPhone 全屏 App：往上延伸到状态栏底下 (高度加上状态栏) */
 #btnToggle { border: none; border-radius: 0; background: none; padding: 0 12px; }
 #tabs { display: flex; overflow-x: auto; flex: 1; scrollbar-width: none; }
 #tabs::-webkit-scrollbar { display: none; } /* 滚动条会占掉标签的高度；用滚轮 / 两边箭头 / 手指滑动翻 */
@@ -180,7 +184,7 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: r
 
 @media (max-width: 760px) {
   #sidebar { position: fixed; inset: 0 auto 0 0; z-index: 20; width: 80%; max-width: 300px;
-    transform: translateX(-100%); transition: transform .2s; }
+    transform: translateX(-100%); transition: transform .2s; padding-top: calc(12px + env(safe-area-inset-top)); }
   #app.side-open #sidebar { transform: none; box-shadow: 0 0 30px var(--shadow); }
   .host .ops { display: flex; }
   .row { flex-wrap: wrap; }
@@ -213,6 +217,7 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 #morePop .mitem:disabled { opacity: .45; cursor: default; }
 #morePop .mitem.on { color: var(--accent); }
 #morePop .mitem.on::after { content: ' ✓'; }
+#morePop .mitem svg.ic { vertical-align: -3px; }
 #btnSftp.on { background: var(--bg); color: var(--accent); }
 
 /* 会话布局：终端 + 右侧 SFTP 面板 */
@@ -731,7 +736,7 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 #rightBar.hidden { display: none; }
 #rightBar.mobile { position: fixed; inset: 0; z-index: 70; width: auto !important; border: none;
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
-#rightBar.mobile .rb-desk, #rightBar.mobile .rb-resize { display: none; }
+#rightBar.mobile .rb-desk, #rightBar.mobile .rb-resize, #rightBar:not(.mobile) .rb-mob { display: none; } /* 电脑只有「»」收起，手机只有「×」关掉 */
 #rightBar.resizing { user-select: none; }
 .rb-resize { position: absolute; left: -4px; top: 0; bottom: 0; width: 8px; cursor: ew-resize; z-index: 2; touch-action: none; }
 .gp-notes { display: flex; align-items: center; gap: 6px; padding: 6px 8px; background: var(--bg); border-bottom: 1px solid var(--border); }
@@ -791,34 +796,39 @@ svg.ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-wid
 .rb-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .rb-pane.hidden { display: none; }
 .gp-branch { color: var(--text); }
-/* 项目：文件树、搜索结果 */
-.pf-search { padding: 6px 8px; border-bottom: 1px solid var(--border); }
-.pf-search input { width: 100%; box-sizing: border-box; margin: 0; padding: 4px 8px; font-size: 13px; }
-.pf-body { flex: 1; min-height: 0; overflow: auto; padding-bottom: 24px; }
-.pf-row, .pf-hit { display: flex; align-items: center; gap: 4px; min-height: 26px; padding-right: 6px; cursor: pointer; white-space: nowrap; }
-.pf-row:hover, .pf-hit:hover, .pf-hit.sel { background: var(--hover); }
-.pf-hit.sel { box-shadow: inset 2px 0 0 var(--accent); }
-.pf-hit { padding-left: 10px; }
-.pf-chev { width: 12px; flex-shrink: 0; color: var(--muted); font-size: 11px; text-align: center; }
+/* 项目：文件树、搜索结果 (样式同 Orca：小字紧凑、箭头 + 类型图标、文件名用 git 状态色、右边状态字母) */
+.pf-search { display: flex; align-items: center; gap: 6px; padding: 0 10px; border-bottom: 1px solid var(--border); color: var(--muted); }
+.pf-search svg.ic { width: 13px; height: 13px; }
+.pf-search input { flex: 1; min-width: 0; margin: 0; padding: 7px 0; border: none; background: none; box-shadow: none; outline: none; font-size: 12px; color: var(--text); }
+.pf-search input::placeholder { color: var(--muted); opacity: .6; }
+.pf-body { flex: 1; min-height: 0; overflow: auto; padding: 4px 4px 24px; }
+.pf-row, .pf-hit { display: flex; align-items: center; gap: 4px; min-height: 24px; padding-right: 4px; border-radius: 3px; font-size: 12px; cursor: pointer; white-space: nowrap; color: var(--text); }
+.pf-row:hover, .pf-hit:hover { background: var(--hover); }
+.pf-hit.sel { background: var(--hover); box-shadow: inset 2px 0 0 var(--accent); }
+.pf-hit { padding-left: 8px; }
+.pf-row svg.ic, .pf-hit svg.ic { width: 13px; height: 13px; color: var(--muted); }
+.pf-row .pf-chev { display: inline-flex; transition: transform .12s; }
+.pf-row .pf-chev.open { transform: rotate(90deg); }
+.pf-row .pf-chev.none { visibility: hidden; }
 .pf-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.pf-row.dir .pf-name { font-weight: 500; }
-.pf-row.heavy .pf-name { color: var(--muted); opacity: .7; }
-.pf-dirp { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; font-size: 11px; color: var(--muted); margin-left: 6px; }
+.pf-dirp { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; font-size: 11px; color: var(--muted); margin-left: 4px; }
 .pf-hit em { font-style: normal; color: var(--accent); font-weight: 700; }
-.pf-st { margin-left: auto; flex-shrink: 0; font-size: 11px; font-weight: 700; }
-.pf-dot { margin-left: auto; width: 6px; height: 6px; border-radius: 50%; background: #2563eb; flex-shrink: 0; }
-.st-modified > .pf-name, .st-modified > .pf-st { color: #2563eb; }
-.st-added > .pf-name, .st-added > .pf-st, .st-untracked > .pf-name, .st-untracked > .pf-st { color: #16a34a; }
-.st-deleted > .pf-name, .st-deleted > .pf-st { color: #dc2626; text-decoration: line-through; }
-.st-renamed > .pf-name, .st-renamed > .pf-st { color: #7c3aed; }
-.st-conflict > .pf-name, .st-conflict > .pf-st { color: #d97706; }
-.pf-more { flex-shrink: 0; border: none; background: none; padding: 0 6px; color: var(--muted); visibility: hidden; }
-.pf-st + .pf-more, .pf-dot + .pf-more { margin-left: 2px; }
+.pf-st { margin-left: auto; margin-right: 4px; flex-shrink: 0; font-size: 10px; font-weight: 600; letter-spacing: .03em; }
+.pf-dot { margin-left: auto; margin-right: 6px; width: 6px; height: 6px; border-radius: 50%; background: var(--git-mod); flex-shrink: 0; }
+.pf-row.heavy > .pf-name { color: var(--git-ign); font-style: italic; padding-right: 2px; }
+.st-modified > .pf-name, .st-modified > .pf-st { color: var(--git-mod); }
+.st-added > .pf-name, .st-added > .pf-st { color: var(--git-add); }
+.st-untracked > .pf-name, .st-untracked > .pf-st { color: var(--git-new); }
+.st-deleted > .pf-name, .st-deleted > .pf-st { color: var(--git-del); text-decoration: line-through; }
+.st-renamed > .pf-name, .st-renamed > .pf-st { color: var(--git-ren); }
+.st-conflict > .pf-name, .st-conflict > .pf-st { color: var(--git-del); }
+.pf-more { flex-shrink: 0; border: none; background: none; padding: 0 4px; line-height: 1; color: var(--muted); visibility: hidden; }
 .pf-row:not(:has(.pf-st, .pf-dot)) .pf-more, .pf-hit:not(:has(.pf-st)) .pf-more { margin-left: auto; }
 .pf-row:hover .pf-more, .pf-hit:hover .pf-more, .pf-hit.sel .pf-more, #rightBar.mobile .pf-more { visibility: visible; }
+#rightBar.mobile .pf-row, #rightBar.mobile .pf-hit { min-height: 34px; font-size: 14px; }
 .pf-menu { position: absolute; right: 8px; z-index: 5; display: flex; flex-direction: column; min-width: 140px; padding: 4px; background: var(--panel);
   border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 20px var(--shadow); }
-.pf-menu button { border: none; background: none; text-align: left; padding: 7px 10px; border-radius: 6px; }
+.pf-menu button { border: none; background: none; text-align: left; padding: 6px 10px; border-radius: 6px; font-size: 12px; }
 .pf-menu button:hover { background: var(--hover); }
 /* 收起：右边缘一列图标 */
 #rightRail { position: fixed; right: 0; top: 50%; transform: translateY(-50%); z-index: 30; display: flex; flex-direction: column; gap: 2px; padding: 4px;

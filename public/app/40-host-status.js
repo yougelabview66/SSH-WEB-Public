@@ -64,6 +64,13 @@
   const hfPos = (() => { try { return JSON.parse(localStorage.getItem('sshweb.hostFloat')) || {}; } catch { return {}; } })();
   const saveHf = () => { try { localStorage.setItem('sshweb.hostFloat', JSON.stringify(hfPos)); } catch {} };
   if (hfPos.min) hostFloat.classList.add('min');
+  // 收起时按钮是「+」(展开)，展开时是「–」(收起)：收起了还显示「–」容易以为点了会再缩小
+  const syncMinBtn = () => {
+    const b = hostFloat.querySelector('[data-a=min]'), min = hostFloat.classList.contains('min');
+    b.textContent = min ? '+' : '–';
+    b.title = min ? '展开' : '收起';
+  };
+  syncMinBtn();
   // 电脑默认开，手机默认关
   let hfOn = (() => { try { const v = localStorage.getItem('sshweb.hfOn'); return isTouch ? v === '1' : v !== '0'; } catch { return !isTouch; } })();
   const btnFloatM = $('#btnFloatM'); // 开关在「⋯ 更多」菜单里 (电脑、手机一样)
@@ -151,6 +158,7 @@
     if (b.dataset.a === 'close') { if (hfOn) toggleHf(); return; } // 关掉 (同「⋯ 更多 → 状态卡片」，记住)
     if (b.dataset.a === 'min') {
       hfPos.min = hostFloat.classList.toggle('min');
+      syncMinBtn();
       saveHf();
       renderDeskTabs();
       placeHostFloat();
