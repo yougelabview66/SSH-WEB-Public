@@ -82,8 +82,10 @@
       // 终端对程序询问的自动应答 (不是用户打的字)：服务端不算输入，不影响主机状态和打字预测
       if (TERM_REPLY_RE.test(data)) {
         // Windows 主机：psmux 把程序的询问转给外面的终端，回答经 ConPTY 回去时被当成键盘输入 (ESC 被吃掉，
-        // 剩下的 y、c、rgb:…、\ 打进 Claude 的输入框)。只留光标位置 / 状态报告 (ConPTY 启动时要)，别的不回答
-        if (s.winHost) data = (data.match(/\x1b\[\??[\d;]*[Rn]/g) || []).join('');
+        // 剩下的 y、rgb:…、\ 打进 Claude 的输入框)。模式报告 ($y)、颜色 / OSC、DCS (版本号)、焦点进出不回答；
+        // 终端型号 (DA，…c) 和光标位置 / 状态报告 (…R / …n) 照常回答：程序拿终端型号的回答当「询问结束」的信号，
+        // 收不到就一直等，方向键这类 ESC 开头的按键被当成没收完的回答吞掉 (v1.68.2 拦了它，方向键就不好使了)
+        if (s.winHost) data = (data.match(/\x1b\[[?>]?[\d;]*c|\x1b\[\??[\d;]*[Rn]/g) || []).join('');
         if (data) send(s, { type: 'data', data, auto: true });
         return;
       }
