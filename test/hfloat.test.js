@@ -69,11 +69,11 @@ const B = BASE;
   ok(Math.abs(b4.right - saved.right) <= 2 && Math.abs(b4.top - saved.top) <= 2 && await p.evaluate(() => document.getElementById('hostFloat').classList.contains('min')), '刷新后位置和收起状态都保持');
   await p.click('#hostFloat [data-a=min]'); await wait(500);
   ok(await p.isVisible('#hostFloat .dp-tabs'), '再点一次展开');
-  // 标题栏按钮靠右，「–」和第一行最右边的卡片对齐
+  // 标题栏按钮靠右，最右边的「×」和第一行最右边的卡片对齐
   const al0 = await p.evaluate(() => { const f = document.getElementById('hostFloat'), cs = [...f.querySelectorAll('.dp-tab')];
     const top = cs[0].offsetTop, right = Math.max(...cs.filter((c) => c.offsetTop === top).map((c) => c.getBoundingClientRect().right));
-    return { min: f.querySelector('[data-a=min]').getBoundingClientRect().right, right }; });
-  ok(Math.abs(al0.min - al0.right) <= 1, '悬浮窗「–」的右边和第一行最右边的卡片对齐: ' + JSON.stringify(al0));
+    return { min: f.querySelector('[data-a=close]').getBoundingClientRect().right, right }; });
+  ok(Math.abs(al0.min - al0.right) <= 1, '悬浮窗「×」的右边和第一行最右边的卡片对齐: ' + JSON.stringify(al0));
   // 悬浮窗和输入框模式无关：底部 / 浮动都显示
   await p.click('#dMode'); await wait(500);
   ok(await p.isVisible('#hostFloat'), '输入框浮动模式：悬浮窗照样显示');
@@ -88,6 +88,15 @@ const B = BASE;
   ok(await p.isHidden('#hostFloat'), '刷新后保持关闭');
   await toggleHf();
   ok(await p.isVisible('#hostFloat'), '再点一次打开');
+  // 标题栏「–」右边的「×」：关掉 (同菜单里关，记住)
+  const hbs = await p.evaluate(() => [...document.querySelectorAll('#hostFloat .hf-head button')].map((b) => b.dataset.a));
+  ok(hbs.indexOf('close') === hbs.indexOf('min') + 1 && hbs.at(-1) === 'close', '标题栏「–」右边有「×」: ' + JSON.stringify(hbs));
+  await p.click('#hostFloat [data-a=close]'); await wait(300);
+  ok(await p.isHidden('#hostFloat') && !await hfBtnOn(), '点「×」关掉悬浮窗，菜单里的「状态卡片」也取消打勾');
+  await p.reload(); await p.waitForSelector('.tab'); await wait(1500);
+  ok(await p.isHidden('#hostFloat'), '点「×」关掉后刷新也保持关闭');
+  await toggleHf();
+  ok(await p.isVisible('#hostFloat'), '从「⋯ 更多 → 状态卡片」重新打开');
   // 置顶到桌面 (文档画中画)
   const hasPip = await p.evaluate(() => 'documentPictureInPicture' in window);
   if (hasPip) {

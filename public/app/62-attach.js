@@ -63,6 +63,18 @@
     dInput.setSelectionRange(a + ins.length, a + ins.length);
   }
 
+  // 一段文字 (可以多行) 接在当前标签输入框的内容后面 (去向同 insertPaths)，不发送；代码改动的批注用 (见 66-git-changes.js)
+  function insertText(s, text) {
+    const glue = (v) => (v && !/\n$/.test(v) ? '\n' : '');
+    if (s !== active) { s.draft = (s.draft || '') + glue(s.draft || '') + text; return; }
+    if (cmdMode || (!isTouch && (!deskOn || termDirect))) { s.term.paste(text); return; }
+    if (isTouch) { const v = mText(); setMobileText(v + glue(v) + text); return; }
+    const v = dInput.value;
+    setDeskText(v + glue(v) + text);
+    dInput.focus({ preventScroll: true });
+    dInput.setSelectionRange(dInput.value.length, dInput.value.length);
+  }
+
   // 拖文件：放到终端、下方输入框 / 手机输入栏上 = 发给 Claude；文件管理的列表自己处理 (上传到当前目录)；
   // 放到页面别处不处理 (不然浏览器会直接打开这个文件，离开 SSH-WEB)
   const attachZone = (t) => t?.closest?.('.term-box, #deskBar, #mobileBar');

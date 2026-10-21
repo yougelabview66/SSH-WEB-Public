@@ -14,6 +14,7 @@ const OTHER = Array.from({ length: 200 }, (_, i) => `完全不相干的另一个
 // mode: ok | none (没有 tmux) | busy (全屏程序) | other (抓到别的 pane) | plain (普通 shell，不开鼠标) | claude (全屏模式的 Claude Code)
 let got = ''; let ccUp = 0; let winChanges = 0; const execs = []; const envs = [];
 let opens = 0; let dropShell = false; // 开了几次 exec 通道；dropShell：常驻的 sh 收到下一段脚本时直接断开
+let replyDelay = 0; // 常驻的 sh 晚这么多毫秒才回结果 (模拟远的主机)
 function mockServer(port, mode) {
   new Server({ hostKeys: [hostKey()] }, (c) => {
     c.on('authentication', (ctx) => ctx.accept());
@@ -62,8 +63,11 @@ function mockServer(port, mode) {
               buf = buf.slice(m.index + m[0].length);
               if (dropShell) { dropShell = false; ch.close(); return; }
               const res = out + `\n${m[1]} ${code}\n`; // 分几次写回去，结束标记也拆开
-              for (let i = 0; i < res.length - 12; i += 50000) ch.write(res.slice(i, Math.min(i + 50000, res.length - 12)));
-              ch.write(res.slice(-12));
+              const reply = () => {
+                for (let i = 0; i < res.length - 12; i += 50000) ch.write(res.slice(i, Math.min(i + 50000, res.length - 12)));
+                ch.write(res.slice(-12));
+              };
+              if (replyDelay) setTimeout(reply, replyDelay); else reply();
             }
           });
           return;
@@ -174,7 +178,10 @@ const WHEEL_UP = '\x1b[<64;';
   ok(!!(await view()) && execs.length === ex1 + 2, '停一下再往上滚 → 照常打开历史视图');
   await p.click('.term.active .ls-close'); await wait(500);
   // 往上滚一下马上又往下滚回来 (历史还没抓回来)：最后是往下的，不打开
+  // (主机回得慢一点：本机测试里历史 20 毫秒就回来了，比测试里滚轮的间隔还快，谁先到全看运气)
+  replyDelay = 300;
   await overTerm(); await p.mouse.wheel(0, -100); await wait(20); await p.mouse.wheel(0, 100); await p.mouse.wheel(0, 100); await wait(1000);
+  replyDelay = 0;
   ok(!(await view()) && execs.length === ex1 + 3, '往上滚一下又马上往下滚回来 → 历史抓回来也不打开');
   // 打字 → 返回
   await overTerm(); await p.mouse.wheel(0, -100); await wait(1000);
