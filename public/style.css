@@ -127,7 +127,11 @@ label.check { margin: 6px 0 10px; }
 
 main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
 #tabbar { display: flex; align-items: stretch; background: var(--panel); border-bottom: 1px solid var(--border);
-  height: 38px; flex-shrink: 0; }
+  height: 38px; flex-shrink: 0;
+  /* iOS 26 起主屏幕网页 App 顶部有一层系统画的 Liquid Glass 边缘模糊 (比状态栏多延伸 30~40pt，盖住标签)，网页没有开关；
+     只有顶部是 fixed / sticky、带不透明背景、高过约 10px、宽占 90% 以上的元素时，WebKit 才不画模糊、改用它的颜色。
+     标签栏本来就在最上面，改成 sticky 吸顶 (位置、外观不变) */
+  position: sticky; top: 0; z-index: 5; }
 #btnToggle { border: none; border-radius: 0; background: none; padding: 0 12px; }
 #tabs { display: flex; overflow-x: auto; flex: 1; scrollbar-width: none; }
 #tabs::-webkit-scrollbar { display: none; } /* 滚动条会占掉标签的高度；用滚轮 / 两边箭头 / 手指滑动翻 */
