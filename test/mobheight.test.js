@@ -38,6 +38,9 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
 
   // iPhone 全屏 App：页面铺到屏幕边上 (viewport-fit=cover)，输入栏让出底部小横条 (模拟安全区 34px：Chromium 里 env() 是 0)
   ok(/viewport-fit=cover/.test(await p.getAttribute('meta[name=viewport]', 'content')), 'viewport 设了 viewport-fit=cover (iPhone 才报出底部安全区)');
+  // 顶部安全区：iOS 刚打开时报 0、过一会儿才更新，页面会在打开后几秒内自己重新算几次 (Chromium 里安全区一直是 0，只能检查重新算完没有把值写死)
+  const topPad = () => p.evaluate(() => getComputedStyle(document.getElementById('app')).paddingTop);
+  ok(await p.evaluate(() => document.getElementById('app').style.paddingTop) === '' && await topPad() === '0px', '顶部留空用 CSS 的安全区 (没有被写死)');
   await p.addStyleTag({ content: '#mobileBar { padding-bottom: 34px; }' });
   const barPad = () => p.evaluate(() => getComputedStyle(document.getElementById('mobileBar')).paddingBottom);
   ok(await barPad() === '34px', '键盘收着：输入栏底部让出小横条那一条');
