@@ -22,7 +22,7 @@ async function openPage(id) {
   const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
   for (const c of wins) {
     if (new URL(c.url).origin === self.location.origin) {
-      await c.focus();
+      try { await c.focus(); } catch {} // 有的浏览器不让切到前台：照样让页面切到那个标签 (去掉铃铛)
       if (id) c.postMessage({ type: 'open-session', id });
       return;
     }

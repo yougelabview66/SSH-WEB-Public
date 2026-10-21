@@ -309,6 +309,9 @@
       } else if (m.type === 'cli') {
         s.cli.set(m); // 服务器算的终端输入框内容 (包括别的设备上打的字)
       } else if (m.type === 'state') {
+        // 事情已经处理掉了 (Agent 接着干活了 / 从「完成」「待选择」变成别的：在别的设备上看过、回答过)：铃铛去掉
+        const was = s.srvState?.cls;
+        if (m.cls === 'run' || ((was === 'done' || was === 'bad') && m.cls !== was)) s.tab.classList.remove('ring');
         s.srvState = { label: m.label, cls: m.cls, detail: m.detail || '' };
         s.tab.title = s.srvState.detail ? `${s.title}\n${m.label}：${s.srvState.detail}` : s.title; // 鼠标移到标签上也看得到在做什么
         renderDeskTabs();
