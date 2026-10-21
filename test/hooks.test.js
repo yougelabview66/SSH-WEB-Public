@@ -281,6 +281,14 @@ run(async () => {
   await dp.goto(BASE + '/'); await dp.waitForSelector('#app:not(.hidden)'); await wait(2000);
   const card = await dp.evaluate(() => [...document.querySelectorAll('#hostFloat .dp-tab')].map((c) => [c.querySelector('.nm').textContent, c.querySelector('.dt')?.textContent || '']));
   ok(card.some(([n, d]) => n === 'HK2-1' && d === '做完了：又做完了一件'), '电脑：状态悬浮窗的卡片下面写着在做什么: ' + JSON.stringify(card));
+  // 有在做什么时卡片竖着排、悬浮窗固定 300 宽；字很长也不变宽 (省略)
+  const colBox = () => dp.evaluate(() => { const f = document.getElementById('hostFloat'), cs = [...f.querySelectorAll('.dp-tab')].map((c) => c.getBoundingClientRect()); return { w: Math.round(f.getBoundingClientRect().width), lefts: cs.map((c) => Math.round(c.left)), widths: cs.map((c) => Math.round(c.width)), stacked: cs.every((c, i) => !i || c.top >= cs[i - 1].bottom) }; });
+  let cb = await colBox();
+  ok(cb.w === 300 && cb.stacked && new Set(cb.lefts).size === 1 && new Set(cb.widths).size === 1, '电脑：有在做什么时主机卡片竖着一张一行、一样宽，悬浮窗宽 300: ' + JSON.stringify(cb));
+  emit({ hook_event_name: 'Stop', last_assistant_message: '这是一段很长很长的回复'.repeat(8) }); await wait(1500);
+  cb = await colBox();
+  const ell = await dp.evaluate(() => { const d = [...document.querySelectorAll('#hostFloat .dt')].find((x) => x.textContent.includes('很长')); return !!d && d.scrollWidth > d.clientWidth; });
+  ok(cb.w === 300 && ell, '电脑：在做什么很长时悬浮窗不变宽，那行字省略: ' + JSON.stringify(cb));
   await dp.screenshot({ path: require('./helpers').shot('hooks-detail-desk.png'), clip: { x: 840, y: 36, width: 440, height: 160 } });
   const mp = await (await b2.newContext({ ...require('./helpers').devices['Pixel 7'] })).newPage();
   await mp.goto(BASE + '/'); await mp.waitForSelector('#app:not(.hidden)'); await wait(1500);
@@ -291,8 +299,16 @@ run(async () => {
   // 横向占满屏幕 (两边各留 4px)，卡片一张一整行、左右边正好对齐 (当前标签的描边也不能凸出来)
   const fr = await mp.evaluate(() => { const r = document.getElementById('hostFloat').getBoundingClientRect(), c = document.querySelector('#hostFloat .dp-tab').getBoundingClientRect(); const cs = [...document.querySelectorAll('#hostFloat .dp-tab')].map((x) => { const b = x.getBoundingClientRect(), sh = getComputedStyle(x).boxShadow, w = /inset/.test(sh) || sh === 'none' ? 0 : 1; return [b.left - w, b.right + w]; });
     return r.left >= 0 && r.left <= 6 && r.right <= innerWidth && r.right >= innerWidth - 6 && c.width > innerWidth - 40 && cs.every(([l, rr]) => Math.abs(l - cs[0][0]) < 0.5 && Math.abs(rr - cs[0][1]) < 0.5); });
-  ok(list.some(([n, d]) => n === 'HK2-1' && d === '做完了：又做完了一件') && fr, '手机：「⋯ 更多 → 状态卡片」打开，横向占满屏幕，卡片下面也写着在做什么: ' + JSON.stringify(list));
+  ok(list.some(([n, d]) => n === 'HK2-1' && d.startsWith('做完了：这是一段很长')) && fr, '手机：「⋯ 更多 → 状态卡片」打开，横向占满屏幕，卡片下面也写着在做什么: ' + JSON.stringify(list));
   await mp.screenshot({ path: require('./helpers').shot('hooks-detail-mobile.png'), clip: { x: 0, y: 0, width: 412, height: 260 } });
+  // 收起后不占满屏幕，只剩标题栏贴在右边；展开又占满
+  await mp.tap('#hostFloat [data-a=min]'); await wait(500);
+  const mn = await mp.evaluate(() => { const r = document.getElementById('hostFloat').getBoundingClientRect(); return { l: Math.round(r.left), r: Math.round(innerWidth - r.right), w: Math.round(r.width) }; });
+  ok(mn.w < 250 && mn.l > 100 && mn.r >= 0 && mn.r <= 20, '手机：状态卡片收起后不占满屏幕，贴着右边: ' + JSON.stringify(mn));
+  await mp.screenshot({ path: require('./helpers').shot('hooks-min-mobile.png'), clip: { x: 0, y: 0, width: 412, height: 120 } });
+  await mp.tap('#hostFloat [data-a=min]'); await wait(500);
+  const mx = await mp.evaluate(() => { const r = document.getElementById('hostFloat').getBoundingClientRect(); return r.left <= 6 && r.right >= innerWidth - 6; });
+  ok(mx, '手机：再展开又横向占满屏幕');
   await mp.tap('#btnMore');
   ok(await mp.evaluate(() => document.getElementById('btnFloatM').classList.contains('on')), '手机：菜单里「状态卡片」打着勾 (开着)');
   const mw = await mp.evaluate(() => { const r = document.getElementById('morePop').getBoundingClientRect(), b = document.getElementById('btnHooks').getBoundingClientRect(); const t = document.createRange(); t.selectNodeContents(document.getElementById('btnHooks')); const x = t.getBoundingClientRect(); return { w: Math.round(r.width), mid: Math.abs((x.left + x.right) / 2 - (b.left + b.right) / 2) }; });

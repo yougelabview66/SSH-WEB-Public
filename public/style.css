@@ -375,9 +375,10 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 #hostFloat.dragging { opacity: .85; }
 #hostFloat .hf-head { touch-action: none; } /* 手机：按住标题栏拖动时页面不跟着滚 */
 #hostFloat.full { max-width: none; } /* 手机：横向占满屏幕，每张卡片一整行，「在做什么」那行字显示得更长 */
-#hostFloat.full .dp-tab { flex: 1 1 100%; min-width: 0; }
-#hostFloat.full .dp-tab .nm { max-width: none; flex: 1; }
-#hostFloat.full .dp-tab .dt { max-width: none; }
+#hostFloat.col { width: 300px; } /* 电脑：有「在做什么」时固定宽度，不随着那行字变宽 */
+#hostFloat.full .dp-tab, .dp-tabs.col .dp-tab { flex: 1 1 100%; min-width: 0; }
+#hostFloat.full .dp-tab .nm, .dp-tabs.col .dp-tab .nm { max-width: none; flex: 1; }
+#hostFloat.full .dp-tab .dt, .dp-tabs.col .dp-tab .dt { max-width: none; }
 .hf-head { display: flex; align-items: center; gap: 6px; padding: 4px 4px 4px 10px; cursor: move; user-select: none;
   -webkit-user-select: none; touch-action: none; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--border); }
 .hf-head .hf-title { font-weight: 600; white-space: nowrap; }
@@ -657,6 +658,8 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 .foot-links .link { font-size: 12px; padding: 2px; }
 .sidebar-foot .ver { color: var(--muted); font-size: 11px; opacity: .7; padding: 0 2px; }
 .sidebar-foot .ver.old { color: var(--danger); opacity: 1; font-weight: 600; cursor: pointer; }
+.ver-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ver-row #btnHardReload { font-size: 11px; padding: 0 2px; }
 /* 服务器更新了，网页还是旧版本 */
 #verBar { position: fixed; z-index: 70; top: 46px; left: 8px; right: 8px; width: fit-content; margin: 0 auto;
   display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 12px; font-size: 13px; background: var(--panel);
