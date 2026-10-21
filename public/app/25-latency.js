@@ -171,7 +171,7 @@
           if (seq !== self.seq) return;
           self.loaded = true;
           self.path = r.path;
-          pathInput.value = r.path;
+          pathInput.value = showPath(r.path);
           render(r.items);
         } catch (e) {
           if (seq !== self.seq) return;
@@ -279,7 +279,7 @@
         try { await api2('POST', 'mkdir', { path: joinPath(self.path, name) }); self.load(self.path); } catch (err) { alert(err.message); }
       }
     });
-    pathInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') self.load(pathInput.value.trim()); });
+    pathInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') self.load(sftpPath(pathInput.value.trim())); });
     fileInput.addEventListener('change', () => { upload([...fileInput.files]); fileInput.value = ''; });
     list.addEventListener('dragover', (e) => { e.preventDefault(); list.classList.add('drag'); });
     list.addEventListener('dragleave', () => list.classList.remove('drag'));
