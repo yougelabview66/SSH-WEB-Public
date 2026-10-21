@@ -296,19 +296,19 @@ run(async () => {
   ok(await mp.isHidden('#hostFloat'), '手机：状态卡片默认关着 (会盖住一部分终端)');
   await mp.tap('#btnMore'); await mp.tap('#btnFloatM'); await wait(500);
   const list = await mp.evaluate(() => [...document.querySelectorAll('#hostFloat .dp-tab')].map((c) => [c.querySelector('.nm').textContent, c.querySelector('.dt')?.textContent || '']));
-  // 固定 300 宽、贴着右边 (不占满屏幕)，卡片一张一整行、左右边正好对齐 (当前标签的描边也不能凸出来)
+  // 固定 250 宽、贴着右边 (不占满屏幕)，卡片一张一整行、左右边正好对齐 (当前标签的描边也不能凸出来)
   const fr = await mp.evaluate(() => { const r = document.getElementById('hostFloat').getBoundingClientRect(), c = document.querySelector('#hostFloat .dp-tab').getBoundingClientRect(); const cs = [...document.querySelectorAll('#hostFloat .dp-tab')].map((x) => { const b = x.getBoundingClientRect(), sh = getComputedStyle(x).boxShadow, w = /inset/.test(sh) || sh === 'none' ? 0 : 1; return [b.left - w, b.right + w]; });
-    return Math.round(r.width) === 300 && r.left > 20 && r.right <= innerWidth && innerWidth - r.right <= 20 && c.width > 300 - 40 && cs.every(([l, rr]) => Math.abs(l - cs[0][0]) < 0.5 && Math.abs(rr - cs[0][1]) < 0.5); });
-  ok(list.some(([n, d]) => n === 'HK2-1' && d.startsWith('做完了：这是一段很长')) && fr, '手机：「⋯ 更多 → 状态卡片」打开，固定 300 宽贴着右边，卡片一样宽，下面也写着在做什么: ' + JSON.stringify(list));
+    return Math.round(r.width) === 250 && r.left > 20 && r.right <= innerWidth && innerWidth - r.right <= 20 && c.width > 250 - 40 && cs.every(([l, rr]) => Math.abs(l - cs[0][0]) < 0.5 && Math.abs(rr - cs[0][1]) < 0.5); });
+  ok(list.some(([n, d]) => n === 'HK2-1' && d.startsWith('做完了：这是一段很长')) && fr, '手机：「⋯ 更多 → 状态卡片」打开，固定 250 宽贴着右边，卡片一样宽，下面也写着在做什么: ' + JSON.stringify(list));
   await mp.screenshot({ path: require('./helpers').shot('hooks-detail-mobile.png'), clip: { x: 0, y: 0, width: 412, height: 260 } });
-  // 收起后只剩标题栏，按内容宽贴在右边；展开又是 300 宽
+  // 收起后只剩标题栏，按内容宽贴在右边；展开又是 250 宽
   await mp.tap('#hostFloat [data-a=min]'); await wait(500);
   const mn = await mp.evaluate(() => { const r = document.getElementById('hostFloat').getBoundingClientRect(); return { l: Math.round(r.left), r: Math.round(innerWidth - r.right), w: Math.round(r.width) }; });
   ok(mn.w < 250 && mn.l > 100 && mn.r >= 0 && mn.r <= 20, '手机：状态卡片收起后按内容宽，贴着右边: ' + JSON.stringify(mn));
   await mp.screenshot({ path: require('./helpers').shot('hooks-min-mobile.png'), clip: { x: 0, y: 0, width: 412, height: 120 } });
   await mp.tap('#hostFloat [data-a=min]'); await wait(500);
   const mx = await mp.evaluate(() => Math.round(document.getElementById('hostFloat').getBoundingClientRect().width));
-  ok(mx === 300, '手机：再展开又是 300 宽: ' + mx);
+  ok(mx === 250, '手机：再展开又是 250 宽: ' + mx);
   await mp.tap('#btnMore');
   ok(await mp.evaluate(() => document.getElementById('btnFloatM').classList.contains('on')), '手机：菜单里「状态卡片」打着勾 (开着)');
   const mw = await mp.evaluate(() => { const r = document.getElementById('morePop').getBoundingClientRect(), b = document.getElementById('btnHooks').getBoundingClientRect(); const t = document.createRange(); t.selectNodeContents(document.getElementById('btnHooks')); const x = t.getBoundingClientRect(); return { w: Math.round(r.width), mid: Math.abs((x.left + x.right) / 2 - (b.left + b.right) / 2) }; });
