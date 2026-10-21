@@ -45,6 +45,7 @@
   // 路径填到光标处 (前面不是空白就隔一个空格，后面跟一个空格，接着打字)；
   // 下方输入框关着、连按两下 Alt 在终端里直接打字、命令模式时，直接打进终端 (按粘贴发，Claude Code 认得出是文件)
   function insertPaths(s, paths) {
+    paths = paths.map(showPath); // Windows 主机的 /C:/Users/… 去掉最前面的 /
     const text = paths.map((x) => (/[\s'"]/.test(x) ? shellQuote(x) : x)).join(' ') + ' ';
     const join = (v, at) => (at > 0 && !/\s/.test(v[at - 1]) ? ' ' : '') + text;
     if (s !== active) { s.draft = (s.draft || '') + join(s.draft || '', (s.draft || '').length); return; } // 传的时候切走了：放进那个标签的草稿
