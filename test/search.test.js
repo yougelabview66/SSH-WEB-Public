@@ -110,6 +110,7 @@ run(async () => {
   await p.locator('.host', { hasText: 'ST' }).first().click(); await p.waitForSelector('.tab.active .dot.ok'); await wait(1500);
   await p.keyboard.press('Control+Shift+F'); await wait(1500);
   ok(!!(await p.$('.term.active .lscroll')), 'tmux 里：打开搜索时先打开历史视图 (抓 tmux 历史)');
+  ok(await p.evaluate(() => document.activeElement.matches('.tsearch input')), 'tmux 里：历史视图打开后光标还在搜索框里 (不被历史视图抢走)');
   // 用输入法打：组字时不搜；上屏后搜到，焦点和字都还在搜索框里 (以前改选区标出匹配，把输入法正在组的字打断了)
   await compose('deep'); await wait(500);
   ok(await info() === '' && await p.inputValue('.term.active .tsearch input') === 'deep', 'tmux 历史视图：输入法组字时不搜');
@@ -140,6 +141,14 @@ run(async () => {
   await m.tap('#mInput'); await wait(200);
   await m.tap('.term.active .tsearch input'); await wait(400);
   ok(await m.evaluate(() => document.activeElement.matches('.tsearch input')), '手机：点搜索框，光标在搜索框里 (不跑到下方输入栏)');
+  // tmux 标签：第一次打开搜索框 (要先取历史、打开历史视图)，光标一直在搜索框里 (以前历史视图打开时把焦点抢走，输入法弹出来又收起)
+  await m.tap('.term.active .tsearch [data-a=close]'); await wait(300);
+  await m.tap('.tab:has-text("ST-1")'); await wait(1200);
+  if (await m.isVisible('.term.active .owner-notice button')) { await m.tap('.term.active .owner-notice button'); await wait(800); }
+  await m.evaluate(() => { window.__fl = []; document.addEventListener('focusin', (e) => window.__fl.push(e.target.className || e.target.id || e.target.tagName), true); });
+  await m.tap('#btnMore'); await m.tap('#btnSearch'); await wait(2000);
+  const mf = await m.evaluate(() => ({ lscroll: !!document.querySelector('.term.active .lscroll'), focus: document.activeElement.matches('.tsearch input'), log: window.__fl }));
+  ok(mf.lscroll && mf.focus, '手机 tmux 标签：第一次打开搜索框，历史视图打开后光标还在搜索框里: ' + JSON.stringify(mf));
   const mb = await m.evaluate(() => { const r = document.querySelector('.term.active .tsearch')?.getBoundingClientRect(); return r && { l: r.left, r: r.right, w: innerWidth }; });
   ok(!!mb && mb.l >= 0 && mb.r <= mb.w, '手机：「⋯ → 搜索历史」打开，搜索框在屏幕里: ' + JSON.stringify(mb));
   await m.screenshot({ path: shot('search-mobile.png'), clip: { x: 0, y: 0, width: 412, height: 140 } });
