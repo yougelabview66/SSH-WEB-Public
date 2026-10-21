@@ -1,7 +1,10 @@
 'use strict';
-// 服务器版本和网页不一样时提醒刷新
+// 服务器版本和网页不一样时提醒刷新；「刷新页面」和红色版本号都是清缓存再刷新 (网页和用到的文件绕过缓存重新下载)
 const { BASE, ok, wait, shot, launch, devices } = require('./helpers');
 const VERSION = require('../package.json').version;
+// 记下刷新前页面用 fetch 重新下载了哪些文件 (清缓存刷新会先 fetch(…, { cache: 'reload' }) 一遍；普通刷新不会发这些 fetch。
+// 刷新以后之前请求的完整请求头读不到了，所以只看有没有这些 fetch)
+const watchFresh = (pg) => { const reqs = []; pg.on('request', (r) => { if (r.resourceType() === 'fetch') reqs.push(new URL(r.url()).pathname); }); return async () => reqs; };
 (async () => {
   const browser = await launch();
   const errors = [];
@@ -32,7 +35,13 @@ const VERSION = require('../package.json').version;
   ok(n1 > 0 && await p.evaluate(() => window.__ws.length) > n0 && await p.isHidden('#verBar'), `连接断开后自动重连 (${n1} 条)，收到同一个新版本：点过 × 不再弹`);
   // 刷新成新版本
   await p.unroute(BASE + '/');
-  await p.evaluate(() => location.reload()); await p.waitForSelector('#app:not(.hidden)'); await wait(1500);
+  const fresh = watchFresh(p);
+  const nav = p.waitForNavigation({ timeout: 15000 }).then(() => true, () => false);
+  await p.click('.sidebar-foot .ver'); // 红色版本号
+  ok(await nav, '点红色版本号：刷新页面');
+  await p.waitForSelector('#app:not(.hidden)'); await wait(1500);
+  const fr = await fresh();
+  ok(fr.includes('/') && fr.includes('/app.js') && fr.includes('/style.css'), '刷新前先重新下载网页、app.js、style.css (清缓存): ' + JSON.stringify(fr));
   ok(await p.isHidden('#verBar') && await p.evaluate(() => document.querySelector('.sidebar-foot .ver').textContent) === `SSH-WEB v${VERSION}`, '刷新后网页是新版本，提醒消失');
   // 手机也一样
   const m = await (await browser.newContext({ ...devices['Pixel 7'] })).newPage(); m.on('pageerror', (e) => errors.push(e.message));
@@ -40,8 +49,10 @@ const VERSION = require('../package.json').version;
   await m.goto(BASE + '/'); await m.waitForSelector('#app:not(.hidden)'); await wait(1500);
   ok(await m.isVisible('#verBar'), '手机：版本不一致也提醒');
   await m.screenshot({ path: shot('version-mobile.png') });
-  await m.click('#verBar .vb-reload'); await m.waitForSelector('#app:not(.hidden)'); await wait(1500);
-  ok(await m.isVisible('#verBar'), '点「刷新页面」会重新加载 (这里拦截还在，所以仍是旧版本、仍提醒)');
+  const mfresh = watchFresh(m);
+  await m.click('#verBar .vb-reload'); await wait(500); await m.waitForSelector('#app:not(.hidden)'); await wait(1500);
+  const mfr = await mfresh();
+  ok(await m.isVisible('#verBar') && mfr.includes('/') && mfr.includes('/app.js'), '点「刷新页面」：先清缓存 (绕过缓存重新下载网页和文件) 再重新加载 (这里拦截还在，所以仍是旧版本、仍提醒): ' + JSON.stringify(mfr));
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
   await browser.close(); process.exit();
 })().catch((e) => { console.error(e); process.exit(1); });
