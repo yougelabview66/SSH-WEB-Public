@@ -10,6 +10,7 @@ const HIST = [];
 for (let i = 0; i < 300; i++) HIST.push(i === 20 ? '早先的输出 win-old-line' : `psmux history line ${i}`);
 const cmds = [];
 let mode = '00';
+let shellSt = null, shellIn = ''; // 终端里收到的输入 (看浏览器自动回答了什么)
 new Server({ hostKeys: [hostKey()] }, (c) => {
   c.on('authentication', (ctx) => ctx.accept());
   c.on('ready', () => c.on('session', (acc) => {
@@ -17,7 +18,7 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
     s.on('pty', (a) => a()); s.on('window-change', (a) => a && a());
     // 像 psmux：备用屏幕 + 鼠标，屏幕上是最后几十行
     // 像 Windows 的 SSH (ConPTY)：psmux 开了鼠标，但进备用屏幕的信号没传过来 (还在普通屏幕上)
-    s.on('shell', (a) => a().write('\x1b[?1000h\x1b[?1006h\x1b[H\x1b[2J' + HIST.slice(-20).join('\r\n') + '\x1b[999;1H\x1b[42m[0] 0:pwsh*\x1b[K\x1b[0m'));
+    s.on('shell', (a) => { shellSt = a(); shellSt.on('data', (d) => { shellIn += d; }); shellSt.write('\x1b[?1000h\x1b[?1006h\x1b[H\x1b[2J' + HIST.slice(-20).join('\r\n') + '\x1b[999;1H\x1b[42m[0] 0:pwsh*\x1b[K\x1b[0m'); });
     s.on('exec', (a, r, info) => {
       const ch = a(), cmd = info.command;
       cmds.push(cmd);
@@ -48,6 +49,10 @@ run(async () => {
   await p.locator('.host', { hasText: 'WINT' }).first().click(); await p.waitForSelector('.tab.active .dot.ok'); await wait(1200);
   // Windows 主机：终端开了 windowsPty (缩放时不自己重新折行，交给 ConPTY 重画，不然文字错乱)
   ok(await p.evaluate(() => document.querySelector('.term.active').dataset.winpty) === '1', 'Windows 主机：认出来后终端按 ConPTY 的方式处理缩放 (windowsPty)');
+  // 程序发来的询问 (psmux 会转给外面的终端)：终端型号、模式、背景色、光标位置 —— Windows 上只回答光标位置，别的回答会被当成键盘输入
+  shellIn = '';
+  shellSt.write('\x1b[c\x1b[?2026$p\x1b]11;?\x07\x1b[6n'); await wait(800);
+  ok(/^\x1b\[\d+;\d+R$/.test(shellIn), 'Windows 主机：只回答光标位置，终端型号 / 模式 / 颜色的回答不发 (不会变成乱文字打进 Claude 的输入框): ' + JSON.stringify(shellIn));
   const overTerm = async () => { const b = await p.locator('.term.active .term-box').boundingBox(); await p.mouse.move(b.x + b.width / 2, b.y + b.height / 2); };
   const viewText = () => p.evaluate(() => document.querySelector('.term.active .lscroll .ls-body')?.textContent || '');
   await overTerm(); await p.mouse.wheel(0, -100); await wait(2500);

@@ -80,7 +80,13 @@
       data = filterMouse(data); // 点击时手抖 / 连点两下：不让 tmux 当成拖动选字 / 双击选词 (见 DRAG_PX / DBL_MS)
       if (!data) return;
       // 终端对程序询问的自动应答 (不是用户打的字)：服务端不算输入，不影响主机状态和打字预测
-      if (TERM_REPLY_RE.test(data)) return send(s, { type: 'data', data, auto: true });
+      if (TERM_REPLY_RE.test(data)) {
+        // Windows 主机：psmux 把程序的询问转给外面的终端，回答经 ConPTY 回去时被当成键盘输入 (ESC 被吃掉，
+        // 剩下的 y、c、rgb:…、\ 打进 Claude 的输入框)。只留光标位置 / 状态报告 (ConPTY 启动时要)，别的不回答
+        if (s.winHost) data = (data.match(/\x1b\[\??[\d;]*[Rn]/g) || []).join('');
+        if (data) send(s, { type: 'data', data, auto: true });
+        return;
+      }
       if (data === '\r') beginCapture(s);
       send(s, { type: 'data', data });
     });

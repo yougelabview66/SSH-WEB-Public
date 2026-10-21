@@ -30,14 +30,14 @@ g('mv', 'sub/中文 名.txt', 'sub/renamed.txt');
 fs.mkdirSync(path.join(repo, 'node_modules', 'pkg'), { recursive: true });
 fs.writeFileSync(path.join(repo, 'node_modules', 'pkg', 'renamed-in-deps.txt'), 'x\n'); // 被 .gitignore 跳过：搜不到
 
-let got = '';
+let got = '', shellSt = null;
 const kids = [];
 new Server({ hostKeys: [hostKey()] }, (c) => {
   c.on('authentication', (ctx) => ctx.accept());
   c.on('ready', () => c.on('session', (acc) => {
     const s = acc();
     s.on('pty', (a) => a()); s.on('window-change', (a) => a && a());
-    s.on('shell', (a) => { const st = a(); st.write('$ '); st.on('data', (d) => { got += d; }); });
+    s.on('shell', (a) => { const st = shellSt = a(); st.write('$ '); st.on('data', (d) => { got += d; }); });
     s.on('exec', (a, r, info) => {
       const ch = a();
       if (info.command.includes('hook.log') || info.command === 'sh') return;
@@ -86,6 +86,9 @@ run(async () => {
   // 终端里「正在跑的程序」：带这个标签的标记 (LC_SSHWEB)，当前目录在仓库的子目录里
   kids.push(spawn('sleep', ['300'], { cwd: path.join(repo, 'sub'), env: { LC_SSHWEB: sid, PATH: process.env.PATH }, stdio: 'ignore' }));
   ok(!(await p.evaluate(() => document.querySelector('.term.active').dataset.winpty)), 'Linux 主机：不开 windowsPty (照常重新折行)');
+  got = '';
+  shellSt.write('\x1b[c\x1b]11;?\x07\x1b[6n'); await wait(800);
+  ok(/\x1b\[\?[\d;]*c/.test(got) && /rgb:/.test(got) && /\x1b\[\d+;\d+R/.test(got), 'Linux 主机：终端型号、颜色、光标位置照常回答: ' + JSON.stringify(got));
   const termW = () => p.evaluate(() => Math.round(document.querySelector('.term.active .term-box').getBoundingClientRect().width));
   const w0 = await termW();
   const RB = '#rightBar';
