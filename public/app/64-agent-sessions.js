@@ -1,5 +1,6 @@
   // ------------------------------------------------------------ Agent 会话历史 (服务端见 lib/agent-sessions.js)
-  // 「⋯ 更多 → 会话历史」：这台主机上 Claude Code / Grok / Codex / Gemini / OpenCode 以前的会话，按最近排；
+  // 「⋯ 更多 → 会话历史」弹窗，和「历史」面板里的「💬 会话历史」选项卡 (见 50-history.js) 用的是同一个部件 (agentSessionsView)：
+  // 这台主机上 Claude Code / Grok / Codex / Gemini / OpenCode 以前的会话，按最近排；
   // 打字筛选列出来的 (标题、第一句话、目录)，回车或点「搜索」在全部会话内容里搜；「继续」在当前终端执行恢复命令，「复制」复制这条命令
   let asEl = null;
   const AS_AGENTS = [['claude', 'Claude'], ['grok', 'Grok'], ['codex', 'Codex'], ['gemini', 'Gemini'], ['opencode', 'OpenCode']];
@@ -23,17 +24,29 @@
   function openAgentSessions(s) {
     closeAgentSessions();
     const el = asEl = document.createElement('div');
-    let agent = (() => { try { return localStorage.getItem('sshweb.asAgent') || 'claude'; } catch { return 'claude'; } })();
-    if (!AS_AGENTS.some(([id]) => id === agent)) agent = 'claude';
-    let items = [], q = '', seq = 0;
     el.className = 'overlay agentsp';
     el.innerHTML = `<div class="card wide as-card">
       <div class="hist-head"><h3>💬 会话历史</h3><button type="button" data-a="close" title="关闭 (Esc)">×</button></div>
-      <div class="as-tabs">${AS_AGENTS.map(([id, n]) => `<button type="button" data-agent="${id}">${n}</button>`).join('')}</div>
+    </div>`;
+    const view = agentSessionsView(s, closeAgentSessions);
+    $('.as-card', el).appendChild(view.el);
+    el.addEventListener('click', (e) => { if (e.target === el || e.target.closest('[data-a=close]')) closeAgentSessions(); });
+    document.addEventListener('keydown', asKey, true);
+    document.body.appendChild(el);
+    if (!isTouch) view.focus();
+  }
+
+  // 会话历史部件：返回 { el, focus }。done = 点了「继续」以后关掉外面的面板
+  function agentSessionsView(s, done) {
+    const el = document.createElement('div');
+    let agent = (() => { try { return localStorage.getItem('sshweb.asAgent') || 'claude'; } catch { return 'claude'; } })();
+    if (!AS_AGENTS.some(([id]) => id === agent)) agent = 'claude';
+    let items = [], q = '', seq = 0;
+    el.className = 'as-view';
+    el.innerHTML = `<div class="as-tabs">${AS_AGENTS.map(([id, n]) => `<button type="button" data-agent="${id}">${n}</button>`).join('')}</div>
       <div class="as-search"><input type="search" placeholder="筛选标题、第一句话、目录 · 回车搜全部内容" enterkeyhint="search" spellcheck="false" autocomplete="off" autocapitalize="off"><button type="button" data-a="search" class="primary" title="在全部会话内容里搜 (回车)">搜索</button></div>
       <div class="as-info hint"></div>
-      <div class="as-list"></div>
-    </div>`;
+      <div class="as-list"></div>`;
     const list = $('.as-list', el), info = $('.as-info', el), input = $('.as-search input', el);
     const host = s.baseTitle || s.title;
     const filtered = () => {
@@ -43,7 +56,7 @@
     const render = () => {
       el.querySelectorAll('.as-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.agent === agent));
       const shown = filtered();
-      list.innerHTML = shown.map((x, i) => `<div class="as-row" data-i="${items.indexOf(x)}">
+      list.innerHTML = shown.map((x) => `<div class="as-row" data-i="${items.indexOf(x)}">
           <div class="as-main"><div class="as-title">${esc(x.title || x.prompt || '(没有标题)')}</div>
             ${x.title && x.prompt ? `<div class="as-prompt">${esc(x.prompt)}</div>` : ''}
             <div class="as-meta">${esc(x.cwd || '目录不明')} · ${fmtAgo(x.mtime)} · ${fmtSize(x.size)}</div></div>
@@ -57,13 +70,13 @@
       list.innerHTML = '';
       try {
         const r = await api('POST', '/api/agent-sessions', { sid: s.sid, agent, q });
-        if (asEl !== el || my !== seq) return;
+        if (my !== seq) return;
         items = r.sessions;
         info.textContent = `${host} · ${q ? `含「${q}」的 ` : '最近 '}${items.length} 个会话${r.more ? '（只列最近的）' : ''}`
           + (AS_TESTED.includes(agent) ? '' : ' · 未实测：照着 Orca 的做法读的，有问题告诉我');
         render();
       } catch (e) {
-        if (asEl === el && my === seq) { info.textContent = '读取失败：' + e.message; items = []; render(); }
+        if (my === seq) { info.textContent = '读取失败：' + e.message; items = []; render(); }
       }
     };
     input.addEventListener('input', () => {
@@ -74,7 +87,6 @@
       if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); q = input.value.trim(); load(); }
     });
     el.addEventListener('click', async (e) => {
-      if (e.target === el || e.target.closest('[data-a=close]')) return closeAgentSessions();
       if (e.target.closest('[data-a=search]')) { q = input.value.trim(); return load(); }
       const tab = e.target.closest('.as-tabs [data-agent]');
       if (tab) {
@@ -95,13 +107,11 @@
         const st = s.srvState?.cls;
         const warn = st === 'run' || st === 'bad' ? '\n\n注意：这个标签里好像有程序在运行，命令会打进那个程序里，最好先退出它。' : '';
         if (!confirm(`在当前终端执行：\n${x.cmd}${warn}`)) return;
-        closeAgentSessions();
+        done();
         send(s, { type: 'data', data: x.cmd + '\r' });
         focusTerm(s);
       }
     });
-    document.addEventListener('keydown', asKey, true);
-    document.body.appendChild(el);
-    if (!isTouch) input.focus();
     load();
+    return { el, focus: () => input.focus() };
   }

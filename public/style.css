@@ -277,11 +277,13 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 /* 会话历史 */
 .as-card { width: 640px; display: flex; flex-direction: column; max-height: 86vh; }
 .as-card .hist-head button { padding: 2px 10px; }
+.as-view { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+#histAgents { flex: 1; min-height: 0; display: flex; flex-direction: column; margin-bottom: 12px; }
 .as-tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
 .as-tabs button { padding: 4px 12px; font-size: 13px; border-radius: 14px; }
 .as-tabs button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 .as-search { display: flex; gap: 6px; }
-.as-search input { flex: 1; min-width: 0; box-sizing: border-box; }
+.as-search input { flex: 1; min-width: 0; box-sizing: border-box; margin: 0; }
 .as-search button { flex-shrink: 0; padding: 4px 14px; }
 .as-info { margin: 6px 0; }
 .as-list { flex: 1; min-height: 120px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
@@ -378,6 +380,7 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 #deskBar.cmd #dInput::placeholder { color: var(--accent); }
 #mobileBar.cmd #mInput { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
 #deskBar #dHide { width: 32px; color: var(--muted); }
+#deskBar #dAttach { width: 40px; }
 #deskBar #dMode { font-size: 13px; }
 /* 主机状态卡片 (悬浮窗 / 置顶小窗口 / 全部标签列表) */
 .dp-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
