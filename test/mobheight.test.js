@@ -41,6 +41,10 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   ok(!/viewport-fit/.test(await p.getAttribute('meta[name=viewport]', 'content')), '不用 viewport-fit=cover：顶部由 iOS 自己让出状态栏，不会有磨砂挡住标签');
   ok(await p.getAttribute('meta[name=apple-mobile-web-app-status-bar-style]', 'content') === 'black', '状态栏是纯黑底白字 (black)：没有磨砂，不盖在页面上');
   ok(await p.evaluate(() => document.documentElement.classList.contains('ios-app')), '从主屏幕打开 (iPhone 13)：认出是 iOS 全屏 App');
+  // iOS 26+ 顶部边缘模糊：只在顶部有 fixed / sticky、不透明背景、高过约 10px、宽占 90% 以上的元素时不画 —— 标签栏要满足
+  const tb = await p.evaluate(() => { const t = document.getElementById('tabbar'), cs = getComputedStyle(t), r = t.getBoundingClientRect();
+    return { pos: cs.position, top: r.top, h: r.height, wr: r.width / innerWidth, bg: cs.backgroundColor }; });
+  ok(['sticky', 'fixed'].includes(tb.pos) && tb.top === 0 && tb.h > 10 && tb.wr >= 0.9 && !/rgba\(.*, 0\)|transparent/.test(tb.bg), '标签栏在最顶上、吸顶 (sticky)、不透明、占满宽度：iOS 不画边缘模糊盖住它: ' + JSON.stringify(tb));
   const barPad = () => p.evaluate(() => getComputedStyle(document.getElementById('mobileBar')).paddingBottom);
   ok(await barPad() === '34px', '键盘收着：输入栏底部让出小横条 34px');
 
