@@ -74,7 +74,7 @@
       });
     }
     // 历史视图打开时输入栏藏起来、终端区域变高，先不重新排版 (免得 tmux 整屏重画)，关掉后尺寸又和原来一样
-    s.ro = new ResizeObserver(() => { if (active === s && !s.scrollView) s.fit.fit(); });
+    s.ro = new ResizeObserver(() => { if (active === s && !s.scrollView && !rbResizing) s.fit.fit(); }); // 拖右边栏宽度时先不排，松手再排 (见 66-right-bar.js)
     s.ro.observe(s.box);
     s.term.onData((data) => {
       data = filterMouse(data); // 点击时手抖 / 连点两下：不让 tmux 当成拖动选字 / 双击选词 (见 DRAG_PX / DBL_MS)
@@ -263,6 +263,11 @@
         // 画面还在，服务端接着补发断开期间的输出
         doneRestoring(s);
         if (active === s) syncSize(s);
+      } else if (m.type === 'winpty') {
+        // Windows 主机：终端隔着 ConPTY，缩放时不自己重新折行，交给 ConPTY 重画 (见 lib/session/index.js 的 detectWinPty)
+        s.term.options.windowsPty = m.on ? { backend: 'conpty' } : undefined;
+        s.winHost = !!m.on;
+        s.el.dataset.winpty = m.on ? '1' : '';
       } else if (m.type === 'status') {
         s.sid = m.status === 'connected' ? m.sid : null;
         setStatus(s, m.status === 'connected' ? 'ok' : m.status === 'connecting' ? 'wait' : 'bad');

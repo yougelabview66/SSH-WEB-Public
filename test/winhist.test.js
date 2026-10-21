@@ -46,6 +46,8 @@ run(async () => {
   const errors = []; p.on('pageerror', (e) => errors.push(e.message));
   await p.goto(BASE + '/'); await p.waitForSelector('#app:not(.hidden)');
   await p.locator('.host', { hasText: 'WINT' }).first().click(); await p.waitForSelector('.tab.active .dot.ok'); await wait(1200);
+  // Windows 主机：终端开了 windowsPty (缩放时不自己重新折行，交给 ConPTY 重画，不然文字错乱)
+  ok(await p.evaluate(() => document.querySelector('.term.active').dataset.winpty) === '1', 'Windows 主机：认出来后终端按 ConPTY 的方式处理缩放 (windowsPty)');
   const overTerm = async () => { const b = await p.locator('.term.active .term-box').boundingBox(); await p.mouse.move(b.x + b.width / 2, b.y + b.height / 2); };
   const viewText = () => p.evaluate(() => document.querySelector('.term.active .lscroll .ls-body')?.textContent || '');
   await overTerm(); await p.mouse.wheel(0, -100); await wait(2500);
