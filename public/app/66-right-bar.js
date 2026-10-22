@@ -40,6 +40,11 @@
     applyRb();
     if (rbState === 'open' && rb.s) (tab === 'files' ? pfRender() : gpRender());
   }
+  // 右边栏最宽：窗口的 60%，而且给中间的终端留 360px (左边主机列表开着时也算上，不然顶栏按钮挤到右边栏上)
+  function rbMax() {
+    const sb = $('#sidebar'), sw = getComputedStyle(sb).position === 'fixed' ? 0 : sb.getBoundingClientRect().width;
+    return Math.max(300, Math.min(Math.round(innerWidth * 0.6), Math.round(innerWidth - sw - 360)));
+  }
   function applyRb() {
     const on = rbState === 'open' && !!active;
     rightBar.classList.toggle('hidden', !on);
@@ -47,7 +52,7 @@
     rightRail.classList.toggle('hidden', !(rbState === 'collapsed' && active && !isTouch));
     rightBar.querySelectorAll('.rb-tabs [data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === rbTab));
     rightBar.querySelectorAll('.rb-pane').forEach((p) => p.classList.toggle('hidden', p.dataset.tab !== rbTab));
-    if (!isTouch && !rbResizing) rightBar.style.width = Math.min(Math.max(+lsGet('sshweb.rbW', 440) || 440, 300), Math.round(innerWidth * 0.6)) + 'px'; // 拖着的时候不改回去
+    if (!isTouch && !rbResizing) rightBar.style.width = Math.min(Math.max(+lsGet('sshweb.rbW', 440) || 440, 300), rbMax()) + 'px'; // 拖着的时候不改回去
   }
   // 换了标签：右边栏跟着换成那个标签的项目
   function rbSync(force) {
@@ -476,7 +481,7 @@
     const x0 = e.clientX, w0 = rightBar.getBoundingClientRect().width;
     rightBar.classList.add('resizing');
     rbResizing = true;
-    const move = (ev) => { rightBar.style.width = Math.min(Math.max(w0 - (ev.clientX - x0), 300), Math.round(innerWidth * 0.6)) + 'px'; };
+    const max = rbMax(), move = (ev) => { rightBar.style.width = Math.min(Math.max(w0 - (ev.clientX - x0), 300), max) + 'px'; };
     const up = () => {
       h.removeEventListener('pointermove', move); h.removeEventListener('pointerup', up); h.removeEventListener('pointercancel', up);
       rightBar.classList.remove('resizing');

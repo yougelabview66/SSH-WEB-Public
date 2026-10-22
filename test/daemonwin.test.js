@@ -187,7 +187,10 @@ run(async () => {
   const errors = []; p.on('pageerror', (e) => errors.push(e.message));
   await p.goto(BASE + '/'); await p.waitForSelector('#app:not(.hidden)');
   const row = p.locator('.host', { hasText: 'DW' }).first();
-  ok(await row.locator('.badge', { hasText: '常驻' }).count() === 1, '主机列表上标「常驻」');
+  const badge = row.locator('.badge', { hasText: '常驻' });
+  const look = await badge.evaluate((e) => { const cs = getComputedStyle(e); return { color: cs.color, accent: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() }; }).catch(() => null);
+  await badge.screenshot({ path: require('./helpers').shot('daemon-badge.png') }).catch(() => {});
+  ok(await badge.count() === 1 && look && look.color !== 'rgb(255, 255, 255)', '主机列表上标「常驻」(主题绿的淡色标记，不是橙底白字): ' + JSON.stringify(look));
   await row.hover(); await row.locator('[data-op=edit]').click();
   ok(await p.isChecked('#hostForm [name=winDaemon]'), '编辑主机：「Windows 常驻会话」勾着');
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
