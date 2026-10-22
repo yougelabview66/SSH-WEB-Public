@@ -34,8 +34,8 @@ Detailed feature notes (Chinese): [docs/功能详细说明.md](docs/功能详细
 ## Quick start
 
 ```bash
-git clone https://github.com/yougelabview66/SSH-WEB.git
-cd SSH-WEB
+git clone https://github.com/yougelabview66/SSH-WEB-Public.git
+cd SSH-WEB-Public
 # set AUTH_PASSWORD in docker-compose.yml first
 docker compose up -d --build
 ```

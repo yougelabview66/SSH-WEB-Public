@@ -34,8 +34,8 @@
 ## 快速部署
 
 ```bash
-git clone https://github.com/yougelabview66/SSH-WEB.git
-cd SSH-WEB
+git clone https://github.com/yougelabview66/SSH-WEB-Public.git
+cd SSH-WEB-Public
 # 先改 docker-compose.yml 里的 AUTH_PASSWORD
 docker compose up -d --build
 ```

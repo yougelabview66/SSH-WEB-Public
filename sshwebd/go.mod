@@ -1,4 +1,4 @@
-module github.com/yougelabview66/SSH-WEB/sshwebd
+module github.com/yougelabview66/SSH-WEB-Public/sshwebd
 
 go 1.26.0
 

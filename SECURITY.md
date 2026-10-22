@@ -5,7 +5,7 @@ SSH-WEB holds SSH credentials and opens shells on your servers, so security repo
 ## Reporting a vulnerability
 
 Please **do not open a public issue**. Report privately through GitHub's
-[private vulnerability reporting](https://github.com/yougelabview66/SSH-WEB/security/advisories/new)
+[private vulnerability reporting](https://github.com/yougelabview66/SSH-WEB-Public/security/advisories/new)
 (Security → Report a vulnerability), including steps to reproduce and the affected version
 (shown at the bottom of the side bar).
 
