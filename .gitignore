@@ -1,3 +1,6 @@
 node_modules
 data
 .env
+# sshwebd 编出来的程序 (Docker 构建时编)
+/sshwebd/sshwebd
+/sshwebd/*.exe
