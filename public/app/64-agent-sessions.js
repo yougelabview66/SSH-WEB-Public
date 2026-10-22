@@ -117,7 +117,8 @@
         if (!confirm(`在当前终端执行：\n${x.cmd}\n\n这个标签里开着 Agent (Claude Code 等) 的话，会先退出它再执行。`)) return;
         done();
         focusTerm(s);
-        api('POST', '/api/agent-sessions/resume', { sid: s.sid, cmd: x.cmd }).catch((err) => alert(err.message));
+        const name = `${(AS_AGENTS.find(([id]) => id === agent) || [, 'Claude'])[1]}：${x.title || x.prompt || x.id}`; // 常驻会话的选择框里显示
+        api('POST', '/api/agent-sessions/resume', { sid: s.sid, cmd: x.cmd, name }).catch((err) => alert(err.message));
       }
     });
     load();
