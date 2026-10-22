@@ -16,6 +16,31 @@ Browser (xterm.js) ──WebSocket──> SSH-WEB (Node.js + ssh2) ──SSH─�
                                                           └─WSS (Cloudflare)──> cloudflared ──> host:22
 ```
 
+## Why SSH-WEB
+
+Most web SSH clients are a terminal in a browser tab: close the tab and the session is gone, and on a phone they are barely usable. SSH-WEB is built around a different workflow — **an AI agent works on a remote machine for an hour while you check in from wherever you are.**
+
+- **Nothing is lost when you leave.** The SSH connection is held by the server, not the browser. Close the laptop, switch networks, lock the phone — when you come back, the tab, the screen and the scrollback are exactly where you left them. No tmux required (it still works fine with tmux).
+- **It knows what your agent is doing.** Each tab shows whether Claude Code is running, finished or waiting for you, with the task it is on. You get a push notification when it needs a decision, and on Android you can approve or deny a tool call straight from the notification.
+- **Actually usable on a phone.** An input bar that plays well with Chinese/Japanese IMEs, Esc / Tab / Ctrl / arrow keys one tap away, local echo prediction on slow mobile links, and smooth scrolling through tmux history. Start a task on the desktop, continue on the phone — one device drives the layout at a time, so the screen never reflows back and forth.
+- **Review the agent's work without leaving the terminal.** Browse the project, see what changed, leave comments on specific lines and send them back to the agent as one message.
+- **Zero client install.** Only a browser is needed. Hosts behind NAT can be reached through a Cloudflare Tunnel without installing `cloudflared` on the device you are using.
+- **Light enough for a NAS.** One Node.js container, no database (data is a few JSON files), all front-end assets bundled — it works on an offline LAN.
+- **Safe defaults.** Without a password it only answers on localhost; saved credentials are encrypted; host keys are verified like OpenSSH; logins are rate limited.
+- **Windows is a first-class target**, with cmd / PowerShell handling and optional persistent sessions through the bundled sshwebd daemon.
+- **Well tested.** 60+ end-to-end tests drive a real browser against mock SSH servers.
+
+## Use cases
+
+- **Run Claude Code (or Codex, Gemini …) on a home server, NAS or cloud VM** and keep an eye on it from your phone — get notified when it finishes or needs approval, answer, and put the phone away.
+- **One dashboard for all your machines.** NAS, VPS, GPU box and the Windows PC in one tab bar, with a status card showing which ones are busy, done or waiting.
+- **Long-running jobs** such as model training, builds or backups: start them, close the browser, get a notification when they end.
+- **Reach your homelab from anywhere**, including a borrowed or locked-down computer with no SSH client, through HTTPS or a Cloudflare Tunnel.
+- **Quick code review of agent changes**: read the diff on the side bar, annotate lines, send the notes back to the agent.
+- **Preview what the agent built**: open a dev server running on the remote host (e.g. `localhost:5173`) in your browser through the built-in port forwarder.
+
+SSH-WEB is a single-user tool: one login protects everything. It is not meant for teams that need per-user accounts and permissions.
+
 ## Features
 
 - **Persistent sessions** — SSH connections live on the server. Close the browser or lose the network, reopen, and every tab, screen and scrollback is restored. Open the same tab on phone and desktop at once.
