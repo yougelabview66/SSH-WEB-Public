@@ -1,6 +1,6 @@
 'use strict';
 // @env SSHWEBD_EXE=/tmp/sshweb-dw-sshwebd.exe
-// Windows 常驻会话 (sshwebd)：主机设置里打开后，连上时开一个不要终端的通道跑 ~/.ssh-web/ 里的 sshwebd bridge，
+// 常驻会话 (Windows) (sshwebd)：主机设置里打开后，连上时开一个不要终端的通道跑 ~/.ssh-web/ 里的 sshwebd bridge，
 // 终端在守护进程里 (服务器上有 sshwebd.exe 就先传过去)。这里模拟一台 Windows 主机 (SSH 默认 cmd)，bridge 用真的 sshwebd (Linux 版，用 sshwebd/ 的源码编，
 // 或者 SSHWEBD_BIN 指定)：打字、断网后重新连上接着用 (只补发没收到的)、关了标签再开一个选「接上」、exit 结束
 const fs = require('fs');
@@ -118,7 +118,7 @@ function tab(hostId, title) {
 run(async () => {
   if (!BIN) { ok(true, '(没有 Go，也没设 SSHWEBD_BIN：跳过常驻会话测试)'); return; }
   const host = await addHost('DW', 2321, { winDaemon: true });
-  ok(host.winDaemon === true, '主机设置里记下「Windows 常驻会话」');
+  ok(host.winDaemon === true, '主机设置里记下「常驻会话」');
 
   // ---- 0. 主机上、服务器上都没有 sshwebd.exe (服务器上的路径用 SSHWEBD_EXE 指到一个不存在的文件)：提示放到哪里，改用普通终端
   const z = tab(host.id, 'DW');
@@ -248,10 +248,10 @@ run(async () => {
   await badge.screenshot({ path: require('./helpers').shot('daemon-badge.png') }).catch(() => {});
   ok(await badge.count() === 1 && look && look.color !== 'rgb(255, 255, 255)', '主机列表上标「常驻」(主题绿的淡色标记，不是橙底白字): ' + JSON.stringify(look));
   await row.hover(); await row.locator('[data-op=edit]').click();
-  ok(await p.isChecked('#hostForm [name=winDaemon]'), '编辑主机：「Windows 常驻会话」勾着');
+  ok(await p.isChecked('#hostForm [name=winDaemon]'), '编辑主机：「常驻会话」勾着');
   await p.keyboard.press('Escape'); await wait(300);
   await p.click('#btnNew'); await wait(300);
-  ok(await p.isChecked('#hostForm [name=winDaemon]'), '新建主机：「Windows 常驻会话」默认勾上');
+  ok(await p.isChecked('#hostForm [name=winDaemon]'), '新建主机：「常驻会话」默认勾上');
   await p.keyboard.press('Escape'); await wait(300);
   // 留一个没人接着的会话，再在网页上打开这台主机：弹出列表 (同会话历史的样子)，点两下「删除」结束它，删光了就新建
   const e0 = tab(host.id, 'DW');

@@ -2,7 +2,7 @@
 // 会话历史点「继续」：标签里还开着 Agent (Claude Code 等) 时，恢复命令会打进它的输入框 ——
 // 先按两下 Ctrl+C 退出它，等 Agent 的界面没了 (回到 shell) 再执行；普通 shell 直接执行、不多按 Ctrl+C；
 // 退不出来就不执行，提示手动退出。
-// 这台是 Linux 主机，勾着「Windows 常驻会话」(新建主机默认勾上)：安静地开普通终端，不提示「常驻会话没开起来」，主机列表上不标「常驻」
+// 这台是 Linux 主机，勾着「常驻会话」(新建主机默认勾上)：安静地开普通终端，不提示「常驻会话没开起来」，主机列表上不标「常驻」
 const { Server } = require('ssh2');
 const { BASE, ok, wait, run, hostKey, addHost } = require('./helpers');
 const WebSocket = require('ws');

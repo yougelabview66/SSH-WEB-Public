@@ -1,5 +1,5 @@
 'use strict';
-// sshwebd (sshwebd/ 目录，Windows 常驻会话的守护程序，Go 写的)：go vet (含 Windows 版) 和它自己的测试
+// sshwebd (sshwebd/ 目录，常驻会话 (Windows)的守护程序，Go 写的)：go vet (含 Windows 版) 和它自己的测试
 // (在 Linux 上真跑守护进程、bridge、断开重连、补发、几个客户端、退出码、空闲退出)。没有 Go 就跳过
 const path = require('path');
 const { execFileSync } = require('child_process');
