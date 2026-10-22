@@ -14,12 +14,13 @@ const path = require('path');
 const { spawn, execFileSync } = require('child_process');
 const { Server, utils: { sftp: { OPEN_MODE, STATUS_CODE } } } = require('ssh2');
 const WebSocket = require('ws');
-const { BASE, ok, wait, run, hostKey, addHost } = require('./helpers');
+const { BASE, ok, wait, run, hostKey, addHost, killUnder } = require('./helpers');
 
 const BIN_DIR = '/tmp/sshweb-dl-bin'; // 服务器上的 Linux 版 (见开头的 @env)
 const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sshweb-dl-')));
 const tmuxDir = path.join(home, 'tmux'); // tmux 的 socket 放这里 (TMUX_TMPDIR)，不碰本机的 tmux 服务
 fs.mkdirSync(tmuxDir);
+killUnder(home); // 中途出错退出时也结束这里起的守护进程
 const until = async (fn, ms) => { for (const end = Date.now() + ms; !fn() && Date.now() < end;) await wait(100); };
 const ENV = { HOME: home, PATH: process.env.PATH, TMUX_TMPDIR: tmuxDir, SHELL: '/bin/sh', SSHWEBD_IDLE: '3s', LANG: 'C.UTF-8' };
 const hasTmux = (() => { try { execFileSync('tmux', ['-V'], { stdio: 'ignore' }); return true; } catch { return false; } })();
@@ -129,9 +130,18 @@ run(async () => {
   fs.writeFileSync(path.join(home, '.profile'), "PS1='$ '\n");
   const host = await addHost('DL', 2341, { winDaemon: true });
 
+  // ---- 0. 主机上已经跑着旧版守护进程 (以前传上来的，没有会话)：连上时换成新版
+  const go = ['/root/.local/go/bin/go', '/usr/local/go/bin/go', 'go'].find((g) => { try { execFileSync(g, ['version'], { stdio: 'ignore' }); return true; } catch { return false; } });
+  const oldBin = path.join(home, 'sshwebd-old');
+  execFileSync(go, ['build', '-ldflags', '-X main.version=0.1.0', '-o', oldBin, '.'], { cwd: path.join(__dirname, '..', 'sshwebd'), env: { ...process.env, CGO_ENABLED: '0' }, stdio: 'ignore' });
+  const oldD = spawn(oldBin, ['serve'], { env: { ...ENV, SSHWEBD_IDLE: '60s' }, stdio: 'ignore', detached: true });
+  oldD.unref();
+  await wait(800);
   // ---- 1. 连上：认出 Linux，传 Linux 版 (加执行权限)，新建常驻会话
   const a = tab(host.id);
   await until(() => /新建常驻会话 \d/.test(a.out) && a.last('status')?.status === 'connected', 20000);
+  let oldGone = false; try { process.kill(oldD.pid, 0); } catch { oldGone = true; }
+  ok(/主机上的 sshwebd 是旧版 0\.1\.0，换成 \d/.test(a.out) && oldGone, '主机上跑着旧版守护进程、没有会话：换成新版: ' + JSON.stringify(a.out.slice(0, 300)));
   const up = fs.readdirSync(path.join(home, '.ssh-web')).find((n) => /^sshwebd-[0-9a-f]{8}$/.test(n));
   ok(a.out.includes('新建常驻会话 1') && up && (fs.statSync(path.join(home, '.ssh-web', up)).mode & 0o111), '认出 Linux：传 sshwebd-<哈希> (有执行权限)，新建常驻会话: ' + JSON.stringify([up, a.out.slice(-120)]));
   const h = (await (await fetch(BASE + '/api/hosts')).json()).find((x) => x.id === host.id);
@@ -262,6 +272,9 @@ run(async () => {
   e.type('echo shared-$((6*7))\r');
   await until(() => d.out.includes('shared-42'), 5000);
   ok(d.out.includes('shared-42'), '确认在这里也打开：两个标签接着同一个会话，那边打的字这边也看得到');
+  const tz = (t) => t.msgs.filter((m) => m.type === 'toast').map((m) => m.text);
+  ok(tz(d).some((x) => /这个常驻会话也在标签「DL-\d+」里打开着/.test(x)) && tz(e).some((x) => new RegExp(`常驻会话 ${did} 在标签「DL-\\d+」里也打开了`).test(x)),
+    '同一个常驻会话在两个标签里打开：两边都提示一句: ' + JSON.stringify([tz(d), tz(e)]));
   // 一起用的会话断线后：照样接回去，不算被接走
   for (const c of conns) c.end();
   await until(() => d.out.includes('连接已断开') && e.out.includes('连接已断开'), 5000);
@@ -316,6 +329,30 @@ run(async () => {
   y.type('exit\r');
   await wait(1500);
   y.ws.close(); d.ws.close(); e.ws.close();
+
+  // ---- 5c. 会话号会重复用：断线期间原来的会话结束了、同号的新会话开起来了，重新连上时不把新的当成原来那个
+  const r1 = tab(host.id);
+  await until(() => r1.picks.length || /新建常驻会话 \d/.test(r1.out), 15000);
+  if (r1.picks.length) r1.send({ type: 'daemon-pick-response', id: '' });
+  await until(() => /新建常驻会话 \d/.test(r1.out) && r1.last('status')?.status === 'connected', 15000);
+  const rid = /新建常驻会话 (\d+)/.exec(r1.out)[1];
+  for (const c of conns) c.end();
+  await until(() => r1.out.includes('连接已断开'), 5000);
+  const dbin = path.join(home, '.ssh-web', fs.readdirSync(path.join(home, '.ssh-web')).find((n) => /^sshwebd-[0-9a-f]{8}$/.test(n)));
+  execFileSync(dbin, ['kill', rid], { env: ENV });
+  await wait(1200);
+  const r2 = tab(host.id);
+  await until(() => r2.picks.length || /新建常驻会话 \d/.test(r2.out), 15000);
+  if (r2.picks.length) r2.send({ type: 'daemon-pick-response', id: '' });
+  await until(() => /新建常驻会话 \d/.test(r2.out) && r2.last('status')?.status === 'connected', 15000);
+  const reused = /新建常驻会话 (\d+)/.exec(r2.out)[1] === rid;
+  r1.out = '';
+  r1.send({ type: 'reconnect' });
+  await until(() => r1.last('status')?.status === 'connected' && /(新建|接上)常驻会话/.test(r1.out) || r1.picks.length, 15000);
+  ok(reused && r1.out.includes(`之前接着的常驻会话 ${rid} 已经不在了`) && !r1.out.includes(`接上常驻会话 ${rid}`), `会话号 ${rid} 被新会话重复用了：重新连上时说原来的不在了，不接到新的上面: ` + JSON.stringify(r1.out.slice(0, 200)));
+  for (const t of [r1, r2]) { t.type('exit\r'); }
+  await wait(1500);
+  r1.ws.close(); r2.ws.close();
 
   // ---- 6. 不是 Linux (macOS 等)：照常开普通终端，不提示
   const mac = await addHost('MAC', 2342, { winDaemon: true });

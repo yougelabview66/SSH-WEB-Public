@@ -24,7 +24,8 @@
   async function openForward(s) {
     closeForward();
     const el = fwdEl = document.createElement('div');
-    el.className = 'overlay fwd';
+    el.className = 'overlay fwd tab-panel';
+    el.dataset.tab = s.id; // 手机上同性能监控 (见 tabPanels)
     el.innerHTML = `<div class="card wide fwd-card">
       <div class="hist-head"><h3>🌐 端口预览</h3><button type="button" data-a="close" title="关闭 (Esc)">×</button></div>
       <div class="hint">目标主机上本机才能访问的网页（比如 Claude Code 跑起来的开发服务），通过这个标签的 SSH 连接转发，在浏览器新标签页里打开。</div>

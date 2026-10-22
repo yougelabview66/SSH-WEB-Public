@@ -249,6 +249,7 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 .frow:hover .fops { display: flex; }
 .frow .fops button { background: none; border: none; padding: 0 4px; color: var(--muted); font-size: 13px; }
 .frow .fops button:hover { color: var(--text); }
+.sftp-status:empty { display: none; } /* 没有在传的文件：不留一条空白 */
 .sftp-status { border-top: 1px solid var(--border); padding: 6px 10px; font-size: 12px; color: var(--muted);
   min-height: 30px; }
 .sftp-status .bar { height: 4px; background: var(--panel2); border-radius: 2px; margin-top: 4px; overflow: hidden; }
@@ -316,6 +317,8 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 .dp-note { margin: 0 0 6px; color: var(--accent); font-size: 13px; }
 .dp-used { margin-top: 3px; font-size: 12px; color: var(--accent); }
 .dp-busy .as-btns button[disabled] { opacity: .5; cursor: not-allowed; }
+.dp-killing { opacity: .6; pointer-events: none; }
+.dp-confirm { margin-top: 16px; }
 
 /* 端口预览 (见 27-forward.js) */
 .fwd-card { width: 560px; }
@@ -358,7 +361,7 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 .fp-md ul, .fp-md ol { padding-left: 1.6em; }
 
 @media (max-width: 760px) {
-  .sftp { position: absolute; inset: 0; width: auto; z-index: 6; }
+  .sftp { position: absolute; inset: 0; width: auto; z-index: 6; border-left: none; }
   .frow .fops { display: flex; }
   .fpreview { padding: 0; }
   .fp-card { width: 100%; height: 100%; border-radius: 0; border: none; }
@@ -369,7 +372,7 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
   padding-bottom: env(safe-area-inset-bottom); }
 /* iPhone 全屏 App (theme.js 标记 .ios-app)：底部小横条那一条让出 34px，输入框和 ↵ 不被圆角挡住、不误触小横条；
    键盘开着时键盘盖住了小横条，不用再让 */
-.ios-app #mobileBar, .ios-app #rightBar.mobile { padding-bottom: 34px; }
+.ios-app #mobileBar { padding-bottom: 34px; }
 #app.kb #mobileBar { padding-bottom: 0; }
 .mkeys { display: flex; gap: 4px; padding: 5px 6px; overflow-x: auto; scrollbar-width: none; }
 .mkeys::-webkit-scrollbar { display: none; }
@@ -441,6 +444,8 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 @media (pointer: coarse) { #hostFloat.col:not(.min) { width: 250px; } } /* 手机 / 平板 */
 /* 手机 / 平板：开着性能监控 (占满终端) 或搜索栏时状态卡片先让开，不挡它们的按钮；关掉后回来 */
 @media (pointer: coarse) { main:has(.term.active .mon, .term.active .tsearch) #hostFloat { display: none; } }
+/* 手机 / 平板开着 SFTP 文件面板：状态卡片先藏起来，不挡面板；关掉面板后回来 (电脑上让到面板左边，见 40-host-status.js) */
+@media (pointer: coarse) { main:has(.term.active .sftp) #hostFloat { display: none; } }
 .dp-tabs.col .dp-tab { flex: 1 1 100%; min-width: 0; }
 .dp-tabs.col .dp-tab .nm { max-width: none; flex: 1; }
 .dp-tabs.col .dp-tab .dt { max-width: none; }
@@ -757,7 +762,8 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 #rightBar { flex-shrink: 0; display: flex; flex-direction: column; min-width: 0; position: relative; background: var(--panel);
   border-left: 1px solid var(--border); font-size: 13px; }
 #rightBar.hidden { display: none; }
-#rightBar.mobile { position: fixed; inset: 0; z-index: 70; width: auto !important; border: none; }
+/* 手机：同性能监控，只占标签栏下面到快捷键上面 (终端区域，位置见 15-sync-webgl.js 的 termsBox)，不盖住标签栏和输入栏 */
+#rightBar.mobile { position: fixed; left: 0; right: 0; top: var(--terms-top, 0px); height: var(--terms-h, 100%); z-index: 40; width: auto !important; border: none; }
 #rightBar.mobile .rb-resize { display: none; }
 #rightBar.resizing { user-select: none; }
 .rb-resize { position: absolute; left: -4px; top: 0; bottom: 0; width: 8px; cursor: ew-resize; z-index: 2; touch-action: none; }
@@ -863,3 +869,13 @@ svg.ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-wid
 #rightRail button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 7px 6px; border: none; background: none; color: var(--muted); }
 #rightRail button:hover { color: var(--accent); background: var(--hover); }
 #rightRail svg.ic { width: 18px; height: 18px; }
+
+/* 属于当前标签的弹层 (文件预览、端口预览、会话历史、钩子通知、历史命令、复制文本)：手机 / 平板上同性能监控，
+   只占标签栏下面到快捷键上面，铺满、不要暗色背景和圆角；切到别的标签时藏起来 (见 15-sync-webgl.js 的 tabPanels) */
+@media (pointer: coarse) {
+  .overlay.tab-panel, #history.tab-panel, #copyPanel.tab-panel { inset: auto 0 auto 0; top: var(--terms-top, 0px); height: var(--terms-h, 100%);
+    padding: 0; background: var(--panel); align-items: stretch; justify-content: stretch; z-index: 45; }
+  .overlay.tab-panel > .card, #history.tab-panel > .card, #copyPanel.tab-panel > .card { width: 100%; max-width: none; height: 100%; max-height: none;
+    border: none; border-radius: 0; box-shadow: none; margin: 0; padding-bottom: 16px; overflow: auto; }
+  .tab-panel.tab-away { display: none !important; }
+}

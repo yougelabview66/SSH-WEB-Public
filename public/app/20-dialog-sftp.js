@@ -10,7 +10,8 @@
   }
 
   // buttons: [{ label, value, cls, submit }]，返回 { value, form }；被 dismiss 时返回 { dismissed: true }。
-  // onBody(body, finish)：内容里自己的按钮 (列表里点一行等) 也能关掉对话框
+  // onBody(body, finish)：内容里自己的按钮 (列表里点一行等) 也能关掉对话框。内容区是同一个元素，点击用 body.onclick
+  // (关掉时清掉)，不要 addEventListener：不然上一个对话框的监听留着，点一下会去关上一个对话框
   function dialog(title, html, buttons, tag, onBody) {
     const run = () => new Promise((resolve) => {
       const dlg = $('#dialog');
@@ -21,6 +22,7 @@
       acts.innerHTML = '';
       const finish = (value, dismissed) => {
         curDialog = null;
+        $('#dialogBody').onclick = null;
         dlg.classList.add('hidden');
         f.onsubmit = null;
         document.removeEventListener('keydown', onKey, true);
@@ -77,49 +79,84 @@
 
   // 常驻会话：有没人接着的会话时问接哪个 (同会话历史的样子)。点一行或「接上」接上，「删除」点两下结束它
   // (里面的程序会关掉)，「新建会话」开新的，「退出」关掉这个标签。别的标签正用着的标明在哪用、不能删，点它先问一句：
-  // 切到那个标签 / 在这里也打开 (两个标签显示同一个终端) / 返回。
-  // 返回 { id } / { id, share } / { kill } / { id: '' } 新建 / { go: 标签 } 切过去 / null 退出；在别的设备上答了返回 undefined
-  async function daemonPickDialog(m, tag) {
-    const list = m.sessions || [];
-    const rows = list.map((x) => `<div class="as-row dp-row${x.busy ? ' dp-busy' : ''}" data-id="${esc(x.id)}">
-      <div class="as-main"><div class="as-title">${esc(x.cwd || `会话 ${x.id}`)}</div>
-        ${x.name || x.title ? `<div class="as-prompt">${esc(x.name || x.title)}</div>` : ''}<div class="as-meta">${esc(x.when)}</div>
-        ${x.busy ? `<div class="dp-used">正在${esc(x.busy)}里使用中</div>` : ''}</div>
-      <div class="as-btns"><button type="button" data-a="pick" class="primary">接上</button>${x.busy
-        ? '<button type="button" data-a="kill" disabled title="正在使用中，不能删除">使用中</button>'
-        : '<button type="button" data-a="kill">删除</button>'}</div></div>`).join('');
-    const html = (m.note ? `<p class="dp-note">${esc(m.note)}</p>` : '')
-      + (rows ? '<p class="muted">这台主机上有还在运行的常驻会话，点一个接上，或者新建一个：</p>'
-        : '<p class="muted">这台主机上没有别的常驻会话了：点「新建会话」开一个，或者「退出」关掉这个标签。</p>')
-      + `<div class="as-list dp-list">${rows}</div>`;
-    for (;;) {
-      const r = await dialog('接上常驻会话', html, [
+  // 切到那个标签 / 在这里也打开 (两个标签显示同一个终端) / 返回。都在同一个弹窗里换内容，不关掉重开：
+  // 删除时调 onKill(id) 告诉服务端，弹窗留着，服务端结束后再发来的列表原地刷新 (dpOpen.update)。
+  // 返回 { id } / { id, share } / { id: '' } 新建 / { go: 标签 } 切过去 / null 退出；在别的设备上答了返回 undefined
+  let dpOpen = null; // 开着 (或者排着队) 的常驻会话选择框 { tag, update }
+  async function daemonPickDialog(m, tag, onKill) {
+    let cur = m, body = null, confirming = null;
+    const acts = () => $('#dialogActions');
+    const listHtml = () => {
+      const list = cur.sessions || [];
+      const rows = list.map((x) => `<div class="as-row dp-row${x.busy ? ' dp-busy' : ''}" data-id="${esc(x.id)}">
+        <div class="as-main"><div class="as-title">${esc(x.cwd || `会话 ${x.id}`)}</div>
+          ${x.name || x.title ? `<div class="as-prompt">${esc(x.name || x.title)}</div>` : ''}<div class="as-meta">${esc(x.when)}</div>
+          ${x.busy ? `<div class="dp-used">正在${esc(x.busy)}里使用中</div>` : ''}</div>
+        <div class="as-btns"><button type="button" data-a="pick" class="primary">接上</button>${x.busy
+          ? '<button type="button" data-a="kill" disabled title="正在使用中，不能删除">使用中</button>'
+          : '<button type="button" data-a="kill">删除</button>'}</div></div>`).join('');
+      return (cur.note ? `<p class="dp-note">${esc(cur.note)}</p>` : '')
+        + (rows ? '<p class="muted">这台主机上有还在运行的常驻会话，点一个接上，或者新建一个：</p>'
+          : '<p class="muted">这台主机上没有别的常驻会话了：点「新建会话」开一个，或者「退出」关掉这个标签。</p>')
+        + `<div class="as-list dp-list">${rows}</div>`;
+    };
+    const showList = () => {
+      confirming = null;
+      if (!body) return;
+      body.innerHTML = listHtml();
+      acts().classList.remove('hidden');
+      $('#dialogTitle').textContent = '接上常驻会话';
+    };
+    // 别的标签正用着：同一个弹窗里换成确认 (这个浏览器里就有那个标签的话可以直接切过去)
+    const showConfirm = (x) => {
+      const other = sessions.find((y) => !y.closed && y.remoteId && x.tags?.includes(y.remoteId));
+      confirming = { x, other };
+      $('#dialogTitle').textContent = '这个会话正在使用中';
+      body.innerHTML = `<p><b>${esc(x.cwd || `会话 ${x.id}`)}</b> 正在${esc(x.busy)}里使用中。</p>
+        <p class="muted">在这里也打开的话，两个标签显示同一个终端，在哪边打字都一样。</p>
+        <div class="actions dp-confirm"><button type="button" data-c="back">返回</button>${other ? '<button type="button" data-c="go">切到那个标签</button>' : ''}<button type="button" data-c="share" class="primary">在这里也打开</button></div>`;
+      acts().classList.add('hidden');
+      body.querySelector('[data-c=share]').focus();
+    };
+    // 确认的时候按 Esc：回到列表 (不是退出)。window 上的捕获比对话框挂在 document 上的先收到
+    const onEsc = (e) => { if (e.key === 'Escape' && confirming) { e.stopPropagation(); e.preventDefault(); showList(); } };
+    window.addEventListener('keydown', onEsc, true);
+    dpOpen = { tag, update: (m2) => { cur = m2; if (!confirming) showList(); } };
+    try {
+      const r = await dialog('接上常驻会话', '', [
         { label: '退出', value: null, cancel: true },
         { label: '新建会话', value: { id: '' }, cls: 'primary', submit: true },
-      ], tag, (body, finish) => body.addEventListener('click', (e) => {
-        const row = e.target.closest('.dp-row');
-        if (!row) return;
-        const btn = e.target.closest('button');
-        if (btn?.dataset.a !== 'kill') return finish({ id: row.dataset.id });
-        if (btn.disabled) return;
-        // 删除要再点一次确认：里面还在跑的程序会被关掉
-        if (!btn.classList.contains('danger')) { btn.classList.add('danger'); btn.textContent = '确定删除？'; return; }
-        finish({ kill: row.dataset.id });
-      }));
+      ], tag, (b, finish) => {
+        body = b;
+        showList();
+        b.onclick = (e) => {
+          const c = e.target.closest('[data-c]');
+          if (c) {
+            if (c.dataset.c === 'share') return finish({ id: confirming.x.id, share: true });
+            if (c.dataset.c === 'go') return finish({ go: confirming.other });
+            return showList();
+          }
+          const row = e.target.closest('.dp-row');
+          if (!row) return;
+          const btn = e.target.closest('button');
+          if (btn?.dataset.a === 'kill') {
+            if (btn.disabled) return;
+            // 删除要再点一次确认：里面还在跑的程序会被关掉。确认后弹窗不关，这一行显示「正在结束…」，等服务端发来新列表
+            if (!btn.classList.contains('danger')) { btn.classList.add('danger'); btn.textContent = '确定删除？'; return; }
+            btn.disabled = true; btn.textContent = '正在结束…'; row.classList.add('dp-killing');
+            return onKill(row.dataset.id);
+          }
+          const x = (cur.sessions || []).find((y) => y.id === row.dataset.id);
+          if (x?.busy) return showConfirm(x);
+          finish({ id: row.dataset.id });
+        };
+      });
       if (r.dismissed) return undefined;
-      const x = r.value?.id && list.find((y) => y.id === r.value.id);
-      if (!x?.busy) return r.value;
-      // 别的标签正用着：这个浏览器里就有那个标签的话可以直接切过去
-      const other = sessions.find((y) => !y.closed && y.remoteId && x.tags?.includes(y.remoteId));
-      const c = await dialog('这个会话正在使用中', `<p><b>${esc(x.cwd || `会话 ${x.id}`)}</b> 正在${esc(x.busy)}里使用中。</p>
-        <p class="muted">在这里也打开的话，两个标签显示同一个终端，在哪边打字都一样。</p>`, [
-        { label: '返回', value: 'back', cancel: true },
-        ...(other ? [{ label: '切到那个标签', value: 'go' }] : []),
-        { label: '在这里也打开', value: 'share', cls: 'primary', submit: true },
-      ], tag);
-      if (c.dismissed) return undefined;
-      if (c.value === 'share') return { id: x.id, share: true };
-      if (c.value === 'go') return { go: other };
+      return r.value;
+    } finally {
+      window.removeEventListener('keydown', onEsc, true);
+      if (dpOpen?.tag === tag) dpOpen = null;
+      acts().classList.remove('hidden');
     }
   }
 

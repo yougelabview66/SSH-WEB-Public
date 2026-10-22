@@ -108,9 +108,9 @@
     const maxT = Math.max(top0, main.clientHeight - hostFloat.offsetHeight);
     let r = Math.min(Math.max(0, hfPos.r ?? 12), maxR);
     let t = Math.min(Math.max(top0, hfPos.t ?? top0 + 8), maxT);
-    // 开着 SFTP 文件面板 (终端右边)：卡片在它上面会挡住面板的按钮 (关闭、刷新)，让到面板左边；放不下就挪到面板的按钮下面。
-    // 只是这时候让开，记的位置不变，面板关了就回去
-    const panel = active?.sftp?.open && $('.sftp', active.el);
+    // 电脑上开着 SFTP 文件面板 (终端右边)：卡片在它上面会挡住面板，让到面板左边；放不下就挪到面板的按钮下面。
+    // 只是这时候让开，记的位置不变，面板关了就回去 (手机上开着面板时卡片藏起来，见 style.css)
+    const panel = !isTouch && active?.sftp?.open && $('.sftp', active.el);
     if (panel && panel.offsetWidth) {
       const mr = main.getBoundingClientRect(), pr = panel.getBoundingClientRect();
       const pw = mr.right - pr.left;

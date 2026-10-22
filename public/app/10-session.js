@@ -330,9 +330,11 @@
         rbAgentCwd(s);
       } else if (m.type === 'toast') { // 服务端的一句提示 (比如常驻会话里不用再开 tmux)
         fontToast(s, m.text, 6000);
+      } else if (m.type === 'daemon-pick' && dpOpen?.tag === s.id) { // 选择框开着 (删完一个服务端再问)：原地刷新列表
+        dpOpen.update(m);
       } else if (m.type === 'daemon-pick') { // 常驻会话：选接哪个 (见 lib/session/daemon.js 的 pickDaemon)
         activate(s);
-        daemonPickDialog(m, s.id).then((r) => {
+        daemonPickDialog(m, s.id, (kill) => send(s, { type: 'daemon-pick-response', kill, keep: true })).then((r) => {
           if (r === undefined) return; // 已在其他设备上选了
           // 切到正用着这个会话的标签：这个标签不要了 (同「退出」，服务端关掉它)
           if (r?.go) { if (!r.go.closed) activate(r.go); r = null; }

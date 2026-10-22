@@ -253,14 +253,14 @@ run(async () => {
   // 钩子漏了事件：记的还是原来仓库，主机上却有个后来才启动的 Agent 在别的目录跑着 (旧的被直接杀掉、在别处又开了一个，还没报事件)：
   // 以正在跑的 Agent 的目录为准
   const pinfo = () => fetch(BASE + '/api/project/info', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sid }) }).then((r) => r.json());
-  await wait(2500); // 钩子最后一次报目录之后过一会儿才启动
+  await wait(5000); // 钩子最后一次报目录之后过一会儿才启动 (主机上的启动时间只精确到秒，最多早估 2 秒)
   const agent2 = spawn(path.join(home, 'claude'), ['300'], { cwd: other, env: { LC_SSHWEB: sid, PATH: process.env.PATH }, stdio: 'ignore' });
   kids.push(agent2); await wait(1500);
   let pi = await pinfo();
   ok(pi.root === other && pi.source === 'agent', '钩子记的目录和后来启动的 Agent 对不上：以正在跑的 Agent 的目录为准: ' + JSON.stringify(pi));
   // Claude Code 执行命令的子进程 (命令行里带 ~/.claude/shell-snapshots，在别的目录里) 比 Agent 新：不能当成 Agent
   const tmpd = path.join(home, 'tmp-work'); fs.mkdirSync(tmpd);
-  const snap = spawn('sh', ['-c', 'sleep 300; true', path.join(home, '.claude', 'shell-snapshots', 'snapshot-sh-1.sh')], { cwd: tmpd, env: { LC_SSHWEB: sid, PATH: process.env.PATH }, stdio: 'ignore' });
+  const snap = spawn('sh', ['-c', 'sleep 300; true', path.join(home, '.claude', 'shell-snapshots', 'snapshot-sh-1.sh')], { cwd: tmpd, env: { LC_SSHWEB: sid, PATH: process.env.PATH }, stdio: 'ignore', detached: true });
   kids.push(snap); await wait(300);
   const t0 = Date.now();
   pi = await pinfo();
@@ -270,7 +270,7 @@ run(async () => {
   await wait(800);
   pi = await pinfo();
   ok(pi.root === repo && pi.source === 'agent', '会话历史切过去 (旧的 Agent 还没退)：用新报的目录，不被旧 Agent 推翻: ' + JSON.stringify(pi));
-  snap.kill(); agent2.kill(); await wait(300);
+  try { process.kill(-snap.pid, 'SIGKILL'); } catch {} agent2.kill(); await wait(300); // sh 和它里面的 sleep 一起结束
   await p.fill(`${RB} .rb-dir input`, '/'); await p.press(`${RB} .rb-dir input`, 'Enter'); await wait(1500);
   ok(await p.locator(`${RB} .pf-row`).count() > 0 && /不是 git 仓库/.test(await p.evaluate(() => { document.querySelector('#rightBar .rb-tabs [data-tab=git]').click(); return document.querySelector('#rightBar .gp-body').textContent; })), '手动填不是仓库的目录：「项目」照样能看文件，「改动」提示不是 git 仓库');
   await p.fill(`${RB} .rb-dir input`, ''); await p.press(`${RB} .rb-dir input`, 'Enter'); await wait(1200);
@@ -280,9 +280,22 @@ run(async () => {
   m.on('pageerror', (e) => errors.push(e.message));
   await m.goto(BASE + '/'); await m.waitForSelector('#app:not(.hidden)'); await wait(1500);
   if (await m.isVisible('.term.active .owner-notice button')) { await m.tap('.term.active .owner-notice button'); await wait(800); }
+  // 手机上属于这个标签的面板都同性能监控：只占标签栏下面到快捷键上面 (铺满，不留空白)
+  const region = (q) => m.evaluate((q) => { const b = (x) => document.querySelector(x).getBoundingClientRect(); const r = b(q);
+    return { l: Math.round(r.left), w: Math.round(r.width), t: Math.round(r.top), bt: Math.round(r.bottom), tab: Math.round(b('#tabbar').bottom), keys: Math.round(b('#mobileBar').top), iw: innerWidth }; }, q);
+  const fits = (g) => g.l === 0 && g.w === g.iw && Math.abs(g.t - g.tab) <= 1 && Math.abs(g.bt - g.keys) <= 1;
+  await m.tap('#btnSftp'); await m.waitForSelector('.term.active .sftp .frow', { timeout: 8000 }).catch(() => {});
+  const sl = await region('.term.active .sftp-list'), sf = await region('.term.active .sftp');
+  ok(fits(sf) && Math.abs(sl.bt - sf.keys) <= 1 && await m.isHidden('.term.active .sftp-status'), '手机：文件面板在标签栏和快捷键之间铺满，文件列表一直到快捷键 (没在传文件时不留空白状态栏): ' + JSON.stringify([sf, sl]));
+  await m.tap('.term.active .sftp [data-a=close]'); await wait(300);
+  await m.tap('#btnHistory'); await wait(500);
+  const hg = await region('#history');
+  ok(fits(hg) && await m.isVisible('#tabbar') && await m.isVisible('#mobileBar .mkeys'), '手机：历史命令也在标签栏和快捷键之间 (标签栏、快捷键都露着): ' + JSON.stringify(hg));
+  await m.screenshot({ path: shot('m-history-panel.png') });
+  await m.tap('#histClose'); await wait(300);
   await m.tap('#btnMore'); await m.tap('#btnProj'); await m.waitForSelector(`${RB} .pf-row`);
-  const mb = await m.evaluate(() => { const r = document.getElementById('rightBar').getBoundingClientRect(); return { l: r.left, t: r.top, w: Math.round(r.width), iw: innerWidth }; });
-  ok(mb.l === 0 && mb.t === 0 && mb.w === mb.iw && await m.isVisible(`${RB} [data-a=collapse]`) && !(await m.$(`${RB} [data-a=close]`)), '手机：全屏显示，右上角和电脑一样是「»」收起 (没有「×」): ' + JSON.stringify(mb));
+  const mb = await region('#rightBar');
+  ok(fits(mb) && await m.isVisible(`${RB} [data-a=collapse]`) && !(await m.$(`${RB} [data-a=close]`)), '手机：项目文件不全屏，在标签栏和快捷键之间 (同性能监控)，右上角是「»」收起: ' + JSON.stringify(mb));
   await m.screenshot({ path: shot('rb-mobile-files.png') });
   await m.screenshot({ path: shot('rb-head-mobile.png'), clip: { x: 0, y: 0, width: 412, height: 80 } });
   ok(await m.evaluate(() => Math.round(innerWidth - document.querySelector('#rightBar [data-a=collapse]').getBoundingClientRect().right)) <= 10, '手机：「»」贴着屏幕右边');
