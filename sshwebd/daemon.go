@@ -294,7 +294,7 @@ func (d *daemon) attach(c net.Conn, req Request) {
 	// 补发和登记在同一把锁里：之后的输出一个字节不漏、不重复
 	start, data := s.ring.since(req.Since)
 	m := d.hello("attached")
-	m.ID, m.Created, m.Start, m.End = s.id, created, start, s.ring.total
+	m.ID, m.Created, m.At, m.Start, m.End = s.id, created, s.created.UnixMilli(), start, s.ring.total
 	cl.out <- jsonFrame(fMsg, m)
 	for len(data) > 0 {
 		n := min(len(data), replayChunk)

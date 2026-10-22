@@ -60,6 +60,7 @@ type Msg struct {
 	Sessions []SessionInfo `json:"sessions,omitempty"`
 	ID       string        `json:"id,omitempty"`
 	Created  bool          `json:"created,omitempty"` // attach：这个会话是刚新建的
+	At       int64         `json:"at,omitempty"`      // attach：这个会话是什么时候开的 (毫秒时间戳，同列表里的 created)
 	Start    int64         `json:"start"`             // attach：补发的输出从第几个字节开始
 	End      int64         `json:"end"`               // attach：补发到第几个字节 (之后实时发)
 	Code     int           `json:"code"`              // exit：退出码
