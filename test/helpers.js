@@ -12,7 +12,7 @@ fs.mkdirSync(SHOT_DIR, { recursive: true });
 const ok = (c, m) => { console.log((c ? '✔ ' : '✘ ') + m); if (!c) process.exitCode = 1; };
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const shot = (name) => path.join(SHOT_DIR, name);
-// 用 playwright-core 1.49 对应的 Chromium (npx playwright install chromium)；也可以用 CHROME_PATH 指定
+// 用 playwright-core 1.49 对应的 Chromium (npx playwright-core install chromium)；也可以用 CHROME_PATH 指定
 const launch = (args = []) => chromium.launch({
   executablePath: process.env.CHROME_PATH || undefined,
   args: ['--no-sandbox', ...args],

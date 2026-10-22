@@ -1,0 +1,26 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    # 只在公开仓库跑 (私有仓库推送时不占用 Actions 时间)
+    if: github.repository == 'yougelabview66/SSH-WEB-Public'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache-dependency-path: sshwebd/go.sum
+      - run: npm ci
+      - run: npx playwright-core install --with-deps chromium
+      - run: npm test
