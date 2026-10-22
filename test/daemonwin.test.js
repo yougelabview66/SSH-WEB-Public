@@ -1,6 +1,7 @@
 'use strict';
-// Windows 常驻会话 (sshwebd)：主机设置里打开后，连上时把 sshwebd.exe 传到 ~/.ssh-web/，开一个不要终端的通道跑 bridge，
-// 终端在守护进程里。这里模拟一台 Windows 主机 (SSH 默认 cmd)，bridge 用真的 sshwebd (Linux 版，../sshwebd 编出来，
+// @env SSHWEBD_EXE=/tmp/sshweb-dw-sshwebd.exe
+// Windows 常驻会话 (sshwebd)：主机设置里打开后，连上时开一个不要终端的通道跑 ~/.ssh-web/ 里的 sshwebd bridge，
+// 终端在守护进程里 (服务器上有 sshwebd.exe 就先传过去)。这里模拟一台 Windows 主机 (SSH 默认 cmd)，bridge 用真的 sshwebd (Linux 版，用 sshwebd/ 的源码编，
 // 或者 SSHWEBD_BIN 指定)：打字、断网后重新连上接着用 (只补发没收到的)、关了标签再开一个选「接上」、exit 结束
 const fs = require('fs');
 const os = require('os');
@@ -15,13 +16,13 @@ const dhome = path.join(home, 'daemon'); // 守护进程的数据目录 (socket�
 fs.mkdirSync(dhome);
 const HOME = '/C:/Users/me';
 const until = async (fn, ms) => { for (const end = Date.now() + ms; !fn() && Date.now() < end;) await wait(100); };
-const VENDOR = path.join(__dirname, '..', 'vendor', 'sshwebd');
-const VERSION = fs.readFileSync(path.join(VENDOR, 'VERSION'), 'utf8').trim();
+const SRV_EXE = '/tmp/sshweb-dw-sshwebd.exe'; // 服务器上的 sshwebd.exe (见开头的 @env)
+fs.rmSync(SRV_EXE, { force: true });
 
-// Linux 版 sshwebd：SSHWEBD_BIN，或者用旁边的源码编一个
+// Linux 版 sshwebd：SSHWEBD_BIN，或者用 sshwebd/ 的源码编一个
 function linuxBin() {
   if (process.env.SSHWEBD_BIN) return process.env.SSHWEBD_BIN;
-  const src = path.join(__dirname, '..', '..', 'sshwebd');
+  const src = path.join(__dirname, '..', 'sshwebd');
   const go = ['/root/.local/go/bin/go', '/usr/local/go/bin/go', 'go'].find((g) => { try { execFileSync(g, ['version'], { stdio: 'ignore' }); return true; } catch { return false; } });
   if (!go || !fs.existsSync(path.join(src, 'main.go'))) return null;
   const out = path.join(home, 'sshwebd');
@@ -44,7 +45,7 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
       const out = (t, code) => { if (t) ch.write(t); ch.exit(code); ch.end(); };
       if (cmd === 'echo %OS%;$env:OS') return out('Windows_NT;$env:OS\r\n', 0);
       if (cmd.includes('watch.ps1')) return out('SSHWEB_HOOKS=0\r\n', 0);
-      const m = /^"C:\\Users\\me\\\.ssh-web\\(sshwebd-[^"\\]+\.exe)" bridge$/.exec(cmd);
+      const m = /^"C:\\Users\\me\\\.ssh-web\\(sshwebd[^"\\]*\.exe)" bridge$/.exec(cmd);
       if (m && BIN) { // 真的跑 bridge (Windows 的 OpenSSH 在 SSH 断开时结束整个会话的进程：这里通道关了就杀掉它)
         bridges.push({ cmd, exe: m[1] });
         const pr = spawn(BIN, ['bridge'], { env: { ...process.env, SSHWEBD_HOME: dhome, SSHWEBD_IDLE: '3s', SHELL: '/bin/sh', PS1: '$ ', ENV: '' } });
@@ -114,13 +115,23 @@ run(async () => {
   const host = await addHost('DW', 2321, { winDaemon: true });
   ok(host.winDaemon === true, '主机设置里记下「Windows 常驻会话」');
 
-  // ---- 1. 连上：传 sshwebd.exe，跑 bridge，新建常驻会话 (不开普通 shell)
+  // ---- 0. 主机上、服务器上都没有 sshwebd.exe (服务器上的路径用 SSHWEBD_EXE 指到一个不存在的文件)：提示放到哪里，改用普通终端
+  const z = tab(host.id, 'DW');
+  await until(() => z.out.includes('C:\\Users\\me>'), 15000);
+  ok(/常驻会话没开起来：主机上没有 sshwebd：把 sshwebd\.exe 放到 C:\\Users\\me\\\.ssh-web\\/.test(z.out) && shells === 1 && !bridges.length,
+    '没有 sshwebd.exe：提示放到 C:\\Users\\me\\.ssh-web\\，改开普通终端');
+  await fetch(BASE + '/api/sessions/' + z.msgs.find((m) => m.type === 'attached')?.session?.id, { method: 'DELETE' });
+  z.ws.close();
+
+  // ---- 1. 主机上放了 sshwebd.exe：连上跑 bridge，新建常驻会话 (不开普通 shell，不传文件)
+  const edir = path.join(home, '.ssh-web');
+  fs.mkdirSync(edir);
+  fs.writeFileSync(path.join(edir, 'sshwebd.exe'), 'exe on host');
   const a = tab(host.id, 'DW');
   await until(() => /\$ $/.test(a.out) && a.last('status')?.status === 'connected', 15000);
-  const exe = path.join(home, '.ssh-web', `sshwebd-${VERSION}.exe`);
-  ok(fs.existsSync(exe) && fs.readFileSync(exe).equals(fs.readFileSync(path.join(VENDOR, 'sshwebd.exe'))) && !fs.existsSync(exe + '.part'),
-    `把 sshwebd.exe 传到 ~/.ssh-web/sshwebd-${VERSION}.exe (带版本号，正在运行的 exe 不能覆盖)`);
-  ok(bridges.length === 1 && shells === 0 && a.out.includes('新建常驻会话 1'), '开的是 bridge 通道 (cmd 写法 "C:\\…\\sshwebd-x.exe" bridge)，没开普通 shell: ' + JSON.stringify(bridges[0]));
+  ok(bridges.length === 1 && bridges[0].exe === 'sshwebd.exe' && shells === 1 && a.out.includes('新建常驻会话 1'),
+    '开的是 bridge 通道 (cmd 写法 "C:\\…\\sshwebd.exe" bridge)，没开普通 shell: ' + JSON.stringify(bridges[0]));
+  ok(fs.readdirSync(edir).join() === 'sshwebd.exe' && !a.out.includes('正在把 sshwebd 传到主机'), '服务器上没有 sshwebd.exe：不传文件，用主机上的');
   ok(a.last('params')?.params?.daemonId === '1', '告诉网页接着的是哪个常驻会话 (服务重启后照原样接回去)');
   a.type('echo hi-$((40+2)) $LC_SSHWEB\r');
   const sid = a.msgs.find((m) => m.type === 'attached')?.session?.id;
@@ -138,7 +149,7 @@ run(async () => {
   await until(() => a.out.includes('after-drop-2'), 15000);
   ok(a.out.includes('接上常驻会话 1') && a.out.includes('after-drop-2'), '重新连上：接回同一个常驻会话，断开期间的输出补上了');
   ok(a.count('hi-42') === 1, '之前收到过的不再重发 (hi-42 只出现一次): ' + a.count('hi-42'));
-  ok(bridges.length === 2 && fs.readdirSync(path.join(home, '.ssh-web')).length === 1, '第二次连接不再传 exe (已经有了)');
+  ok(bridges.length === 2 && fs.readdirSync(edir).join() === 'sshwebd.exe', '重新连上照样用主机上的 sshwebd.exe');
 
   // ---- 3. 关掉标签 (常驻会话还在)，再开一个标签：问接哪个，选 1 接上 (全部补发)
   await fetch(BASE + '/api/sessions/' + sid, { method: 'DELETE' });
@@ -158,6 +169,18 @@ run(async () => {
   ok(b.out.includes('常驻会话 1 已结束 (退出码 5)'), '在会话里 exit：显示常驻会话结束和退出码');
   ok(!b.last('params')?.params?.daemonId, '结束后不再记着这个常驻会话');
 
+  // ---- 4b. 服务器上有 sshwebd.exe：传到 ~/.ssh-web/sshwebd-<哈希>.exe 用它 (正在运行的 exe 不能覆盖，所以换名字)
+  fs.writeFileSync(SRV_EXE, 'exe on server');
+  const c = tab(host.id, 'DW');
+  await until(() => c.out.includes('新建常驻会话 2') && c.last('status')?.status === 'connected', 15000);
+  const up = fs.readdirSync(edir).find((n) => /^sshwebd-[0-9a-f]{8}\.exe$/.test(n));
+  ok(up && fs.readFileSync(path.join(edir, up), 'utf8') === 'exe on server' && c.out.includes('正在把 sshwebd 传到主机') && bridges.at(-1).exe === up,
+    `服务器上的 sshwebd.exe 传过去 (${up}) 再用它: ` + JSON.stringify(bridges.at(-1)));
+  ok(fs.readdirSync(edir).sort().join() === [up, 'sshwebd.exe'].sort().join(), '主机上自己放的 sshwebd.exe 不删，没有留下 .part');
+  c.type('exit\r');
+  await until(() => c.out.includes('常驻会话 2 已结束'), 8000);
+  c.ws.close();
+
   // ---- 5. 网页：主机列表上标「常驻」，编辑主机时勾着
   const browser = await launch();
   const p = await (await browser.newContext({ viewport: { width: 1280, height: 800 } })).newPage();
@@ -174,4 +197,5 @@ run(async () => {
   await wait(4000); // 守护进程没事做了自己退出 (SSHWEBD_IDLE=3s)
   ok(/没有会话了，退出/.test(fs.readFileSync(path.join(dhome, 'sshwebd.log'), 'utf8')), '守护进程没有会话后自己退出');
   fs.rmSync(home, { recursive: true, force: true });
+  fs.rmSync(SRV_EXE, { force: true });
 });
