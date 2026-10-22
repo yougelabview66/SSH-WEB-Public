@@ -33,22 +33,26 @@ type Request struct {
 	// attach：从输出的第几个字节开始补发 (接着上次收到的位置)；不填 = 缓冲里有的全部补发
 	Since    *int64 `json:"since,omitempty"`
 	NoCreate bool   `json:"noCreate,omitempty"` // attach：会话不存在就报错，不新建
-	Force    bool   `json:"force,omitempty"`    // quit：还有会话也退出 (会话全部结束)
+	// attach：客户端的标记 (SSH-WEB 的标签)。同一个标记的旧连接 (断网后主机上还没断开的) 踢掉；列表里带出来，
+	// SSH-WEB 据此分清会话是被自己还是被别的标签接着
+	Tag   string `json:"tag,omitempty"`
+	Force bool   `json:"force,omitempty"` // quit：还有会话也退出 (会话全部结束)
 }
 
 // SessionInfo：列表里的一个会话
 type SessionInfo struct {
-	ID         string `json:"id"`
-	Shell      string `json:"shell"`
-	Cwd        string `json:"cwd"`
-	Title      string `json:"title"` // 终端标题 (程序用 OSC 0 / 2 设置的)
-	PID        int    `json:"pid"`
-	Created    int64  `json:"created"`    // 毫秒时间戳
-	LastOutput int64  `json:"lastOutput"` //
-	LastInput  int64  `json:"lastInput"`  //
-	Clients    int    `json:"clients"`    // 现在有几个客户端接着
-	Cols       int    `json:"cols"`
-	Rows       int    `json:"rows"`
+	ID         string   `json:"id"`
+	Shell      string   `json:"shell"`
+	Cwd        string   `json:"cwd"`
+	Title      string   `json:"title"` // 终端标题 (程序用 OSC 0 / 2 设置的)
+	PID        int      `json:"pid"`
+	Created    int64    `json:"created"`        // 毫秒时间戳
+	LastOutput int64    `json:"lastOutput"`     //
+	LastInput  int64    `json:"lastInput"`      //
+	Clients    int      `json:"clients"`        // 现在有几个客户端接着
+	Tags       []string `json:"tags,omitempty"` // 接着的客户端的标记 (见 Request.Tag)
+	Cols       int      `json:"cols"`
+	Rows       int      `json:"rows"`
 }
 
 // Msg：守护进程发出的消息

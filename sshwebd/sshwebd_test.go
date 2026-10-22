@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -304,5 +305,53 @@ func TestScanOsc(t *testing.T) {
 	s.scanOsc([]byte("\x1b]9;4;3;50\x07")) // 进度条，不是目录
 	if s.cwd != "/tmp/a b" {
 		t.Fatalf("进度条被当成目录：%q", s.cwd)
+	}
+}
+
+// 接上时带标记 (SSH-WEB 的标签)：列表里带出来；同一个标记再接上时，旧连接被踢掉 (断网后主机上还没断开的那条)
+func TestClientTags(t *testing.T) {
+	home := t.TempDir()
+	a := startBridge(t, home)
+	defer a.close()
+	a.req(Request{Op: "attach", Shell: "/bin/sh", Cols: 80, Rows: 24, Tag: "tab-a"})
+	waitFor(t, "a 接上", func() bool { return a.lastMsg("attached") != nil })
+	b := startBridge(t, home)
+	defer b.close()
+	b.req(Request{Op: "attach", ID: "1", NoCreate: true, Cols: 80, Rows: 24, Tag: "tab-b"})
+	waitFor(t, "b 接上", func() bool { return b.lastMsg("attached") != nil })
+	tagsOf := func() []string {
+		c := startBridge(t, home)
+		defer c.close()
+		c.req(Request{Op: "list"})
+		waitFor(t, "列表", func() bool { return c.lastMsg("list") != nil })
+		l := c.lastMsg("list")
+		if len(l.Sessions) != 1 {
+			t.Fatalf("会话数不对：%+v", l.Sessions)
+		}
+		tags := append([]string(nil), l.Sessions[0].Tags...)
+		sort.Strings(tags)
+		return tags
+	}
+	if got := strings.Join(tagsOf(), ","); got != "tab-a,tab-b" {
+		t.Fatalf("列表里的标记不对：%q", got)
+	}
+	// tab-a 断网重连：新连接带同一个标记，旧的 (a) 被踢掉，b 还在
+	a2 := startBridge(t, home)
+	defer a2.close()
+	a2.req(Request{Op: "attach", ID: "1", NoCreate: true, Cols: 80, Rows: 24, Tag: "tab-a"})
+	waitFor(t, "a2 接上", func() bool { return a2.lastMsg("attached") != nil })
+	waitFor(t, "旧的 a 被踢掉 (它的 bridge 跟着退出)", func() bool { return exited(a) })
+	if got := strings.Join(tagsOf(), ","); got != "tab-a,tab-b" {
+		t.Fatalf("重连以后的标记不对 (旧的 a 应该被踢掉，只剩新的 a 和 b)：%q", got)
+	}
+}
+
+// bridge 进程已经退出了 (守护进程断开了它)
+func exited(b *bridge) bool {
+	select {
+	case <-b.done:
+		return true
+	default:
+		return false
 	}
 }

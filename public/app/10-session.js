@@ -326,6 +326,10 @@
           if (answers === undefined) return; // 已在其他设备上回答
           send(s, answers ? { type: 'prompt-response', answers } : { type: 'prompt-response', cancel: true });
         });
+      } else if (m.type === 'agent-cwd') { // Agent 的目录变了：右边栏重新读 (见 66-right-bar.js)
+        rbAgentCwd(s);
+      } else if (m.type === 'toast') { // 服务端的一句提示 (比如常驻会话里不用再开 tmux)
+        fontToast(s, m.text, 6000);
       } else if (m.type === 'daemon-pick') { // 常驻会话 (Windows)：选接哪个 (见 lib/session/daemon.js 的 pickDaemon)
         activate(s);
         daemonPickDialog(m, s.id).then((r) => {

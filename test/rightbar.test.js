@@ -235,6 +235,21 @@ run(async () => {
   ok(await p.isVisible('#rightRail'), '刷新页面后还是收起的状态');
   await p.click('#rightRail [data-tab=files]'); await p.waitForSelector(`${RB} .pf-row`);
   ok(await p.evaluate(() => document.querySelector('#rightBar .rb-tabs .on').dataset.tab) === 'files' && Math.round((await p.locator(RB).boundingBox()).width) === nw, '点图标：展开到对应的选项卡，宽度还是拖过的');
+  // 会话历史「继续」了别的目录里的对话：右边栏马上换到那个目录 (不等新的 Agent 报钩子事件)
+  const other = path.join(home, 'other-proj'); fs.mkdirSync(other); fs.writeFileSync(path.join(other, 'only-in-other.txt'), 'x\n');
+  // 新的 Agent 在那个目录里跑起来了 (假的 claude：拷一份 sleep 改名，带这个标签的标记)
+  fs.copyFileSync('/bin/sleep', path.join(home, 'claude')); fs.chmodSync(path.join(home, 'claude'), 0o755);
+  const fakeAgent = spawn(path.join(home, 'claude'), ['300'], { cwd: other, env: { LC_SSHWEB: sid, PATH: process.env.PATH }, stdio: 'ignore' });
+  kids.push(fakeAgent);
+  await fetch(BASE + '/api/agent-sessions/resume', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sid, cmd: 'echo resumed', name: 'Claude：别的项目', cwd: other }) });
+  await p.click(`${RB} .rb-tabs [data-tab=files]`).catch(() => {});
+  await p.waitForSelector(`${RB} .pf-row[data-rel="only-in-other.txt"]`, { timeout: 8000 }).catch(() => {});
+  ok(await p.locator(`${RB} .pf-row[data-rel="only-in-other.txt"]`).count() === 1 && await p.textContent(`${RB} .rb-src`) === 'Agent 干活的目录',
+    '会话历史切到别的目录里的对话：右边栏自动换到那个目录 (Agent 干活的目录): ' + JSON.stringify(await p.textContent(`${RB} .rb-src`)));
+  // 再切回原来仓库里的对话 (后面接着看这个仓库的改动)；刚才那个 Agent 退出了
+  fakeAgent.kill(); await wait(300);
+  await fetch(BASE + '/api/agent-sessions/resume', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sid, cmd: 'echo back', cwd: repo }) });
+  await p.waitForSelector(`${RB} .pf-row[data-rel="a.txt"]`, { timeout: 8000 }).catch(() => {});
   await p.fill(`${RB} .rb-dir input`, '/'); await p.press(`${RB} .rb-dir input`, 'Enter'); await wait(1500);
   ok(await p.locator(`${RB} .pf-row`).count() > 0 && /不是 git 仓库/.test(await p.evaluate(() => { document.querySelector('#rightBar .rb-tabs [data-tab=git]').click(); return document.querySelector('#rightBar .gp-body').textContent; })), '手动填不是仓库的目录：「项目」照样能看文件，「改动」提示不是 git 仓库');
   await p.fill(`${RB} .rb-dir input`, ''); await p.press(`${RB} .rb-dir input`, 'Enter'); await wait(1200);

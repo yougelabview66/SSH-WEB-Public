@@ -1,7 +1,7 @@
 # sshwebd
 
-SSH-WEB 的 Windows 终端守护程序（在 SSH-WEB 项目的 `sshwebd/` 目录），参考 [Orca](https://github.com/stablyai/orca) 的 `orcad`。
-在 Windows 主机上代替 psmux：终端会话放在一个常驻的守护进程里，SSH 断了、网页标签关了，终端里的程序（比如 Claude Code）照样跑，重新连上接着用。
+SSH-WEB 的终端守护程序（「常驻会话」，在 SSH-WEB 项目的 `sshwebd/` 目录），支持 Windows 和 Linux，参考 [Orca](https://github.com/stablyai/orca) 的 `orcad`。
+在 Windows 主机上代替 psmux、在 Linux 主机上代替 tmux 保住会话：终端会话放在一个常驻的守护进程里，SSH 断了、网页标签关了，终端里的程序（比如 Claude Code）照样跑，重新连上接着用。
 
 ## 为什么不用 psmux
 
@@ -32,7 +32,7 @@ SSH-WEB ──SSH exec 通道 (不要终端)── sshwebd bridge ──命名�
 
 ## 和 SSH-WEB 一起用
 
-1. 在 SSH-WEB 里编辑这台 Windows 主机，勾上「常驻会话」。
+1. 在 SSH-WEB 里编辑这台主机（Windows 或 Linux），勾上「常驻会话」（新建主机默认勾着）。
 2. 连接时 SSH-WEB 自动把 sshwebd.exe 传到这台主机的 `~/.ssh-web/sshwebd-<哈希>.exe`（已经有了就不传；换个名字是因为正在运行的 exe 不能覆盖）。exe 是构建 Docker 镜像时从这个目录的源码编出来的；不用 Docker、直接跑 SSH-WEB 源码时，先按下面「编译」编出 `sshwebd/sshwebd.exe`，或者自己把 exe 放到主机的 `%USERPROFILE%\.ssh-web\sshwebd.exe`。
 3. **新开标签**：新建一个会话（默认 PowerShell）。如果有没人接着的会话，会弹窗问你接哪个，空着就新建。
 4. **断线后**：这个标签重新连上，自动接回原来的会话，只补发断开期间的输出。
@@ -66,5 +66,7 @@ go test ./...        # 在 Linux 上真跑一遍（守护进程、bridge、断�
 
 SSH-WEB 的 `node test/run.js sshwebd` 会跑 go vet 和这些测试；`daemonwin` 测试用这里的源码编出 Linux 版，接到 SSH-WEB 上真跑。
 
-Linux / macOS 也能编译（用系统的 pty，主要拿来测试）。Windows 版需要 Windows 10 1809 及以上（ConPTY）。
+Linux 版用系统的 pty（SSH-WEB 的 Docker 镜像里编了 amd64 / arm64 / armv7，连接时按 `uname -m` 传过去）；macOS 也能编译，但 SSH-WEB 还不会自动传。Windows 版需要 Windows 10 1809 及以上（ConPTY）。
+
+Linux 上常驻会话里开不开 tmux 都行，见 SSH-WEB 的 docs/功能详细说明.md。个别发行版 systemd 设了 `KillUserProcesses=yes` 时，SSH 断开会结束用户的所有进程，要执行一次 `loginctl enable-linger`。
 

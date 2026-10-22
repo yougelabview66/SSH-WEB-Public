@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-var version = "0.1.3"
+var version = "0.1.5"
 
 const usage = `sshwebd %s：SSH-WEB 的终端守护程序
 

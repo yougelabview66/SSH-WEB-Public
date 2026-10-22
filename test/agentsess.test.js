@@ -160,7 +160,10 @@ run(async () => {
   await p.click('#histAgents .as-row [data-a=resume] >> nth=1'); await wait(800);
   ok(got === c1.cmd + '\r' && await p.isHidden('#history'), '在历史面板里点「继续」：在终端执行恢复命令，历史面板关掉: ' + J(got));
   await p.click('#btnHistory'); await wait(500);
-  ok(await p.evaluate(() => document.querySelector('#history .htabs .on')?.dataset.tab) === 'fav' && await p.isVisible('#favAdd'), '再打开历史面板：默认在「★ 收藏」(不记上次的选项卡)');
+  ok(await p.evaluate(() => document.querySelector('#history .htabs .on')?.dataset.tab) === 'agents' && await p.isVisible('#histAgents'), '再打开历史面板：还在上次看的「💬 会话历史」(记住选项卡)');
+  await p.reload(); await p.waitForSelector('.tab.active .dot.ok'); await wait(800);
+  await p.click('#btnHistory'); await wait(500);
+  ok(await p.evaluate(() => document.querySelector('#history .htabs .on')?.dataset.tab) === 'agents', '刷新页面后再打开：也还在「💬 会话历史」');
   await p.click('#history .htabs [data-tab=hist]'); await wait(300);
   ok(await p.isVisible('#histList') && await p.isVisible('#histSearch') && await p.isHidden('#histAgents'), '切回「🕘 历史」：命令列表回来了');
   await p.keyboard.press('Escape'); await wait(300);

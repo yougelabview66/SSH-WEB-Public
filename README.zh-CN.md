@@ -50,13 +50,29 @@ SSH-WEB 是单用户工具：一个登录保护所有主机，不适合需要多
 - **手机好用**：带特殊键的输入栏、对输入法友好，网络慢时打字预测回显，tmux 里本地快速滚动。
 - **右边栏**：文件树（git 状态、彩色图标）、模糊搜索文件（Ctrl+Shift+P）、代码改动对比，可以在改动的行上写批注发给 Agent。
 - **文件和端口**：SFTP 文件管理（拖拽上传、预览），图片 / 文件发给 Agent，内置端口转发预览开发服务。
-- **Windows 主机**：支持 cmd / PowerShell；可选的常驻会话用 [sshwebd](sshwebd/README.md)（很小的 ConPTY 守护程序），断线后终端继续运行。
+- **常驻会话（推荐开启）**：终端放在主机上一个很小的守护程序（[sshwebd](sshwebd/README.md)）里，断网、关掉标签、SSH-WEB 重启后都还在跑。支持 Windows 和 Linux。
+- **Windows 主机**：支持 cmd / PowerShell、性能监控、端口列表，常驻会话基于 ConPTY。
 - **性能监控**：CPU、内存、网速、磁盘、进程；延迟显示。
 - **Cloudflare 隧道**：直接连接通过 `cloudflared` 暴露的主机（支持 Service Token），不用装客户端。
 - **安全**：登录和失败限流、验证码（TOTP）弹窗、主机指纹校验、凭据 AES-256-GCM 加密保存、可限制可连接的主机。
 - 浅色 / 深色主题，主机分组，历史命令和收藏命令，内网离线可用。
 
 每个功能的详细说明：[docs/功能详细说明.md](docs/功能详细说明.md)
+
+## 推荐：开启常驻会话
+
+在主机设置里勾上 **「常驻会话」**（新建主机默认勾着）。SSH-WEB 会把一个很小的守护程序（`sshwebd`，约 3 MB，运行时只占几 MB 内存）传到主机上，终端在它里面运行：
+
+- 断网、关掉浏览器标签、SSH-WEB 自己重启，终端照样在跑；重新连上自动接回去，只补发没收到的输出。
+- 新开标签时列出还在跑的会话，每个显示所在文件夹和 Agent 正在做的事，点一下接上；不要的可以直接删除。
+- 支持 **Windows**（代替 psmux）和 **Linux**（amd64 / arm64 / armv7）。不用再靠 tmux 保会话；在里面照样开 tmux 也没问题。
+- 别的系统（比如 macOS）照常开普通终端。
+
+<p align="center">
+  <img src="docs/images/daemon-setting.png" alt="主机设置里的「常驻会话」" width="40%">
+  &nbsp;
+  <img src="docs/images/daemon-pick.png" alt="接上还在跑的常驻会话" width="50%">
+</p>
 
 ## 快速部署
 

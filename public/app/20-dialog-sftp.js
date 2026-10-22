@@ -83,7 +83,7 @@
         ${x.name || x.title ? `<div class="as-prompt">${esc(x.name || x.title)}</div>` : ''}<div class="as-meta">${esc(x.when)}</div></div>
       <div class="as-btns"><button type="button" data-a="pick" class="primary">接上</button><button type="button" data-a="kill">删除</button></div></div>`).join('');
     const html = (m.note ? `<p class="dp-note">${esc(m.note)}</p>` : '')
-      + '<p class="muted">这台主机上有没接着的常驻会话，点一个接上，或者新建一个：</p>'
+      + (rows ? '<p class="muted">这台主机上有没接着的常驻会话，点一个接上，或者新建一个：</p>' : '<p class="muted">没有别的没人接着的常驻会话，点「新建会话」开一个。</p>')
       + `<div class="as-list dp-list">${rows}</div>`;
     const r = await dialog('接上常驻会话', html, [
       { label: '取消', value: null, cancel: true },

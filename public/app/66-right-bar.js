@@ -54,6 +54,11 @@
     rightBar.querySelectorAll('.rb-pane').forEach((p) => p.classList.toggle('hidden', p.dataset.tab !== rbTab));
     if (!isTouch && !rbResizing) rightBar.style.width = Math.min(Math.max(+lsGet('sshweb.rbW', 440) || 440, 300), rbMax()) + 'px'; // 拖着的时候不改回去
   }
+  // 这个标签里 Agent 干活的目录变了 (会话历史切了对话、Agent 退出了、钩子报了新目录)：右边栏开着、没手动指定目录就重新读
+  function rbAgentCwd(s) {
+    if (rbState === 'closed' || rb.s !== s || s.projDir) return;
+    projLoad();
+  }
   // 换了标签：右边栏跟着换成那个标签的项目
   function rbSync(force) {
     applyRb();

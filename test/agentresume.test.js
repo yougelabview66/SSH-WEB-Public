@@ -2,7 +2,7 @@
 // 会话历史点「继续」：标签里还开着 Agent (Claude Code 等) 时，恢复命令会打进它的输入框 ——
 // 先按两下 Ctrl+C 退出它 (Grok 这种界面上没有特别的字的，光标停在 > 开头的输入行上也认得)，等回到 shell 再执行；普通 shell 直接执行、不多按 Ctrl+C；
 // 退不出来就不执行，提示手动退出。
-// 这台是 Linux 主机，勾着「常驻会话」(新建主机默认勾上)：安静地开普通终端，不提示「常驻会话没开起来」，主机列表上不标「常驻」
+// 这台主机 uname 认不出是 Linux (像别的系统)，勾着「常驻会话」(新建主机默认勾上)：安静地开普通终端，不提示「常驻会话没开起来」，主机列表上不标「常驻」
 const { Server } = require('ssh2');
 const { BASE, ok, wait, run, hostKey, addHost } = require('./helpers');
 const WebSocket = require('ws');
@@ -51,7 +51,7 @@ run(async () => {
   await wait(800);
   ok(sid && out.includes('? for shortcuts') && !out.includes('常驻会话没开起来'), 'Linux 主机勾着常驻会话：照常开终端，不提示「常驻会话没开起来」');
   const h = (await (await fetch(BASE + '/api/hosts')).json()).find((x) => x.id === host.id);
-  ok(h && h.winDaemon === true && h.isWin === false, '连过以后记下不是 Windows (主机列表上不标「常驻」): ' + JSON.stringify(h && { winDaemon: h.winDaemon, isWin: h.isWin }));
+  ok(h && h.winDaemon === true && h.os === 'other', '连过以后记下不是能用常驻会话的系统 (主机列表上不标「常驻」): ' + JSON.stringify(h && { winDaemon: h.winDaemon, os: h.os }));
 
   // 1. 开着 Agent：先两下 Ctrl+C 退出，回到 shell 再执行
   got = '';

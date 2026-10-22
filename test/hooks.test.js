@@ -115,6 +115,9 @@ run(async () => {
   runHook('{"hook_event_name":"Stop"}', { LC_SSHWEB: 'stale', TMUX: '/tmp/none,1,0', TMUX_PANE: '%5' });
   const l3 = JSON.parse(fs.readFileSync(path.join(fakeHome, '.cache/ssh-web/hook.log'), 'utf8').trim().split('\n').pop());
   ok(l3.tabs === '' && l3.pane === '%5', '在 tmux 里：不用残留的 LC_SSHWEB (按挂在这个 tmux 会话上的客户端找)，带上 pane');
+  runHook('{"hook_event_name":"Stop"}', { LC_SSHWEB: 'tab-old', SSHWEBD_SESSION: '3' });
+  const l4 = JSON.parse(fs.readFileSync(path.join(fakeHome, '.cache/ssh-web/hook.log'), 'utf8').trim().split('\n').pop());
+  ok(l4.tabs === 'tab-old' && l4.daemon === '3', '在常驻会话里：另外带上会话编号 (SSHWEBD_SESSION，换了标签接上服务端按它找): ' + JSON.stringify(l4));
 
   // 别的 Agent：第一个参数是哪个 Agent；各家字段名不一样也认得出；只有要求回话的 Agent 才往外打印
   const lastLine = () => JSON.parse(fs.readFileSync(path.join(fakeHome, '.cache/ssh-web/hook.log'), 'utf8').trim().split('\n').pop());

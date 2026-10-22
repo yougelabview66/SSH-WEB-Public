@@ -130,7 +130,7 @@
         el.innerHTML = `
           <div class="info"><div class="name"></div><div class="addr"></div></div>
           ${h.connType === 'cloudflare' ? '<span class="badge" title="Cloudflare 隧道">CF</span>' : ''}
-          ${h.winDaemon && h.isWin ? '<span class="badge soft" title="常驻会话 (sshwebd)">常驻</span>' : ''}
+          ${h.winDaemon && (h.os === 'windows' || h.os === 'linux') ? '<span class="badge soft" title="常驻会话 (sshwebd)">常驻</span>' : ''}
           <div class="ops"><button data-op="edit" title="编辑">✎</button><button data-op="del" title="删除">✕</button></div>`;
         $('.name', el).textContent = h.name;
         $('.addr', el).textContent = h.connType === 'cloudflare'
