@@ -1,23 +1,20 @@
 'use strict';
-// 连的是 Windows 的 SSH (默认 cmd，没有 sh)，里面开的是 psmux (Windows 上的 tmux 克隆)：往上滚也进 SSH-WEB 的历史视图
-// (ConPTY 没把备用屏幕传过来、只开了鼠标也算)
-// (以前取历史要在 sh 里跑，Windows 上跑不起来，滚轮就交给了 psmux 自己的复制模式)。
-// 不认 capture-pane 的 -e / -J 时去掉再试；第一次认出是 Windows 后直接用 psmux
+// 连的是 Windows 的 SSH (默认 cmd，没有 sh)，没开常驻会话 (sshwebd)：不再用 psmux 取历史 (常驻会话代替了它)。
+// 程序开着鼠标往上滚：不取历史、不打开历史视图、不弹「取不到 / 超时」，滚轮照常交给程序 (终端默认的方式)。
+// Windows 的终端缩放交给 ConPTY 重画，程序的询问只回答终端型号和光标位置
 const { Server } = require('ssh2');
 const { BASE, ok, wait, run, launch, hostKey, addHost } = require('./helpers');
 
 const HIST = [];
-for (let i = 0; i < 300; i++) HIST.push(i === 20 ? '早先的输出 win-old-line' : `psmux history line ${i}`);
+for (let i = 0; i < 300; i++) HIST.push(`win line ${i}`);
 const cmds = [];
-let mode = '00';
 let shellSt = null, shellIn = ''; // 终端里收到的输入 (看浏览器自动回答了什么)
 new Server({ hostKeys: [hostKey()] }, (c) => {
   c.on('authentication', (ctx) => ctx.accept());
   c.on('ready', () => c.on('session', (acc) => {
     const s = acc();
     s.on('pty', (a) => a()); s.on('window-change', (a) => a && a());
-    // 像 psmux：备用屏幕 + 鼠标，屏幕上是最后几十行
-    // 像 Windows 的 SSH (ConPTY)：psmux 开了鼠标，但进备用屏幕的信号没传过来 (还在普通屏幕上)
+    // 终端里的程序开了鼠标 (SGR 上报)
     s.on('shell', (a) => { shellSt = a(); shellSt.on('data', (d) => { shellIn += d; }); shellSt.write('\x1b[?1000h\x1b[?1006h\x1b[H\x1b[2J' + HIST.slice(-20).join('\r\n') + '\x1b[999;1H\x1b[42m[0] 0:pwsh*\x1b[K\x1b[0m'); });
     s.on('exec', (a, r, info) => {
       const ch = a(), cmd = info.command;
@@ -26,16 +23,7 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
       if (cmd.includes('hook.log')) return out('', 1); // 读钩子事件：cmd 里跑不了
       if (cmd === 'echo %OS%;$env:OS') return out('Windows_NT;$env:OS\r\n', 0); // 像 cmd
       if (cmd === 'sh' || cmd.startsWith('sh ')) { ch.stderr.write("'sh' is not recognized as an internal or external command,\r\n"); return out('', 1); }
-      // 像 cmd：几条命令用 & 连起来
-      let text = '', code = 0;
-      for (const c of cmd.split(' & ')) {
-        if (c.startsWith('echo ')) text += c.slice(5) + ' \r\n';
-        else if (c.startsWith('psmux list-clients')) text += '200x50 1700000000 %1\r\n80x24 1700000100 %3\r\n';
-        else if (c.startsWith('psmux display-message')) text += mode + '\r\n';
-        else if (c.startsWith('psmux capture-pane')) { if (/ -e| -J/.test(c)) code = 1; else { text += HIST.join('\r\n') + '\r\n'; code = 0; } }
-        else code = 1;
-      }
-      out(text, code);
+      out('', 1);
     });
   }));
 }).listen(2298, '127.0.0.1');
@@ -49,31 +37,19 @@ run(async () => {
   await p.locator('.host', { hasText: 'WINT' }).first().click(); await p.waitForSelector('.tab.active .dot.ok'); await wait(1200);
   // Windows 主机：终端开了 windowsPty (缩放时不自己重新折行，交给 ConPTY 重画，不然文字错乱)
   ok(await p.evaluate(() => document.querySelector('.term.active').dataset.winpty) === '1', 'Windows 主机：认出来后终端按 ConPTY 的方式处理缩放 (windowsPty)');
-  // 程序发来的询问 (psmux 会转给外面的终端)：终端型号、模式、背景色、光标位置 —— Windows 上只回答光标位置，别的回答会被当成键盘输入
+  // 程序发来的询问 (经 ConPTY 转给外面的终端)：终端型号、模式、背景色、光标位置 —— Windows 上只回答光标位置，别的回答会被当成键盘输入
   shellIn = '';
   shellSt.write('\x1b[c\x1b[?2026$p\x1b]11;?\x07\x1b[6n'); await wait(800);
   ok(/^\x1b\[\?[\d;]*c\x1b\[\d+;\d+R$/.test(shellIn), 'Windows 主机：回答终端型号和光标位置 (程序等着它们)，模式 / 颜色的回答不发 (不会变成乱文字打进 Claude 的输入框): ' + JSON.stringify(shellIn));
   const overTerm = async () => { const b = await p.locator('.term.active .term-box').boundingBox(); await p.mouse.move(b.x + b.width / 2, b.y + b.height / 2); };
-  const viewText = () => p.evaluate(() => document.querySelector('.term.active .lscroll .ls-body')?.textContent || '');
-  await overTerm(); await p.mouse.wheel(0, -100); await wait(2500);
-  const t = await viewText();
-  ok(t.includes('早先的输出 win-old-line') && !t.includes('\r'), 'Windows + psmux：往上滚进 SSH-WEB 的历史视图，看得到早先的输出');
-  const capOf = (x) => (x.split(' & ').find((c) => c.startsWith('psmux capture-pane')) || '');
-  const cap = cmds.map(capOf).filter(Boolean);
-  ok(!cmds.some((x) => x === 'sh' || x.startsWith('sh ')) && cmds.includes('echo %OS%;$env:OS'), '先认出是 Windows (SSH 默认 cmd)，不再先试 sh: ' + JSON.stringify(cmds.map((x) => x.slice(0, 30))));
-  ok(cap.length === 3 && cap.every((x) => / -S -\d+ -t %\d+$/.test(x)) && !/ -[eJ]/.test(cap[2]), '不认 -e / -J：去掉再试: ' + JSON.stringify(cap));
-  ok(cmds.filter((x) => x.includes('capture-pane')).every((x) => /list-clients .* & echo __SSHWEB_M1__ & psmux display-message -p -t %\d+ .* & echo __SSHWEB_M2__ & psmux capture-pane/.test(x)), '找 pane、看模式、抓历史连成一条命令执行 (Windows 开通道慢)');
-  await p.keyboard.press('Escape'); await wait(500);
-  // 第二次：一条命令搞定，直接用认过的参数
   const n0 = cmds.length;
-  await overTerm(); await p.mouse.wheel(0, -100); await wait(2000);
-  const again = cmds.slice(n0);
-  ok((await viewText()).includes('win-old-line') && again.length === 1 && / -p -S /.test(capOf(again[0])), '第二次往上滚：只执行一条命令，直接用认过的 capture-pane 参数: ' + JSON.stringify(again.map(capOf)));
-  await p.keyboard.press('Escape'); await wait(500);
-  // psmux 已经在复制模式里：滚轮照旧交给它
-  mode = '01';
-  await overTerm(); await p.mouse.wheel(0, -100); await wait(2000);
-  ok(!(await p.$('.term.active .lscroll')), 'psmux 已经在复制模式里：不打开历史视图，滚轮交给它');
+  shellIn = '';
+  await overTerm(); await p.mouse.wheel(0, -100); await wait(2500);
+  const toast = await p.evaluate(() => document.querySelector('.term.active .font-toast')?.textContent || '');
+  ok(!(await p.$('.term.active .lscroll')) && !/psmux|取不到|超时/.test(toast), '没开常驻会话、程序开着鼠标：往上滚不打开历史视图，也不提示 psmux 超时: ' + JSON.stringify(toast));
+  ok(!cmds.slice(n0).some((x) => /psmux|tmux|capture-pane/.test(x)), '不再在主机上找 psmux / tmux: ' + JSON.stringify(cmds.slice(n0)));
+  ok(/\x1b\[<64;\d+;\d+M/.test(shellIn), '滚轮照常交给程序 (按程序要的鼠标协议发): ' + JSON.stringify(shellIn.slice(0, 40)));
+  ok(!cmds.some((x) => x === 'sh' || x.startsWith('sh ')) && cmds.includes('echo %OS%;$env:OS'), '先认出是 Windows (SSH 默认 cmd)，不先试 sh: ' + JSON.stringify(cmds.map((x) => x.slice(0, 30))));
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
   await browser.close();
 });

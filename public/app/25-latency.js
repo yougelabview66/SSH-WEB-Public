@@ -272,9 +272,9 @@
       else if (a === 'refresh') self.load(self.path);
       else if (a === 'close') { self.toggle(); updateSftpBtn(); }
       else if (a === 'upload') fileInput.click();
-      else if (a === 'cd') { // 服务端按终端里的 shell (Linux sh / Windows cmd / PowerShell) 给出命令；在 psmux 里时以它当前 pane 的 shell 为准
+      else if (a === 'cd') { // 服务端按终端里的 shell (Linux sh / Windows cmd / PowerShell) 给出命令
         try {
-          const r = await api2('POST', 'cd', { path: self.path, inMux: s.term.buffer.active.type === 'alternate' });
+          const r = await api2('POST', 'cd', { path: self.path });
           send(s, { type: 'data', data: r.cmd + '\r' });
         } catch (err) { alert(err.message); }
         focusTerm(s);
