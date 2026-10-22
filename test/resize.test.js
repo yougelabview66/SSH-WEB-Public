@@ -36,7 +36,7 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   ok(rows < rows0, `终端相应变矮 ${rows0} → ${rows} 行`);
   ok(s.ov === 'hidden', '拖高后空输入框没有滚动条');
   ok(await p.evaluate(() => document.activeElement.id) === 'dInput', '拖完焦点在输入框');
-  got = ''; await p.keyboard.type('abc'); await p.keyboard.press('Enter'); await wait(300); s = await st();
+  got = ''; await p.keyboard.type('abc'); await p.keyboard.press('Enter'); await wait(800); // 模拟的终端不回显：回车要等到上限 (0.4 秒起) 才写，见 lib/session/input.js s = await st();
   ok(got === 'abc\r' && Math.abs(s.h - 120) <= 2, `发送后保持设定高度 ${s.h}px (不缩回 40)`);
   await p.keyboard.type('x\n'.repeat(1)); for (let i = 0; i < 10; i++) await p.keyboard.press('Shift+Enter'); await wait(200); s = await st();
   ok(s.h > 120, `字多了照样自动变高 ${s.h}px`);

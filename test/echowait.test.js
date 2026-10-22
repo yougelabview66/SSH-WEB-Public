@@ -9,7 +9,7 @@ const write = (t, s) => new Promise((r) => t.write(s, r));
 
 (async () => {
   ok(echoKey('   \r ') === null, '全是空白的文字没法判断 (退回固定间隔)');
-  ok(echoKey('\x1b[200~a\rb\x1b[201~').pasted === true && echoKey('hello').pasted === false, '多行内容 (括号粘贴) 认得出来');
+  ok(echoKey('\x1b[200~a\rb\x1b[201~').pasted === true && echoKey('hello').pasted === true, '折叠成 [Pasted text] 的都认 (多行，或者单行的长文字)');
 
   // shell：提示符后面显示出来
   let t = term(), k = echoKey('ls -la /tmp');

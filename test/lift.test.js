@@ -36,7 +36,7 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   ok(s.mode === '底部' && s.lift === 0, '再点一下回到「底部」 (只有两种模式)');
   await p.click('#dMode'); await wait(300);
   // 浮动下发送 / 命令模式
-  got = ''; await p.keyboard.type('echo hi'); await p.keyboard.press('Enter'); await wait(300);
+  got = ''; await p.keyboard.type('echo hi'); await p.keyboard.press('Enter'); await wait(800); // 模拟的终端不回显：回车要等到上限 (0.4 秒起) 才写，见 lib/session/input.js
   ok(got === 'echo hi\r', '浮动模式下 Enter 发送');
   got = ''; await p.keyboard.type('/c'); await wait(200); ok(got === '/c' && await p.evaluate(() => document.getElementById('deskBar').classList.contains('cmd')), '浮动模式下命令模式正常');
   await p.keyboard.press('Escape'); await wait(100);
