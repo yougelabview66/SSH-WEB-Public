@@ -220,8 +220,18 @@ run(async () => {
   ok(up && fs.readFileSync(path.join(edir, up), 'utf8') === 'exe on server' && c.out.includes('正在把 sshwebd 传到主机') && bridges.at(-1).exe === up,
     `服务器上的 sshwebd.exe 传过去 (${up}) 再用它: ` + JSON.stringify(bridges.at(-1)));
   ok(fs.readdirSync(edir).sort().join() === [up, 'sshwebd.exe'].sort().join(), '主机上自己放的 sshwebd.exe 不删，没有留下 .part');
+  // 断开期间会话没了 (电脑重启过之类)：重新连上时说清楚，再新开一个
+  for (const x of conns) x.end();
+  await until(() => c.out.includes('连接已断开'), 5000);
+  execFileSync(BIN, ['kill', cid], { env: { ...process.env, SSHWEBD_HOME: dhome } });
+  await wait(500);
+  c.out = '';
+  c.send({ type: 'reconnect' });
+  await until(() => /新建常驻会话 \d/.test(c.out) && c.last('status')?.status === 'connected', 15000);
+  ok(c.out.includes(`之前接着的常驻会话 ${cid} 已经不在了`) && c.out.includes('会话历史'), '重新连上时以前的会话没了：说清楚 (电脑重启过之类)，再新开一个: ' + JSON.stringify(c.out.slice(0, 160)));
+  const cid2 = /新建常驻会话 (\d+)/.exec(c.out)?.[1];
   c.type('exit\r');
-  await until(() => c.out.includes(`常驻会话 ${cid} 已结束`), 8000);
+  await until(() => c.out.includes(`常驻会话 ${cid2} 已结束`), 8000);
   c.ws.close();
 
   // ---- 5. 网页：主机列表上标「常驻」，编辑主机时勾着
