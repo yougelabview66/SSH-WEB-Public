@@ -4,6 +4,13 @@
 
 轻量的自托管 Web SSH 终端，专为在远程主机上跑 AI 编程助手（Claude Code、Codex、Gemini 等）设计，手机、电脑都能用。一个 Docker 容器就能跑，适合部署在 NAS 上。
 
+<p align="center">
+  <img src="docs/images/desktop.png" alt="电脑：多标签、Agent 状态卡片、右边栏项目文件" width="100%">
+</p>
+<p align="center">
+  <img src="docs/images/mobile.png" alt="手机：终端、输入栏和特殊键" width="280">
+</p>
+
 ```
 浏览器 (xterm.js) ──WebSocket──> SSH-WEB (Node.js + ssh2) ──SSH──────────────> 目标主机
                                                          └─WSS (Cloudflare)──> cloudflared ──> 主机:22

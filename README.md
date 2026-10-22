@@ -2,7 +2,14 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-A lightweight, self-hosted web SSH terminal built for running AI coding agents (Claude Code, Codex, Gemini …) on remote machines from any device. Runs in a single Docker container — ideal for a NAS.
+A lightweight, self-hosted web SSH terminal built for running AI coding agents (Claude Code, Codex, Gemini …) on remote machines from any device. Runs in a single Docker container — ideal for a NAS. The interface is currently in Chinese.
+
+<p align="center">
+  <img src="docs/images/desktop.png" alt="Desktop: tabs, agent status card and project side bar" width="100%">
+</p>
+<p align="center">
+  <img src="docs/images/mobile.png" alt="Mobile: terminal with input bar and special keys" width="280">
+</p>
 
 ```
 Browser (xterm.js) ──WebSocket──> SSH-WEB (Node.js + ssh2) ──SSH──────────────> target host
