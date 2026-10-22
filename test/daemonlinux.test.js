@@ -259,10 +259,10 @@ run(async () => {
   const busy = (dp.sessions || []).find((x) => x.id === did);
   ok(/之前接着的常驻会话 \d+ 已经被标签「DL-\d+」接上了/.test(d.out) && /已经被标签「DL-\d+」接上了/.test(dp.note || '') && /^标签「DL-\d+」$/.test(busy?.busy || '') && busy.tags?.includes(e.sid()),
     '重新连上时会话已经被别的标签接走：不去抢，提示一句是哪个标签、弹列表重新选 (列表里标明它在哪个标签用着): ' + JSON.stringify(dp));
-  // 别的标签正用着：不能删；没说「一起用」不接
+  // 别的标签正用着：没确认强制删除不删；没确认强制连接不接
   d.send({ type: 'daemon-pick-response', kill: did });
   await until(() => d.picks.length > 1, 8000);
-  ok(/正在标签「DL-\d+」里使用中，不能删除/.test(d.picks[1]?.note || '') && (d.picks[1].sessions || []).some((x) => x.id === did), '删除别的标签正用着的会话：不删，提示正在使用中: ' + JSON.stringify(d.picks[1]?.note));
+  ok(/要删除请再确认/.test(d.picks[1]?.note || '') && (d.picks[1].sessions || []).some((x) => x.id === did), '删除还有连接的会话 (网页上没确认强制删除)：不删，再问一次: ' + JSON.stringify(d.picks[1]?.note));
   d.send({ type: 'daemon-pick-response', id: did });
   await until(() => d.picks.length > 2, 8000);
   ok(/接上了/.test(d.picks[2]?.note || '') && !d.out.includes(`接上常驻会话 ${did}`), '选别的标签正用着的会话 (没确认一起用)：再问一次，不接');
@@ -284,10 +284,12 @@ run(async () => {
   d.send({ type: 'reconnect' });
   await until(() => d.out.includes(`接上常驻会话 ${did}`) && d.last('status')?.status === 'connected', 15000);
   ok(d.picks.length === np, '一起用的会话断线后重新连上：直接接回去，不弹列表');
-  // 都有人用着：新标签直接新建，不问
+  // 都有人用着：新标签也弹列表 (还有连接的标明在哪)，选「新建会话」
   const f2 = tab(host.id);
+  await until(() => f2.picks.length, 15000);
+  ok(f2.picks.length && f2.picks[0].sessions.every((x) => x.busy), '会话都有标签用着：新开标签也弹列表 (标明在哪接着): ' + JSON.stringify(f2.picks[0]?.sessions));
+  f2.send({ type: 'daemon-pick-response', id: '' });
   await until(() => /新建常驻会话 \d/.test(f2.out) && f2.last('status')?.status === 'connected', 15000);
-  ok(!f2.picks.length, '会话都有标签用着：新开标签直接新建，不弹列表');
   await fetch(BASE + '/api/sessions/' + f2.sid(), { method: 'DELETE' });
   f2.ws.close(); await wait(800);
   // 选择框点「退出」：关掉这个标签
@@ -326,9 +328,18 @@ run(async () => {
   const y = tab(host.id);
   await until(() => /新建常驻会话 \d/.test(y.out) || y.picks.length, 15000);
   ok(!y.picks.length && !(y.picks[0]?.sessions || []).some((x) => x.id === did), `只有自己接着时关标签选「结束会话」：常驻会话 ${did} 结束了 (新标签没有可接的，直接新建)`);
-  y.type('exit\r');
-  await wait(1500);
-  y.ws.close(); d.ws.close(); e.ws.close();
+  // 强制删除还有连接的会话：结束它，接着它的标签也关掉，选择框原地刷新
+  const yid = /新建常驻会话 (\d+)/.exec(y.out)[1];
+  const w = tab(host.id);
+  await until(() => w.picks.length, 15000);
+  ok((w.picks[0].sessions || []).some((x) => x.id === yid && x.busy), '列表里有别的标签接着的会话');
+  w.send({ type: 'daemon-pick-response', kill: yid, force: true, keep: true });
+  await until(() => w.picks.length > 1 && y.msgs.some((m) => m.type === 'terminated'), 8000);
+  ok(/^已结束：.*关掉了接着它的标签「DL-\d+」/.test(w.picks[1]?.note || '') && y.msgs.some((m) => m.type === 'terminated') && !w.msgs.some((m) => m.type === 'prompt-done'),
+    '强制删除还有连接的会话：结束它，接着它的标签也关掉，选择框不关、原地刷新: ' + JSON.stringify(w.picks[1]?.note));
+  w.send({ type: 'daemon-pick-response', cancel: true });
+  await until(() => w.msgs.some((m) => m.type === 'terminated'), 8000);
+  w.ws.close(); y.ws.close(); d.ws.close(); e.ws.close();
 
   // ---- 5c. 会话号会重复用：断线期间原来的会话结束了、同号的新会话开起来了，重新连上时不把新的当成原来那个
   const r1 = tab(host.id);

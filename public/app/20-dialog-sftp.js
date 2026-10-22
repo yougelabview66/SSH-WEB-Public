@@ -78,9 +78,9 @@
   }
 
   // 常驻会话：有没人接着的会话时问接哪个 (同会话历史的样子)。点一行或「接上」接上，「删除」点两下结束它
-  // (里面的程序会关掉)，「新建会话」开新的，「退出」关掉这个标签。别的标签正用着的标明在哪用、不能删，点它先问一句：
-  // 切到那个标签 / 在这里也打开 (两个标签显示同一个终端) / 返回。都在同一个弹窗里换内容，不关掉重开：
-  // 删除时调 onKill(id) 告诉服务端，弹窗留着，服务端结束后再发来的列表原地刷新 (dpOpen.update)。
+  // (里面的程序会关掉)，「新建会话」开新的，「退出」关掉这个标签。还有别的连接的 (别的标签、断电断网前留下的旧连接等)
+  // 标明在哪，点它先问要不要强制连接：是 / 切到那个标签 / 否 (回到列表)；点「删除」问要不要强制删除。都在同一个弹窗里换内容，
+  // 不关掉重开：删除时调 onKill(id, force) 告诉服务端，弹窗留着，服务端结束后再发来的列表原地刷新 (dpOpen.update)。
   // 返回 { id } / { id, share } / { id: '' } 新建 / { go: 标签 } 切过去 / null 退出；在别的设备上答了返回 undefined
   let dpOpen = null; // 开着 (或者排着队) 的常驻会话选择框 { tag, update }
   async function daemonPickDialog(m, tag, onKill) {
@@ -92,9 +92,7 @@
         <div class="as-main"><div class="as-title">${esc(x.cwd || `会话 ${x.id}`)}</div>
           ${x.name || x.title ? `<div class="as-prompt">${esc(x.name || x.title)}</div>` : ''}<div class="as-meta">${esc(x.when)}</div>
           ${x.busy ? `<div class="dp-used">正在${esc(x.busy)}里使用中</div>` : ''}</div>
-        <div class="as-btns"><button type="button" data-a="pick" class="primary">接上</button>${x.busy
-          ? '<button type="button" data-a="kill" disabled title="正在使用中，不能删除">使用中</button>'
-          : '<button type="button" data-a="kill">删除</button>'}</div></div>`).join('');
+        <div class="as-btns"><button type="button" data-a="pick" class="primary">接上</button><button type="button" data-a="kill">删除</button></div></div>`).join('');
       return (cur.note ? `<p class="dp-note">${esc(cur.note)}</p>` : '')
         + (rows ? '<p class="muted">这台主机上有还在运行的常驻会话，点一个接上，或者新建一个：</p>'
           : '<p class="muted">这台主机上没有别的常驻会话了：点「新建会话」开一个，或者「退出」关掉这个标签。</p>')
@@ -107,16 +105,34 @@
       acts().classList.remove('hidden');
       $('#dialogTitle').textContent = '接上常驻会话';
     };
-    // 别的标签正用着：同一个弹窗里换成确认 (这个浏览器里就有那个标签的话可以直接切过去)
+    // 还有别的连接：同一个弹窗里换成确认，问要不要强制连接 (这个浏览器里就有接着它的标签的话可以直接切过去)
     const showConfirm = (x) => {
       const other = sessions.find((y) => !y.closed && y.remoteId && x.tags?.includes(y.remoteId));
       confirming = { x, other };
-      $('#dialogTitle').textContent = '这个会话正在使用中';
-      body.innerHTML = `<p><b>${esc(x.cwd || `会话 ${x.id}`)}</b> 正在${esc(x.busy)}里使用中。</p>
-        <p class="muted">在这里也打开的话，两个标签显示同一个终端，在哪边打字都一样。</p>
-        <div class="actions dp-confirm"><button type="button" data-c="back">返回</button>${other ? '<button type="button" data-c="go">切到那个标签</button>' : ''}<button type="button" data-c="share" class="primary">在这里也打开</button></div>`;
+      $('#dialogTitle').textContent = '这个会话还有别的连接';
+      body.innerHTML = `<p><b>${esc(x.cwd || `会话 ${x.id}`)}</b> 还有连接：正在${esc(x.busy)}里使用中。要强制连接吗？</p>
+        <p class="muted">强制连接后两边显示同一个终端，在哪边打字都一样；断电、断网前留下的旧连接已经没人在用，连上没有影响。</p>
+        <div class="actions dp-confirm"><button type="button" data-c="back">否</button>${other ? '<button type="button" data-c="go">切到那个标签</button>' : ''}<button type="button" data-c="share" class="primary">是，强制连接</button></div>`;
       acts().classList.add('hidden');
       body.querySelector('[data-c=share]').focus();
+    };
+    // 还有连接的会话点「删除」：同一个弹窗里问要不要强制删除
+    const showKillConfirm = (x) => {
+      confirming = { x, kill: true };
+      $('#dialogTitle').textContent = '这个会话还有连接';
+      body.innerHTML = `<p><b>${esc(x.cwd || `会话 ${x.id}`)}</b> 还有连接：正在${esc(x.busy)}里使用中。要强制删除吗？</p>
+        <p class="muted">删除会结束这个会话，里面运行的程序 (比如 Claude Code) 会关掉，接着它的标签也会一起关掉。</p>
+        <div class="actions dp-confirm"><button type="button" data-c="back">否</button><button type="button" data-c="kill" class="danger">是，强制删除</button></div>`;
+      acts().classList.add('hidden');
+      body.querySelector('[data-c=back]').focus();
+    };
+    // 删除发给服务端：弹窗不关，这一行显示「正在结束…」，等服务端发来新列表
+    const kill = (id, force) => {
+      onKill(id, force);
+      if (confirming) showList();
+      const row = [...body.querySelectorAll('.dp-row')].find((r) => r.dataset.id === id);
+      const btn = row?.querySelector('[data-a=kill]');
+      if (btn) { btn.disabled = true; btn.textContent = '正在结束…'; row.classList.add('dp-killing'); }
     };
     // 确认的时候按 Esc：回到列表 (不是退出)。window 上的捕获比对话框挂在 document 上的先收到
     const onEsc = (e) => { if (e.key === 'Escape' && confirming) { e.stopPropagation(); e.preventDefault(); showList(); } };
@@ -133,20 +149,21 @@
           const c = e.target.closest('[data-c]');
           if (c) {
             if (c.dataset.c === 'share') return finish({ id: confirming.x.id, share: true });
+            if (c.dataset.c === 'kill') return kill(confirming.x.id, true);
             if (c.dataset.c === 'go') return finish({ go: confirming.other });
             return showList();
           }
           const row = e.target.closest('.dp-row');
           if (!row) return;
           const btn = e.target.closest('button');
+          const x = (cur.sessions || []).find((y) => y.id === row.dataset.id);
           if (btn?.dataset.a === 'kill') {
             if (btn.disabled) return;
-            // 删除要再点一次确认：里面还在跑的程序会被关掉。确认后弹窗不关，这一行显示「正在结束…」，等服务端发来新列表
+            if (x?.busy) return showKillConfirm(x); // 还有连接：问要不要强制删除
+            // 删除要再点一次确认：里面还在跑的程序会被关掉
             if (!btn.classList.contains('danger')) { btn.classList.add('danger'); btn.textContent = '确定删除？'; return; }
-            btn.disabled = true; btn.textContent = '正在结束…'; row.classList.add('dp-killing');
-            return onKill(row.dataset.id);
+            return kill(row.dataset.id, false);
           }
-          const x = (cur.sessions || []).find((y) => y.id === row.dataset.id);
           if (x?.busy) return showConfirm(x);
           finish({ id: row.dataset.id });
         };

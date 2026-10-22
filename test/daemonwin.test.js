@@ -61,7 +61,7 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
         ch.on('close', () => pr.kill('SIGKILL'));
         return;
       }
-      const k = /^"C:\\Users\\me\\\.ssh-web\\sshwebd[^"\\]*\.exe" (kill -t \S+ \d+)$/.exec(cmd);
+      const k = /^"C:\\Users\\me\\\.ssh-web\\sshwebd[^"\\]*\.exe" (kill(?: -t \S+)? \d+)$/.exec(cmd);
       if (k && BIN) { // 关标签时结束常驻会话
         kills.push(cmd);
         const pr = spawn(BIN, k[1].split(' '), { env: { ...process.env, SSHWEBD_HOME: dhome } });
@@ -313,14 +313,14 @@ run(async () => {
   const busyRow = await p.evaluate(() => { const r = document.querySelector('#dialog .dp-busy'); const k = r.querySelector('[data-a=kill]');
     return { text: r.textContent.replace(/\s+/g, ' '), killOff: k.disabled, kill: k.textContent, last: r === [...document.querySelectorAll('#dialog .dp-row')].pop() }; });
   await p.locator('#dialog .card, #dialog form').first().screenshot({ path: require('./helpers').shot('daemon-pick-busy.png') }).catch(() => {});
-  ok(/正在标签「DW-\d+」里使用中/.test(busyRow.text) && busyRow.killOff && busyRow.kill === '使用中' && busyRow.last, '列表里也有别的标签正用着的会话：排在后面、标明在哪个标签用着、不能删: ' + JSON.stringify(busyRow));
+  ok(/正在标签「DW-\d+」里使用中/.test(busyRow.text) && !busyRow.killOff && busyRow.kill === '删除' && busyRow.last, '列表里也有别的标签正用着的会话：排在后面、标明在哪个标签用着、不能删: ' + JSON.stringify(busyRow));
   await p.evaluate(() => { window.__dlgHides = 0; });
   await p.click('#dialog .dp-busy');
   await p.waitForSelector('#dialog:not(.hidden) .dp-confirm [data-c=go]', { timeout: 5000 });
   const ask = await p.evaluate(() => ({ title: document.getElementById('dialogTitle').textContent, btns: [...document.querySelectorAll('#dialog .dp-confirm button')].map((b) => b.textContent), acts: !!document.getElementById('dialogActions').offsetParent }));
   await p.locator('#dialog .card, #dialog form').first().screenshot({ path: require('./helpers').shot('daemon-pick-confirm.png') }).catch(() => {});
-  ok(ask.title === '这个会话正在使用中' && ask.btns.join() === '返回,切到那个标签,在这里也打开' && !ask.acts && await p.evaluate(() => window.__dlgHides) === 0,
-    '点别的标签正用着的会话：同一个弹窗里先问一句 (返回 / 切到那个标签 / 在这里也打开): ' + JSON.stringify(ask));
+  ok(ask.title === '这个会话还有别的连接' && ask.btns.join() === '否,切到那个标签,是，强制连接' && !ask.acts && await p.evaluate(() => window.__dlgHides) === 0,
+    '点还有连接的会话：同一个弹窗里问要不要强制连接 (否 / 切到那个标签 / 是，强制连接): ' + JSON.stringify(ask));
   await p.keyboard.press('Escape'); await wait(300);
   ok(await p.isVisible('#dialog .dp-busy') && await p.evaluate(() => window.__dlgHides) === 0, '「返回」(Esc)：回到列表，弹窗没关');
   await p.click('#dialog .dp-busy');
@@ -358,7 +358,30 @@ run(async () => {
   await closeAsk();
   await p.click('#dialogActions button:has-text("结束会话")');
   await p.waitForFunction((n) => document.querySelectorAll('.tab').length === n, tabs0 - 1, { timeout: 8000 }).catch(() => {}); await wait(1500);
-  ok(/^"C:\\Users\\me\\\.ssh-web\\sshwebd[^"]*\.exe" kill -t \S+ \d+$/.test(kills.at(-1) || '') && await p.locator('.tab').count() === tabs0 - 1 && !lsIds().includes(kid) && lsIds().length === ids0.length - 1, `「结束会话」：标签关了，常驻会话 ${kid} 也结束了: ` + JSON.stringify(lsIds()));
+  ok(/^"C:\\Users\\me\\\.ssh-web\\sshwebd[^"]*\.exe" kill \d+$/.test(kills.at(-1) || '') && await p.locator('.tab').count() === tabs0 - 1 && !lsIds().includes(kid) && lsIds().length === ids0.length - 1, `「结束会话」：标签关了，常驻会话 ${kid} 也结束了: ` + JSON.stringify(lsIds()));
+  // 强制删除还有连接的会话：同一个弹窗里先问 (否 / 是，强制删除)，删了以后接着它的标签也关掉，列表原地刷新
+  await row.click();
+  await p.waitForSelector('#dialog:not(.hidden) .dp-row, .tab.active .dot.ok', { timeout: 15000 });
+  if (await p.isVisible('#dialog .dp-row')) await p.click('#dialogActions button:has-text("新建会话")');
+  await p.waitForSelector('.tab.active .dot.ok', { timeout: 15000 }); await wait(800);
+  const tabsA = await p.locator('.tab').count();
+  await row.click();
+  await p.waitForSelector('#dialog:not(.hidden) .dp-busy', { timeout: 15000 }); await wait(300);
+  await p.evaluate(() => { window.__dlgHides = 0; });
+  const fid = await p.getAttribute('#dialog .dp-busy', 'data-id');
+  await p.click('#dialog .dp-busy [data-a=kill]');
+  await p.waitForSelector('#dialog .dp-confirm [data-c=kill]', { timeout: 5000 });
+  const kq = await p.evaluate(() => ({ title: document.getElementById('dialogTitle').textContent, btns: [...document.querySelectorAll('#dialog .dp-confirm button')].map((b) => b.textContent).join(), text: document.getElementById('dialogBody').textContent }));
+  ok(kq.title === '这个会话还有连接' && kq.btns === '否,是，强制删除' && /标签也会一起关掉/.test(kq.text), '删除还有连接的会话：同一个弹窗里问要不要强制删除: ' + JSON.stringify(kq));
+  await p.click('#dialog .dp-confirm [data-c=back]'); await wait(300);
+  ok(await p.isVisible('#dialog .dp-busy') && lsIds().includes(fid), '「否」：回到列表，不删');
+  await p.click('#dialog .dp-busy [data-a=kill]');
+  await p.click('#dialog .dp-confirm [data-c=kill]');
+  await p.waitForSelector('#dialog .dp-note', { timeout: 10000 }); await wait(1200);
+  const kn = await p.textContent('#dialog .dp-note');
+  ok(/^已结束：.*关掉了接着它的标签「DW-\d+」/.test(kn) && !lsIds().includes(fid) && await p.locator('.tab').count() === tabsA && await p.evaluate(() => window.__dlgHides) === 0,
+    '「是，强制删除」：会话结束，接着它的标签也关掉，弹窗原地刷新: ' + JSON.stringify([kn, lsIds()]));
+  await p.click('#dialogActions button:has-text("退出")'); await wait(800);
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
   await browser.close();
   b.ws.close();

@@ -334,7 +334,7 @@
         dpOpen.update(m);
       } else if (m.type === 'daemon-pick') { // 常驻会话：选接哪个 (见 lib/session/daemon.js 的 pickDaemon)
         activate(s);
-        daemonPickDialog(m, s.id, (kill) => send(s, { type: 'daemon-pick-response', kill, keep: true })).then((r) => {
+        daemonPickDialog(m, s.id, (kill, force) => send(s, { type: 'daemon-pick-response', kill, keep: true, ...(force && { force: true }) })).then((r) => {
           if (r === undefined) return; // 已在其他设备上选了
           // 切到正用着这个会话的标签：这个标签不要了 (同「退出」，服务端关掉它)
           if (r?.go) { if (!r.go.closed) activate(r.go); r = null; }

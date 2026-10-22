@@ -1,12 +1,12 @@
 'use strict';
 // 输入栏回车发送：程序一次读到「文字 + 回车」会当成粘贴、不提交，所以回车要和文字分开写进终端。
-// 服务端等程序把文字显示出来 (说明已经读走了) 马上写回车：空闲时几毫秒 (比以前固定等 50ms 快)；
-// 最多等 50ms (正忙还没显示、输密码这类不显示的)，同以前 —— 等显示出来再写在 Claude Code 对话长了时每条慢半拍。发送后输入栏变矮引起的终端尺寸变化排在回车之后
+// 服务端等程序把文字显示出来 (说明已经读走了) 马上写回车：空闲时几毫秒；正忙时等到显示出来 (以前最多等 50ms 就写，
+// 程序正忙没读走文字时回车和文字一起被读到，变成换行、消息发不出去)；一直不显示的 (输密码) 最多等 0.4 秒起。发送后输入栏变矮引起的终端尺寸变化排在回车之后
 // (以前夹在文字和回车之间，Claude Code 要先整屏重画完才处理回车，发一条要等好久)
 const { BASE, ok, wait, launch, hostKey } = require('./helpers');
 const { Server } = require('ssh2');
 let log = [];
-let mode = 'echo'; // 模拟的程序：echo 马上显示 / busy 先输出别的 300ms 后才显示 / silent 不显示 / pasted 多行显示成占位 / ask 先问光标位置、收到回答才显示
+let mode = 'echo'; // 模拟的程序：echo 马上显示 / busy 先输出别的 300ms 后才显示 / slowread 正忙 300ms 不读输入 (这期间来的一起读) / silent 不显示 / pasted 多行显示成占位 / ask 先问光标位置、收到回答才显示
 let shell = null;
 new Server({ hostKeys: [hostKey()] }, (c) => {
   c.on('authentication', (ctx) => ctx.accept());
@@ -17,8 +17,11 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
     s.on('shell', (a) => {
       const st = a(); shell = st;
       st.write('\x1b[?2004h$ '); // 同 Claude Code：开着括号粘贴
-      let asked = '';
+      let asked = '', held = null;
       st.on('data', (buf) => {
+        // slowread：正忙，300ms 内不读输入，之后一次读走攒下的所有内容 (文字和回车挤在一起就是被当成粘贴了)
+        if (mode === 'slowread' && held === null) { held = String(buf); setTimeout(() => { const all = held; held = null; mode = 'echo'; st.emit('data', Buffer.from(all)); mode = 'slowread'; }, 300); return; }
+        if (mode === 'slowread') { held += String(buf); return; }
         const d = String(buf);
         log.push({ t: Date.now(), d });
         if (d === '\r') return st.write('\r\n$ ');
@@ -68,12 +71,14 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   ok(r1.text?.d === 'hello world' && r1.gap >= 0 && r1.gap < 40 && !r1.merged, `程序空闲、马上显示：回车 ${r1.gap}ms 后就写进去 (以前固定等 50ms)，文字和回车分开`);
 
   const r2 = await sendAndLog('busy', word('second message'));
-  ok(r2.gap >= 45 && r2.gap < 150 && !r2.merged, `程序正忙 (先输出别的，300ms 后才显示文字)：回车最多等 50ms 照写，不会比以前慢 (${r2.gap}ms)`);
+  ok(r2.gap >= 280 && r2.gap < 450 && !r2.merged, `程序正忙 (先输出别的，300ms 后才显示文字)：等文字显示出来再写回车 (${r2.gap}ms)`);
 
   ok(!cliMsgs.some((m) => m.text || m.unknown), '发送时服务器不会告诉网页「终端输入框里有字」(以前回车写进去之前点终端，光标不回下方输入框): ' + JSON.stringify(cliMsgs));
 
   const r3 = await sendAndLog('silent', word('secret'));
-  ok(r3.gap >= 45 && r3.gap < 150 && !r3.merged, `不显示的输入 (密码，没有任何输出)：照旧 50ms 后写回车 (${r3.gap}ms)`);
+  ok(r3.gap >= 380 && r3.gap < 700 && !r3.merged, `不显示的输入 (密码，没有任何输出)：最多等 0.4 秒起照写回车 (${r3.gap}ms)`);
+  const r3b = await sendAndLog('slowread', word('busy reading'), 1500);
+  ok(r3b.text?.d === 'busy reading' && r3b.enter && !r3b.merged, '程序正忙 300ms 不读输入：回车等文字被读走、显示出来以后才写，不会和文字一起被读到 (那样会变成换行、消息发不出去): ' + JSON.stringify(r3b.text?.d));
 
   const r4 = await sendAndLog('pasted', async () => {
     await p.keyboard.type('line1'); await p.keyboard.press('Shift+Enter');
