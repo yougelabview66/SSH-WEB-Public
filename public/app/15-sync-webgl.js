@@ -191,8 +191,8 @@
     document.title = active ? `${active.title} - SSH-WEB` : 'SSH-WEB';
   }
 
-  // remote: 会话已在服务端结束 (其他设备关闭)，只移除本地标签
-  function closeSession(s, remote) {
+  // remote: 会话已在服务端结束 (其他设备关闭)，只移除本地标签；kill：接着的常驻会话也结束 (见 42-owner.js 的 askClose)
+  function closeSession(s, remote, kill) {
     s.closed = true;
     if (s.pred) predClear(s);
     clearInterval(s.ping);
@@ -200,7 +200,7 @@
     if (s.mon) clearTimeout(s.mon.timer);
     // 结束后台会话 (断开 SSH)
     if (!remote && s.remoteId) {
-      if (s.ws && s.ws.readyState === WebSocket.OPEN) send(s, { type: 'close' });
+      if (s.ws && s.ws.readyState === WebSocket.OPEN) send(s, { type: 'close', ...(kill && { kill: true }) });
       else api('DELETE', '/api/sessions/' + s.remoteId).catch(() => {});
     }
     try { s.ws && s.ws.close(); } catch {}

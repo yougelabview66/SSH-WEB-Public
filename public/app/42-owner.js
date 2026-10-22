@@ -64,10 +64,24 @@
   }
 
   // 关掉标签会断开 SSH，在用的那台设备上的这个标签也一起没了：锁住时 (别的设备在用) 先问一下
-  function askClose(s) {
+  // 接着常驻会话的标签：问要不要把常驻会话也结束 (结束 = 里面的程序关掉；保留 = 在主机后台接着跑，下次打开这台主机能接上)。
+  // 这个浏览器里别的标签也接着同一个会话：不问，只关这个标签
+  async function askClose(s) {
     if (isLocked(s)) {
       const who = s.ownerOnline ? `正在${s.ownerName}上使用` : `是${s.ownerName}在用的 (现在断开了)`;
       if (!confirm(`这个标签${who}，关掉会断开 SSH 连接，${s.ownerName}上的这个标签也会一起关掉。确定关闭？`)) return;
+    }
+    const did = s.sid && s.params?.daemonId;
+    const shared = did && sessions.some((x) => x !== s && !x.closed && x.params?.daemonId === did && x.params?.hostId === s.params.hostId);
+    if (did && !shared) {
+      const r = await dialog('关闭标签', `<p>「${esc(s.title)}」接着常驻会话 ${esc(did)}。要把这个常驻会话也结束吗？</p>
+        <p class="muted">结束：会话里运行的程序（比如 Claude Code）会关掉。<br>保留在后台：在主机上继续运行，下次打开这台主机时可以接上。</p>`, [
+        { label: '取消', value: null, cancel: true },
+        { label: '保留在后台', value: 'keep' },
+        { label: '结束会话', value: 'kill', cls: 'danger', submit: true },
+      ], 'close-' + s.id);
+      if (!r.value || s.closed) return;
+      return closeSession(s, false, r.value === 'kill');
     }
     closeSession(s);
   }

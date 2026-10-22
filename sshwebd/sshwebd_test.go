@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -344,6 +345,39 @@ func TestClientTags(t *testing.T) {
 	if got := strings.Join(tagsOf(), ","); got != "tab-a,tab-b" {
 		t.Fatalf("重连以后的标记不对 (旧的 a 应该被踢掉，只剩新的 a 和 b)：%q", got)
 	}
+	// tab-a 关标签时要结束会话 (带自己的标记)：b 还接着，不结束
+	if err := d0kill(t, home, "tab-a"); err == nil || err.Error() != errInUse {
+		t.Fatalf("别的标签还接着时带标记结束应该被拒绝：%v", err)
+	}
+	if got := strings.Join(tagsOf(), ","); got != "tab-a,tab-b" {
+		t.Fatalf("被拒绝后会话应该还在：%q", got)
+	}
+	// b 走了以后：只剩自己，结束
+	b.close()
+	waitFor(t, "b 断开", func() bool { return len(tagsOf()) == 1 })
+	if err := d0kill(t, home, "tab-a"); err != nil {
+		t.Fatalf("只有自己接着时应该能结束：%v", err)
+	}
+	waitFor(t, "a2 收到会话结束", func() bool { return a2.lastMsg("exit") != nil })
+}
+
+// 带标记结束会话 1 (同 sshwebd kill -t 标记 1)
+func d0kill(t *testing.T, home, tag string) error {
+	c := startBridge(t, home)
+	defer c.close()
+	c.req(Request{Op: "kill", ID: "1", Tag: tag})
+	var m *Msg
+	waitFor(t, "kill 的回复", func() bool {
+		m = c.lastMsg("ok")
+		if m == nil {
+			m = c.lastMsg("error")
+		}
+		return m != nil
+	})
+	if m.Type == "error" {
+		return errors.New(m.Error)
+	}
+	return nil
 }
 
 // bridge 进程已经退出了 (守护进程断开了它)

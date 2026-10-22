@@ -330,10 +330,12 @@
         rbAgentCwd(s);
       } else if (m.type === 'toast') { // 服务端的一句提示 (比如常驻会话里不用再开 tmux)
         fontToast(s, m.text, 6000);
-      } else if (m.type === 'daemon-pick') { // 常驻会话 (Windows)：选接哪个 (见 lib/session/daemon.js 的 pickDaemon)
+      } else if (m.type === 'daemon-pick') { // 常驻会话：选接哪个 (见 lib/session/daemon.js 的 pickDaemon)
         activate(s);
         daemonPickDialog(m, s.id).then((r) => {
           if (r === undefined) return; // 已在其他设备上选了
+          // 切到正用着这个会话的标签：这个标签不要了 (同「退出」，服务端关掉它)
+          if (r?.go) { if (!r.go.closed) activate(r.go); r = null; }
           send(s, r ? { type: 'daemon-pick-response', ...r } : { type: 'daemon-pick-response', cancel: true });
         });
       } else if (m.type === 'tmux-history') {

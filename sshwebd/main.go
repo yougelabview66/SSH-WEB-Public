@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-var version = "0.1.5"
+var version = "0.1.6"
 
 const usage = `sshwebd %s：SSH-WEB 的终端守护程序
 
@@ -32,7 +32,7 @@ const usage = `sshwebd %s：SSH-WEB 的终端守护程序
       -shell 名字         新建时用的 shell：powershell (默认) / cmd / pwsh，或者整条命令行
   sshwebd new [会话]      新建一个会话并接上
   sshwebd ls              列出会话
-  sshwebd kill 会话       结束一个会话
+  sshwebd kill 会话       结束一个会话 (-t 标记：别的标记的客户端还接着就不结束)
   sshwebd quit            结束守护进程 (还有会话时要加 -f，会话全部结束)
   sshwebd bridge          给 SSH-WEB 用：把标准输入输出 (每行一段 base64) 接到守护进程
   sshwebd serve           运行守护进程 (一般不用手动运行，上面的命令会自动启动)
@@ -243,9 +243,17 @@ func printSessions(ss []SessionInfo) {
 	w.Flush()
 }
 
+// 别的客户端还接着、没结束时的错误 (见 daemon.kill)
+const errInUse = "会话正在别处使用中"
+
+// sshwebd kill [-t 标记] 会话：带 -t 时别的标记的客户端还接着就不结束，退出码 3
 func runKill(args []string) int {
+	tag := ""
+	if len(args) == 3 && args[0] == "-t" {
+		tag, args = args[1], args[2:]
+	}
 	if len(args) != 1 {
-		fmt.Fprintln(os.Stderr, "用法：sshwebd kill 会话")
+		fmt.Fprintln(os.Stderr, "用法：sshwebd kill [-t 标记] 会话")
 		return 2
 	}
 	c, err := dial()
@@ -254,8 +262,11 @@ func runKill(args []string) int {
 		return 1
 	}
 	defer c.Close()
-	if _, err := request(c, Request{Op: "kill", ID: args[0]}); err != nil {
+	if _, err := request(c, Request{Op: "kill", ID: args[0], Tag: tag}); err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		if err.Error() == errInUse {
+			return 3
+		}
 		return 1
 	}
 	return 0

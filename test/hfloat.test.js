@@ -31,6 +31,16 @@ const B = BASE;
   ok(await p.isVisible('#hostFloat'), '底部模式：显示主机状态悬浮窗');
   let b = await box();
   ok(b.right >= 8 && b.right <= 16 && b.top >= 38 && b.top <= 50, `默认在终端右上角 (离右边 ${Math.round(b.right)}px，离顶部 ${Math.round(b.top)}px)`);
+  // 开着 SFTP 文件面板 (终端右边)：卡片让到面板左边，不挡面板上的「×」等按钮；关掉面板回原位
+  await p.click('#btnSftp'); await wait(600);
+  const sf = await p.evaluate(() => { const f = document.getElementById('hostFloat').getBoundingClientRect(), pn = document.querySelector('.term.active .sftp').getBoundingClientRect();
+    const x = document.querySelector('.term.active .sftp [data-a=close]').getBoundingClientRect();
+    return { fr: Math.round(f.right), pl: Math.round(pn.left), hit: !(f.right <= x.left || f.left >= x.right || f.bottom <= x.top || f.top >= x.bottom) }; });
+  ok(!sf.hit && sf.fr <= sf.pl, '开着 SFTP 文件面板：状态卡片让到面板左边，不挡面板的关闭按钮: ' + JSON.stringify(sf));
+  await p.click('.term.active .sftp [data-a=close]', { timeout: 3000 }); await wait(400);
+  b = await box();
+  ok(await p.locator('.term.active .sftp').count() === 0 || await p.isHidden('.term.active .sftp'), '面板的「×」点得到 (关掉了)');
+  ok(b.right >= 8 && b.right <= 16, `关掉面板：卡片回到右上角 (离右边 ${Math.round(b.right)}px)`);
   let c = await chips();
   ok(c.length === 2 && c[0].includes('HF-1') && c[1].includes('HF-2'), '悬浮窗里每个标签一个卡片: ' + c.map((x) => x.replace(/\s+/g, ' ').trim()).join(' | '));
   await p.screenshot({ path: shot('hfloat.png') });
