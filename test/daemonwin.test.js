@@ -151,6 +151,18 @@ run(async () => {
   ok(a.count('hi-42') === 1, '之前收到过的不再重发 (hi-42 只出现一次): ' + a.count('hi-42'));
   ok(bridges.length === 2 && fs.readdirSync(edir).join() === 'sshwebd.exe', '重新连上照样用主机上的 sshwebd.exe');
 
+  // 滚轮往上看历史 (同 Linux 上的 tmux)：常驻会话没有 tmux，历史从服务器上这个终端自己的记录里拿，带颜色
+  a.type("printf '\\033[31mRED-%s\\033[0m\\n' $((40+2))\r");
+  await until(() => a.out.includes('RED-42'), 5000);
+  const hist = await new Promise((resolve) => {
+    const n = a.msgs.length;
+    a.send({ type: 'tmux-history', lines: 3000 });
+    const t = setInterval(() => { const m = a.msgs.slice(n).find((x) => x.type === 'tmux-history'); if (m) { clearInterval(t); resolve(m); } }, 50);
+    setTimeout(() => { clearInterval(t); resolve(null); }, 5000);
+  });
+  ok(hist?.ok && hist.data.includes('hi-42') && hist.data.includes('after-drop-2') && hist.data.includes('\x1b[0;31mRED-42'),
+    '常驻会话往上滚看历史：从服务器上的终端记录拿 (之前的输出都在、带颜色): ' + JSON.stringify((hist?.data || hist?.reason || '').slice(-200)));
+
   // ---- 3. 关掉标签 (常驻会话还在)，再开一个标签：问接哪个，选 1 接上 (全部补发)
   await fetch(BASE + '/api/sessions/' + sid, { method: 'DELETE' });
   a.ws.close();
