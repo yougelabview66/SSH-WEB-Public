@@ -93,6 +93,9 @@ func startPty(shell, cwd string, env map[string]string, cols, rows int) (ptyProc
 	}
 	si := windows.StartupInfoEx{ProcThreadAttributeList: attrs.List()}
 	si.Cb = uint32(unsafe.Sizeof(si))
+	// 标准输入输出句柄明确给空的：不然守护进程自己的 (NUL) 会传给 shell，shell 不用伪终端、
+	// 读到输入结束马上退出 (PowerShell 一开就「退出码 0」)
+	si.Flags |= windows.STARTF_USESTDHANDLES
 	cmd16, err := windows.UTF16PtrFromString(cmdline)
 	if err != nil {
 		p.Close()

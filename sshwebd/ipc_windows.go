@@ -82,8 +82,10 @@ func spawnDaemon() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	start := func(flags uint32) error {
-		cmd := exec.Command(exe, "serve")
+	// 告诉守护进程是怎么启动的 (日志、bridge 的提示用)：脱离成功后它也可能还在别的作业里
+	// (IsProcessInJob 只说在不在任何作业里)，Orca 也是以「带着脱离启动成功」为准
+	start := func(flags uint32, how string) error {
+		cmd := exec.Command(exe, "serve", "-spawn", how)
 		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: flags}
 		if err := cmd.Start(); err != nil {
 			return err
@@ -91,11 +93,12 @@ func spawnDaemon() (bool, error) {
 		return cmd.Process.Release()
 	}
 	base := uint32(windows.DETACHED_PROCESS | windows.CREATE_NEW_PROCESS_GROUP)
-	if err := start(base | createBreakawayFromJob); err == nil {
+	if err := start(base|createBreakawayFromJob, "breakaway"); err == nil {
 		return true, nil
 	}
-	// 外面的作业不让脱离：照样启动，SSH 断开时会话会跟着结束
-	return false, start(base)
+	// 外面的作业不让脱离：照样启动，SSH 断开时会话会跟着结束 (不用 WMI 兜底：普通用户的 SSH 登录不让用，
+	// 杀毒软件也会当成可疑的远程执行，Orca 同样不用)
+	return false, start(base, "plain")
 }
 
 var procIsProcessInJob = windows.NewLazySystemDLL("kernel32.dll").NewProc("IsProcessInJob")

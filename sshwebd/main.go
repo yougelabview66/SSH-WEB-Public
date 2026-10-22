@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-var version = "0.1.0"
+var version = "0.1.1"
 
 const usage = `sshwebd %s：SSH-WEB 的终端守护程序
 
@@ -85,6 +85,7 @@ func runServe(args []string) int {
 	}
 	idle := fs.Duration("idle", defIdle, "没有会话、也没有客户端连着多久后退出")
 	buf := fs.Int("buffer", 1<<20, "每个会话记住最近多少字节输出 (接上时补发)")
+	spawn := fs.String("spawn", "", "(内部用) 怎么启动的：breakaway = 带着脱离 SSH 会话的作业启动成功，plain = 没能脱离")
 	fs.Parse(args)
 	os.MkdirAll(dataDir(), 0o700)
 	logPath := filepath.Join(dataDir(), "sshwebd.log")
@@ -105,7 +106,9 @@ func runServe(args []string) int {
 		return 1
 	}
 	d := newDaemon(ln, *idle, *buf)
-	log.Printf("sshwebd %s 启动 (pid %d，脱离 SSH 会话：%v)", version, os.Getpid(), d.detached)
+	// 脱离了没有：带着脱离启动成功的就算 (之后还可能在别的作业里)；直接运行的看在不在作业里
+	d.detached = *spawn == "breakaway" || (*spawn == "" && !inJob())
+	log.Printf("sshwebd %s 启动 (pid %d，启动方式：%s，脱离 SSH 会话：%v，在作业里：%v)", version, os.Getpid(), map[string]string{"breakaway": "脱离作业", "plain": "没能脱离", "": "直接运行"}[*spawn], d.detached, inJob())
 	d.serve()
 	return 0
 }
