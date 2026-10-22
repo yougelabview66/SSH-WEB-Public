@@ -1,9 +1,14 @@
 {
   "name": "ssh-web",
-  "version": "1.69.4",
-  "description": "轻量级 Web SSH 终端，适合 NAS Docker 部署",
+  "version": "1.69.5",
+  "description": "Lightweight self-hosted web SSH terminal for running AI coding agents from any device",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yougelabview66/SSH-WEB.git"
+  },
+  "homepage": "https://github.com/yougelabview66/SSH-WEB",
   "main": "server.js",
-  "private": true,
   "scripts": {
     "start": "node server.js",
     "test": "node test/run.js"
