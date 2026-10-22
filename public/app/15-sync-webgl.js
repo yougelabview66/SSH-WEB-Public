@@ -25,6 +25,7 @@
       if (m.type === 'version') checkVersion(m.version);
       else if (m.type === 'session-created') addRemoteTab(m.session);
       else if (m.type === 'order') applyTabOrder(m.ids);
+      else if (m.type === 'hosts') loadHosts().catch(() => {}); // 主机信息变了 (比如连上后认出了系统)：重新读主机列表
     };
     ws.onclose = () => {
       clearInterval(ping);
