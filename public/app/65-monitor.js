@@ -91,21 +91,22 @@
     function render(d) {
       $('.mh', el).textContent = d.hostname || '性能监控';
       $('.m-os', el).textContent = [d.os, d.kernel].filter(Boolean).join(' · ');
-      $('.m-up', el).textContent = `运行 ${fmtUptime(d.uptime)} · 负载 ${d.load.map((x) => x.toFixed(2)).join(' ')}`;
+      // Windows 主机没有负载、IO 等待、缓存 (见 lib/monitor.js 的 parseWin)：不显示
+      $('.m-up', el).textContent = `运行 ${fmtUptime(d.uptime)}${d.load.length ? ` · 负载 ${d.load.map((x) => x.toFixed(2)).join(' ')}` : ''}`;
       const body = $('.m-body', el);
       if (!body.dataset.built) build(body);
 
       const c = d.cpu;
       $('.v-cpu', el).textContent = fmtPct(c.usage);
       setMeter($('.b-cpu', el), c.usage);
-      $('.n-cpu', el).textContent = `${c.cores} 核 · 用户 ${fmtPct(c.user)} · 系统 ${fmtPct(c.system)} · IO等待 ${fmtPct(c.iowait)}`
+      $('.n-cpu', el).textContent = `${c.cores} 核 · 用户 ${fmtPct(c.user)} · 系统 ${fmtPct(c.system)}${c.iowait != null || d.load.length ? ` · IO等待 ${fmtPct(c.iowait)}` : ''}`
         + (d.temp != null ? ` · ${d.temp.toFixed(0)}°C` : '');
       $('.n-cpu', el).title = c.model;
 
       const mp = d.mem.total ? (d.mem.used / d.mem.total) * 100 : 0;
       $('.v-mem', el).textContent = `${fmtBytes(d.mem.used)} / ${fmtBytes(d.mem.total)}`;
       setMeter($('.b-mem', el), mp);
-      $('.n-mem', el).textContent = `已用 ${fmtPct(mp)} · 缓存 ${fmtBytes(d.mem.cache)}`;
+      $('.n-mem', el).textContent = `已用 ${fmtPct(mp)}${d.mem.cache != null ? ` · 缓存 ${fmtBytes(d.mem.cache)}` : ''}`;
       const swapSec = $('.s-swap', el);
       swapSec.hidden = !d.mem.swapTotal;
       if (d.mem.swapTotal) {
