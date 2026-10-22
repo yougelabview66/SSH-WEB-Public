@@ -54,7 +54,7 @@
     });
     // tmux 里：打开历史视图再搜 (同往上滚的第一下)
     const b = s.term.buffer.active;
-    if (!s.scrollView && s.sid && b.type === 'alternate' && s.term.modes.mouseTrackingMode !== 'none' && !(s.noTmuxUntil > Date.now()) && !s.scrollLoading) {
+    if (!s.scrollView && s.sid && b.type === 'alternate' && s.term.modes.mouseTrackingMode !== 'none' && !s.winHost && !(s.noTmuxUntil > Date.now()) && !s.scrollLoading) {
       s.scrollLoading = true;
       s.heldWheel = 1;
       send(s, { type: 'tmux-history', lines: LS_LINES });

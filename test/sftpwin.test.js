@@ -1,7 +1,7 @@
 'use strict';
 // 连的是 Windows 的 SSH (OpenSSH)：SFTP 路径是 /D:/xxx，文件面板的路径框显示时去掉盘符前面的 /；
 // 在路径框里输入 D:/xxx 回车，发给服务端时补回 /D:/xxx；「终端 cd」按终端里的 shell 给写法：
-// 默认 cmd → cd /d "D:\xxx"，默认 PowerShell → cd 'D:\xxx'，在 psmux 里以它当前 pane 的 shell 为准
+// 默认 cmd → cd /d "D:\xxx"，默认 PowerShell → cd 'D:\xxx'
 const { Server, utils: { sftp: { STATUS_CODE } } } = require('ssh2');
 const { BASE, ok, wait, run, launch, hostKey, addHost } = require('./helpers');
 
@@ -10,8 +10,8 @@ const DIRS = { '/D:/示例工作区': ['项目', 'a.txt'], '/D:/示例工作区/
 const asked = [];
 const got = {}; // 端口 → 终端收到的输入
 
-// shell：SSH 默认的命令行 (cmd / powershell)；mux：终端里开着 psmux，pane 里是 pwsh
-function server(port, shell, mux) {
+// shell：SSH 默认的命令行 (cmd / powershell)
+function server(port, shell) {
   new Server({ hostKeys: [hostKey()] }, (c) => {
     c.on('authentication', (ctx) => ctx.accept());
     c.on('ready', () => c.on('session', (acc) => {
@@ -20,8 +20,8 @@ function server(port, shell, mux) {
       s.on('shell', (a) => {
         const st = a();
         got[port] = '';
-        // 终端屏幕上的提示符跟着 shell 走 (PowerShell 是 PS D:\…>)；psmux 里光标停在状态栏上，看不出提示符，要问 psmux
-        st.write(mux ? '\x1b[?1049h\x1b[?1000h\x1b[H\x1b[2JPS D:\\示例工作区> \x1b[999;1H\x1b[42m[0] 0:pwsh*\x1b[0m' : shell === 'powershell' ? 'PS D:\\示例工作区> ' : 'D:\\示例工作区> ');
+        // 终端屏幕上的提示符跟着 shell 走 (PowerShell 是 PS D:\…>)
+        st.write(shell === 'powershell' ? 'PS D:\\示例工作区> ' : 'D:\\示例工作区> ');
         st.on('data', (d) => { got[port] += d; });
       });
       s.on('exec', (a, r, info) => {
@@ -29,8 +29,6 @@ function server(port, shell, mux) {
         const out = (t, code) => { if (t) ch.write(t); ch.exit(code); ch.end(); };
         // 分辨 shell 的那句话：cmd 原样打出 $env:OS，PowerShell 打出 %OS% 和 Windows_NT
         if (cmd === 'echo %OS%;$env:OS') return out(shell === 'cmd' ? 'Windows_NT;$env:OS\r\n' : '%OS%\r\nWindows_NT\r\n', 0);
-        if (mux && cmd.startsWith('psmux list-clients')) return out('80x24 1700000000 %2\r\n', 0);
-        if (mux && cmd.startsWith('psmux display-message') && cmd.includes('pane_current_command')) return out('pwsh\r\n', 0);
         out('', 1);
       });
       s.on('sftp', (accept) => {
@@ -62,10 +60,10 @@ function server(port, shell, mux) {
     }));
   }).listen(port, '127.0.0.1');
 }
-server(2297, 'cmd', false); server(2299, 'powershell', false); server(2300, 'cmd', true);
+server(2297, 'cmd'); server(2299, 'powershell');
 
 run(async () => {
-  await addHost('WIN', 2297); await addHost('WINPS', 2299); await addHost('WINMUX', 2300);
+  await addHost('WIN', 2297); await addHost('WINPS', 2299);
   const browser = await launch();
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   await ctx.addInitScript(() => { try { localStorage.setItem('sshweb.hfOn', '0'); } catch {} }); // 状态悬浮窗会挡住文件面板的按钮
@@ -86,7 +84,7 @@ run(async () => {
   const cdOn = async (port) => { got[port] = ''; await p.click('.term.active .sftp [data-a=cd]'); await wait(1200); return got[port]; };
   let g = await cdOn(2297);
   ok(g === 'cd /d "D:\\示例工作区"\r', '默认 cmd：发 cd /d "D:\\示例工作区" (换盘符也切得过去): ' + JSON.stringify(g));
-  for (const [name, port, label] of [['WINPS', 2299, '默认 PowerShell'], ['WINMUX', 2300, 'SSH 默认 cmd、psmux 里是 pwsh']]) {
+  for (const [name, port, label] of [['WINPS', 2299, '默认 PowerShell']]) {
     await p.locator('.host', { hasText: name }).first().click(); await p.waitForSelector('.tab.active .dot.ok'); await wait(1000);
     await p.click('#btnSftp'); await p.waitForSelector('.term.active .sftp .frow');
     g = await cdOn(port);

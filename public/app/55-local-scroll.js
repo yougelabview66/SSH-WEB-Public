@@ -18,9 +18,10 @@
     // 刚往下滚回实时画面：这一下滚动剩下的 (滚轮 / 触摸板末尾常带一两格反方向的抖动) 都不算，免得又打开历史视图
     if (s.lsWheelUntil > Date.now()) { s.lsWheelUntil = Date.now() + LS_WHEEL_QUIET; return false; }
     if (s.scrollLoading) { s.heldWheel += e.deltaY < 0 ? 1 : -1; return false; } // 等结果期间的滚动先记下 (往上为正)
-    // 程序开了鼠标 (tmux / psmux) 才试；不要求备用屏幕：Windows 的 SSH 中间隔着 ConPTY，psmux 进备用屏幕不一定传得过来
-    // (不是 tmux 的话服务端很快回 no-tmux，一段时间内不再试)
+    // 程序开了鼠标 (tmux) 才试 (不是 tmux 的话服务端很快回 no-tmux，一段时间内不再试)；Windows 常驻会话一直试。
+    // Windows 没开常驻会话：不取历史 (不用 psmux 了)，滚轮按终端默认的方式处理
     if (e.deltaY >= 0 || !s.sid || (s.term.modes.mouseTrackingMode === 'none' && !daemonHistory(s))) return true;
+    if (s.winHost && !daemonHistory(s)) return true;
     if (s.noTmuxUntil > Date.now()) return true;
     s.scrollLoading = true;
     s.heldWheel = 1;
@@ -55,10 +56,10 @@
     const reason = m.ok ? 'mismatch' : m.reason;
     s.noTmuxUntil = Date.now() + ({ 'no-tmux': 300000, busy: 5000, 'in-mode': 3000 }[reason] || 30000);
     if (m.win) s.winHost = true;
-    // Windows 主机 (psmux) 取不到历史、或者超时：提示一次原因 (真机上没法看，方便找问题)
-    if ((s.winHost || reason === 'timeout') && !s.winToastDone && !['busy', 'in-mode'].includes(reason)) {
+    // 超时：提示一次原因 (真机上没法看，方便找问题)；Windows 主机没开常驻会话本来就没有历史，不提示
+    if (reason === 'timeout' && !s.winHost && !s.winToastDone) {
       s.winToastDone = true;
-      fontToast(s, `${s.winHost ? 'psmux' : 'tmux'} 的历史取不到（${{ 'no-tmux': '没找到 psmux 或 pane', timeout: '超时', mismatch: '取到的不是这个窗格的内容', failed: 'capture-pane 失败' }[reason] || reason}），这次滚轮交给它自己处理`, 4000);
+      fontToast(s, 'tmux 的历史取不到（超时），这次滚轮交给它自己处理', 4000);
     }
     const target = s.term.element.querySelector('.xterm-screen') || s.term.element;
     const r = target.getBoundingClientRect();
