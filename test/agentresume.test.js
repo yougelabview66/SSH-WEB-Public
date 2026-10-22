@@ -1,0 +1,69 @@
+'use strict';
+// 会话历史点「继续」：标签里还开着 Agent (Claude Code 等) 时，恢复命令会打进它的输入框 ——
+// 先按两下 Ctrl+C 退出它，等 Agent 的界面没了 (回到 shell) 再执行；普通 shell 直接执行、不多按 Ctrl+C；
+// 退不出来就不执行，提示手动退出。
+// 这台是 Linux 主机，勾着「Windows 常驻会话」(新建主机默认勾上)：安静地开普通终端，不提示「常驻会话没开起来」，主机列表上不标「常驻」
+const { Server } = require('ssh2');
+const { BASE, ok, wait, run, hostKey, addHost } = require('./helpers');
+const WebSocket = require('ws');
+
+let st = null, mode = 'agent', got = '', ctrlC = [];
+const AGENT = '\x1b[2J\x1b[H● 上一次的回复内容\r\n────────────────\r\n> \r\n────────────────\r\n  ? for shortcuts\x1b[3;3H';
+const SHELL = '\x1b[2J\x1b[HResume this session with: claude --resume old\r\n$ ';
+new Server({ hostKeys: [hostKey()] }, (c) => {
+  c.on('authentication', (ctx) => ctx.accept());
+  c.on('ready', () => c.on('session', (acc) => {
+    const s = acc();
+    s.on('pty', (a) => a()); s.on('window-change', (a) => a && a());
+    s.on('exec', (a, r, info) => { const ch = a(); ch.write(info.command === 'echo %OS%;$env:OS' ? '%OS%\n' : ''); ch.exit(info.command === 'echo %OS%;$env:OS' ? 0 : 1); ch.end(); }); // 像 sh
+    s.on('shell', (a) => {
+      st = a();
+      st.write(AGENT);
+      st.on('data', (d) => {
+        d = d.toString();
+        got += d;
+        if (d === '\x03') {
+          ctrlC.push(Date.now());
+          // 像 Claude Code：1 秒内连按两下 Ctrl+C 退出，回到 shell (stuck：怎么按都不退)
+          if (mode === 'agent' && ctrlC.length >= 2 && ctrlC[ctrlC.length - 1] - ctrlC[ctrlC.length - 2] < 1000) { mode = 'shell'; setTimeout(() => st.write(SHELL), 150); }
+        }
+      });
+    });
+  }));
+}).listen(2340, '127.0.0.1');
+
+const resume = (sid, cmd) => fetch(BASE + '/api/agent-sessions/resume', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sid, cmd }) })
+  .then(async (r) => ({ status: r.status, body: await r.json() }));
+
+run(async () => {
+  const host = await addHost('AR', 2340, { winDaemon: true });
+  const ws = new WebSocket(BASE.replace('http', 'ws') + '/ws');
+  let sid = null;
+  let out = '';
+  ws.on('message', (d, bin) => { if (bin) { out += d.toString(); return; } const m = JSON.parse(d); if (m.type === 'status' && m.status === 'connected') sid = m.sid; });
+  await new Promise((r) => ws.on('open', r));
+  ws.send(JSON.stringify({ type: 'connect', hostId: host.id, title: 'AR', cols: 100, rows: 30 }));
+  for (let i = 0; i < 50 && !sid; i++) await wait(100);
+  await wait(800);
+  ok(sid && out.includes('? for shortcuts') && !out.includes('常驻会话没开起来'), 'Linux 主机勾着常驻会话：照常开终端，不提示「常驻会话没开起来」');
+  const h = (await (await fetch(BASE + '/api/hosts')).json()).find((x) => x.id === host.id);
+  ok(h && h.winDaemon === true && h.isWin === false, '连过以后记下不是 Windows (主机列表上不标「常驻」): ' + JSON.stringify(h && { winDaemon: h.winDaemon, isWin: h.isWin }));
+
+  // 1. 开着 Agent：先两下 Ctrl+C 退出，回到 shell 再执行
+  got = '';
+  let r = await resume(sid, 'cd /home/demo/proj && claude --resume abc');
+  ok(r.status === 200 && r.body.quit === true, '开着 Agent：先退出它: ' + JSON.stringify(r));
+  ok(/^\x03\x03cd \/home\/demo\/proj && claude --resume abc\r$/.test(got), '先发两下 Ctrl+C，Agent 退出回到 shell 以后才发恢复命令: ' + JSON.stringify(got));
+
+  // 2. 已经在 shell 里：直接执行，不按 Ctrl+C
+  got = '';
+  r = await resume(sid, 'claude --resume def');
+  ok(r.status === 200 && r.body.quit === false && got === 'claude --resume def\r', '在 shell 里：直接执行，不多按 Ctrl+C: ' + JSON.stringify([r.body, got]));
+
+  // 3. Agent 怎么都退不出来：不执行，提示手动退出
+  mode = 'stuck'; st.write(AGENT); await wait(500);
+  got = '';
+  r = await resume(sid, 'claude --resume ghi');
+  ok(r.status === 409 && /手动退出/.test(r.body.error) && !got.includes('claude --resume ghi'), '退不出来：命令不发 (免得打进 Agent 的输入框)，提示手动退出: ' + JSON.stringify([r.body, got]));
+  ws.close();
+});

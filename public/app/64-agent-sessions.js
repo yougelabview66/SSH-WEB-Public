@@ -78,7 +78,7 @@
         list.innerHTML = '';
       }
       try {
-        const r = await api('POST', '/api/agent-sessions', { sid: s.sid, agent, q, inMux: s.term.buffer.active.type === 'alternate' });
+        const r = await api('POST', '/api/agent-sessions', { sid: s.sid, agent, q });
         if (my !== seq) return;
         items = r.sessions;
         info.textContent = `${host} · ${q ? `含「${q}」的 ` : '最近 '}${items.length} 个会话${r.more ? '（只列最近的）' : ''}${r.partial ? '（搜索超时，只搜了最近的一部分）' : ''}`
@@ -113,13 +113,11 @@
         b.textContent = (await copyText(x.cmd)) ? '已复制' : '复制失败';
         setTimeout(() => { b.textContent = '复制'; }, 1500);
       } else if (b.dataset.a === 'resume') {
-        // 标签里有程序在跑 (比如 Agent 还开着)：命令会打进那个程序里
-        const st = s.srvState?.cls;
-        const warn = st === 'run' || st === 'bad' ? '\n\n注意：这个标签里好像有程序在运行，命令会打进那个程序里，最好先退出它。' : '';
-        if (!confirm(`在当前终端执行：\n${x.cmd}${warn}`)) return;
+        // 服务端执行：标签里还开着 Agent 的话先退出它 (两下 Ctrl+C)，回到 shell 提示符再执行 (见 lib/agent-sessions.js)
+        if (!confirm(`在当前终端执行：\n${x.cmd}\n\n这个标签里开着 Agent (Claude Code 等) 的话，会先退出它再执行。`)) return;
         done();
-        send(s, { type: 'data', data: x.cmd + '\r' });
         focusTerm(s);
+        api('POST', '/api/agent-sessions/resume', { sid: s.sid, cmd: x.cmd }).catch((err) => alert(err.message));
       }
     });
     load();
