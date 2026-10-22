@@ -8,6 +8,10 @@
   const LS_CHUNK = 100; // 历史视图按块放进页面，每块这么多行
 
 
+  // Windows 常驻会话 (sshwebd，没有 tmux)：程序没开鼠标 (比如 Claude Code) 也走历史视图，同 tmux 里的用法
+  // (历史取自服务器上这个终端的记录)；全屏程序 (备用屏幕) 照旧交给程序
+  const daemonHistory = (s) => !!s.params?.daemonId && s.term.buffer.active.type !== 'alternate';
+
   function localScrollWheel(s, e) {
     if (s.bypassWheel) return true;
     if (s.scrollView) { scrollViewWheel(s, e.deltaY); return false; }
@@ -16,7 +20,7 @@
     if (s.scrollLoading) { s.heldWheel += e.deltaY < 0 ? 1 : -1; return false; } // 等结果期间的滚动先记下 (往上为正)
     // 程序开了鼠标 (tmux / psmux) 才试；不要求备用屏幕：Windows 的 SSH 中间隔着 ConPTY，psmux 进备用屏幕不一定传得过来
     // (不是 tmux 的话服务端很快回 no-tmux，一段时间内不再试)
-    if (e.deltaY >= 0 || !s.sid || s.term.modes.mouseTrackingMode === 'none') return true;
+    if (e.deltaY >= 0 || !s.sid || (s.term.modes.mouseTrackingMode === 'none' && !daemonHistory(s))) return true;
     if (s.noTmuxUntil > Date.now()) return true;
     s.scrollLoading = true;
     s.heldWheel = 1;

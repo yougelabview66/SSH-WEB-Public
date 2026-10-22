@@ -49,6 +49,11 @@
     enableTouchScroll(s);
     // tmux 里往上滚：拦下来改成本地快速滚动 (见 openLocalScroll)；手机滑动也会变成滚轮事件走到这里
     s.term.attachCustomWheelEventHandler((e) => localScrollWheel(s, e));
+    // 程序没开鼠标时 xterm 自己滚动，不经过上面的处理：Windows 常驻会话要在它之前拦下来，走历史视图 (见 daemonHistory)
+    s.box.addEventListener('wheel', (e) => {
+      if (s.bypassWheel || s.term.modes.mouseTrackingMode !== 'none' || !daemonHistory(s) || e.target.closest('.lscroll')) return;
+      if (localScrollWheel(s, e) === false) { e.preventDefault(); e.stopPropagation(); }
+    }, { capture: true, passive: false });
     if (isTouch) {
       // 触屏：xterm 的隐藏输入框在手机输入法下会丢字 / 重复，改用底部输入栏
       s.term.textarea.setAttribute('readonly', 'readonly');
@@ -116,6 +121,11 @@
           if (!e.shiftKey) s.term.clearSelection();
         }
         return false;
+      }
+      // Ctrl+End：终端往上翻过 (不在最底下) 时回到最底下 (同历史视图里的 Ctrl+End)，不发给程序
+      if (e.type === 'keydown' && e.ctrlKey && e.key === 'End' && !e.shiftKey && !e.altKey && !e.metaKey) {
+        const b = s.term.buffer.active;
+        if (b.viewportY < b.baseY) { e.preventDefault(); s.term.scrollToBottom(); return false; }
       }
       // Windows / Linux 上 Ctrl+V 也粘贴 (同 Windows Terminal、VS Code)；xterm 默认会把它当 ^V 发给终端。
       // 返回 false 让浏览器执行默认的粘贴，由 xterm 的粘贴处理发送 (支持括号粘贴)。vim 列选择可用 Ctrl+Q
@@ -315,6 +325,12 @@
         promptDialog(m, s.id).then((answers) => {
           if (answers === undefined) return; // 已在其他设备上回答
           send(s, answers ? { type: 'prompt-response', answers } : { type: 'prompt-response', cancel: true });
+        });
+      } else if (m.type === 'daemon-pick') { // Windows 常驻会话：选接哪个 (见 lib/session/daemon.js 的 pickDaemon)
+        activate(s);
+        daemonPickDialog(m, s.id).then((r) => {
+          if (r === undefined) return; // 已在其他设备上选了
+          send(s, r ? { type: 'daemon-pick-response', ...r } : { type: 'daemon-pick-response', cancel: true });
         });
       } else if (m.type === 'tmux-history') {
         onTmuxHistory(s, m);

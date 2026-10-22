@@ -9,8 +9,9 @@
     if (curDialog && curDialog.tag === tag) curDialog.dismiss();
   }
 
-  // buttons: [{ label, value, cls, submit }]，返回 { value, form }；被 dismiss 时返回 { dismissed: true }
-  function dialog(title, html, buttons, tag) {
+  // buttons: [{ label, value, cls, submit }]，返回 { value, form }；被 dismiss 时返回 { dismissed: true }。
+  // onBody(body, finish)：内容里自己的按钮 (列表里点一行等) 也能关掉对话框
+  function dialog(title, html, buttons, tag, onBody) {
     const run = () => new Promise((resolve) => {
       const dlg = $('#dialog');
       const f = $('#dialogForm');
@@ -48,6 +49,7 @@
         finish(buttons.find((b) => b.submit)?.value);
       };
       document.addEventListener('keydown', onKey, true);
+      onBody?.($('#dialogBody'), finish);
       dlg.classList.remove('hidden');
       (f.querySelector('input') || f.querySelector('button.primary, button.danger'))?.focus();
     });
@@ -71,6 +73,32 @@
     if (r.dismissed) return undefined;
     if (!r.value) return null;
     return m.prompts.map((_, i) => r.form.elements['a' + i].value);
+  }
+
+  // Windows 常驻会话：有没人接着的会话时问接哪个 (同会话历史的样子)。点一行或「接上」接上，「删除」点两下结束它
+  // (里面的程序会关掉)，「新建会话」开新的。返回 { id } / { kill } / { id: '' } 新建 / null 取消；在别的设备上答了返回 undefined
+  async function daemonPickDialog(m, tag) {
+    const rows = (m.sessions || []).map((x) => `<div class="as-row dp-row" data-id="${esc(x.id)}">
+      <div class="as-main"><div class="as-title">${esc(x.cwd || `会话 ${x.id}`)}</div>
+        ${x.title ? `<div class="as-prompt">${esc(x.title)}</div>` : ''}<div class="as-meta">${esc(x.when)}</div></div>
+      <div class="as-btns"><button type="button" data-a="pick" class="primary">接上</button><button type="button" data-a="kill">删除</button></div></div>`).join('');
+    const html = (m.note ? `<p class="dp-note">${esc(m.note)}</p>` : '')
+      + '<p class="muted">这台主机上有没接着的常驻会话，点一个接上，或者新建一个：</p>'
+      + `<div class="as-list dp-list">${rows}</div>`;
+    const r = await dialog('接上常驻会话', html, [
+      { label: '取消', value: null, cancel: true },
+      { label: '新建会话', value: { id: '' }, cls: 'primary', submit: true },
+    ], tag, (body, finish) => body.addEventListener('click', (e) => {
+      const row = e.target.closest('.dp-row');
+      if (!row) return;
+      const btn = e.target.closest('button');
+      if (btn?.dataset.a !== 'kill') return finish({ id: row.dataset.id });
+      // 删除要再点一次确认：里面还在跑的程序会被关掉
+      if (!btn.classList.contains('danger')) { btn.classList.add('danger'); btn.textContent = '确定删除？'; return; }
+      finish({ kill: row.dataset.id });
+    }));
+    if (r.dismissed) return undefined;
+    return r.value;
   }
 
   // 主机指纹确认

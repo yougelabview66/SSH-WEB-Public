@@ -308,6 +308,12 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 .as-btns { display: flex; gap: 6px; flex-shrink: 0; }
 .as-btns button { padding: 4px 10px; font-size: 13px; }
 .as-empty { padding: 24px 0; text-align: center; color: var(--muted); font-size: 13px; }
+/* 接上常驻会话 (Windows，见 20-dialog-sftp.js 的 daemonPickDialog)：列表同会话历史，点一行接上 */
+.dp-list { max-height: 50vh; min-height: 0; margin-top: 8px; }
+.dp-row { cursor: pointer; }
+.dp-row:hover { border-color: var(--accent); }
+.dp-row .as-title { white-space: normal; word-break: break-all; }
+.dp-note { margin: 0 0 6px; color: var(--accent); font-size: 13px; }
 
 /* 端口预览 (见 27-forward.js) */
 .fwd-card { width: 560px; }
