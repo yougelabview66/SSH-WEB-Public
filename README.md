@@ -47,7 +47,7 @@ docker run -d --name ssh-web --restart unless-stopped \
 
 | Variable | Default | Description |
 |---|---|---|
-| `AUTH_USER` / `AUTH_PASSWORD` | `admin` / empty | Web login. **Empty password disables login** — trusted LAN only. |
+| `AUTH_USER` / `AUTH_PASSWORD` | `admin` / empty | Web login. **Without a password only direct local access (127.0.0.1) is allowed** — set one to use it from other devices. |
 | `PORT` / `HOST` | `8888` / `0.0.0.0` | Listen address. |
 | `SECRET` | auto | Cookie signing and credential encryption key (stored in `data/.secret`). Losing it makes saved passwords unreadable. |
 | `COOKIE_SECURE` | `false` | Set `true` when served over HTTPS. |
