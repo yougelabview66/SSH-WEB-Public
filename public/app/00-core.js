@@ -130,7 +130,7 @@
         el.innerHTML = `
           <div class="info"><div class="name"></div><div class="addr"></div></div>
           ${h.connType === 'cloudflare' ? '<span class="badge" title="Cloudflare 隧道">CF</span>' : ''}
-          ${h.winDaemon ? '<span class="badge soft" title="Windows 常驻会话 (sshwebd)">常驻</span>' : ''}
+          ${h.winDaemon && h.isWin ? '<span class="badge soft" title="Windows 常驻会话 (sshwebd)">常驻</span>' : ''}
           <div class="ops"><button data-op="edit" title="编辑">✎</button><button data-op="del" title="删除">✕</button></div>`;
         $('.name', el).textContent = h.name;
         $('.addr', el).textContent = h.connType === 'cloudflare'
@@ -260,7 +260,7 @@
       F.authType.value = h.authType || 'password';
       F.cfClientId.value = h.cfClientId || '';
     }
-    F.winDaemon.checked = !!h?.winDaemon;
+    F.winDaemon.checked = h ? !!h.winDaemon : true; // 新建主机默认勾上 (不是 Windows 的连接时照常开终端)
     const tips = [];
     if (h && h.hasSecret) tips.push('已保存登录凭据，留空则保持不变');
     if (h && h.hasCfSecret) tips.push('已保存 CF Client Secret，留空则保持不变');

@@ -237,6 +237,9 @@ run(async () => {
   await row.hover(); await row.locator('[data-op=edit]').click();
   ok(await p.isChecked('#hostForm [name=winDaemon]'), '编辑主机：「Windows 常驻会话」勾着');
   await p.keyboard.press('Escape'); await wait(300);
+  await p.click('#btnNew'); await wait(300);
+  ok(await p.isChecked('#hostForm [name=winDaemon]'), '新建主机：「Windows 常驻会话」默认勾上');
+  await p.keyboard.press('Escape'); await wait(300);
   // 留一个没人接着的会话，再在网页上打开这台主机：弹出列表 (同会话历史的样子)，点两下「删除」结束它，删光了就新建
   const e0 = tab(host.id, 'DW');
   await until(() => e0.prompts.length, 15000);
