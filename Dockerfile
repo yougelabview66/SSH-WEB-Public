@@ -1,10 +1,13 @@
-# Windows 常驻会话用的 sshwebd.exe：从 sshwebd/ 的源码编 (连接时传到 Windows 主机)
+# 常驻会话用的 sshwebd：从 sshwebd/ 的源码编 Windows 版和 Linux 版 (连接时传到主机)
 FROM golang:1.27-alpine AS sshwebd
 WORKDIR /src
 COPY sshwebd/go.mod sshwebd/go.sum ./
 RUN go mod download
 COPY sshwebd/*.go ./
-RUN CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o /out/sshwebd.exe .
+RUN CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o /out/sshwebd.exe . \
+ && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o /out/sshwebd-linux-amd64 . \
+ && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o /out/sshwebd-linux-arm64 . \
+ && CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -trimpath -ldflags "-s -w" -o /out/sshwebd-linux-armv7 .
 
 FROM node:22-alpine
 
@@ -21,7 +24,7 @@ RUN npm ci --omit=dev --omit=optional && npm cache clean --force \
 COPY server.js ./
 COPY lib ./lib
 COPY public ./public
-COPY --from=sshwebd /out/sshwebd.exe ./sshwebd/sshwebd.exe
+COPY --from=sshwebd /out/ ./sshwebd/
 # 可选 PUID / PGID：用普通用户运行 (见 sshweb-entrypoint.sh)；官方 node 镜像已有 docker-entrypoint.sh，换个名字
 COPY docker-entrypoint.sh /usr/local/bin/sshweb-entrypoint.sh
 RUN chmod +x /usr/local/bin/sshweb-entrypoint.sh && mkdir -p /data

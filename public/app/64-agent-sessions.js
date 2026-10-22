@@ -118,7 +118,7 @@
         done();
         focusTerm(s);
         const name = `${(AS_AGENTS.find(([id]) => id === agent) || [, 'Claude'])[1]}：${x.title || x.prompt || x.id}`; // 常驻会话的选择框里显示
-        api('POST', '/api/agent-sessions/resume', { sid: s.sid, cmd: x.cmd, name }).catch((err) => alert(err.message));
+        api('POST', '/api/agent-sessions/resume', { sid: s.sid, cmd: x.cmd, name, cwd: x.cwd || '' }).catch((err) => alert(err.message));
       }
     });
     load();

@@ -59,6 +59,7 @@ type session struct {
 }
 
 type client struct {
+	tag     string // 客户端的标记 (见 Request.Tag)
 	conn    net.Conn
 	out     chan []byte
 	pending atomic.Int64 // 排着队还没发出去的字节
@@ -199,8 +200,14 @@ func (s *session) info() SessionInfo {
 		}
 		return t.UnixMilli()
 	}
+	var tags []string
+	for cl := range s.clients {
+		if cl.tag != "" {
+			tags = append(tags, cl.tag)
+		}
+	}
 	return SessionInfo{ID: s.id, Shell: s.shell, Cwd: s.cwd, Title: s.title, PID: s.p.Pid(), Created: ms(s.created),
-		LastOutput: ms(s.lastOut), LastInput: ms(s.lastIn), Clients: len(s.clients), Cols: s.cols, Rows: s.rows}
+		LastOutput: ms(s.lastOut), LastInput: ms(s.lastIn), Clients: len(s.clients), Tags: tags, Cols: s.cols, Rows: s.rows}
 }
 
 func (d *daemon) kill(id string) error {
@@ -263,11 +270,15 @@ func (d *daemon) getOrCreate(req Request) (*session, bool, error) {
 		env[k] = v
 	}
 	env["SSHWEBD_SESSION"] = id
+	// 会话号会重复用 (守护进程重启后又从 1 开始)：再带上创建时间，SSH-WEB 在 /proc 里认这个会话的进程时两个都对上才算
+	// (免得认到以前同号会话留下的后台进程)
+	now := time.Now()
+	env["SSHWEBD_STARTED"] = strconv.FormatInt(now.UnixMilli(), 10)
 	p, shell, err := startPty(req.Shell, cwd, env, cols, rows)
 	if err != nil {
 		return nil, false, errors.New("启动终端失败：" + err.Error())
 	}
-	s := &session{d: d, id: id, shell: shell, cwd: cwd, created: time.Now(), p: p, ring: newRing(d.bufSize),
+	s := &session{d: d, id: id, shell: shell, cwd: cwd, created: now, p: p, ring: newRing(d.bufSize),
 		clients: map[*client]struct{}{}, cols: cols, rows: rows}
 	d.sessions[id] = s
 	log.Printf("新建会话 %s：%s (pid %d，%dx%d)", id, shell, p.Pid(), cols, rows)
@@ -282,7 +293,7 @@ func (d *daemon) attach(c net.Conn, req Request) {
 		c.Close()
 		return
 	}
-	cl := &client{conn: c, out: make(chan []byte, clientQueue)}
+	cl := &client{tag: req.Tag, conn: c, out: make(chan []byte, clientQueue)}
 	go cl.writeLoop()
 	s.mu.Lock()
 	if s.exited {
@@ -290,6 +301,14 @@ func (d *daemon) attach(c net.Conn, req Request) {
 		cl.out <- jsonFrame(fMsg, Msg{Type: "error", Error: "会话已经结束了"})
 		close(cl.out)
 		return
+	}
+	// 同一个标记的旧连接 (这个标签断网前的那条，主机上还没发现断了)：踢掉
+	if req.Tag != "" {
+		for old := range s.clients {
+			if old.tag == req.Tag {
+				s.dropClient(old)
+			}
+		}
 	}
 	// 补发和登记在同一把锁里：之后的输出一个字节不漏、不重复
 	start, data := s.ring.since(req.Since)
