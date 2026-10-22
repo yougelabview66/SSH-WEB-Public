@@ -122,6 +122,22 @@
       if (!isMac && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.code === 'KeyV') return false;
       return true;
     });
+    // 选中就复制 (同 tmux 开了鼠标时松开就复制)：电脑上在终端里用鼠标选中文字 (拖动、双击选词、三击选行)，
+    // 松开时自动复制到剪贴板。没有 tmux 的会话 (Windows 常驻会话、直接的 shell) 靠这个；tmux 自己选的 (没按 Shift) 不经过这里
+    if (!isTouch) {
+      // 只看「在终端里按下、松开后有选中的文字」：只是点一下 xterm 会清掉选中，不会误复制。
+      // 不靠 onSelectionChange 判断有没有选：xterm 在松开之后才发它。用捕获阶段：xterm 自己的鼠标处理可能不让事件冒泡上来
+      let pressed = false;
+      s.box.addEventListener('mousedown', (e) => { if (e.button === 0) pressed = true; }, true);
+      window.addEventListener('mouseup', (e) => {
+        if (!pressed || e.button !== 0) return;
+        pressed = false;
+        setTimeout(() => { // 等 xterm 处理完这次松开
+          const text = s.term.getSelection();
+          if (text.trim()) copyText(text).then((done) => { if (done) fontToast(s, '已复制', 900); });
+        }, 0);
+      }, true);
+    }
 
     s.tab = document.createElement('div');
     s.tab.className = 'tab';
@@ -313,10 +329,6 @@
       } else if (m.type === 'cli') {
         s.cli.set(m); // 服务器算的终端输入框内容 (包括别的设备上打的字)
       } else if (m.type === 'state') {
-        // 事情已经处理掉了 (Agent 接着干活了 / 从「完成」「待选择」变成别的：在别的设备上看过、回答过)：铃铛去掉
-        const was = s.srvState?.cls;
-        if (m.cls === 'run' || ((was === 'done' || was === 'bad') && m.cls !== was)) s.tab.classList.remove('ring');
-        if (m.label !== s.srvState?.label) s.stateAt = Date.now();
         s.srvState = { label: m.label, cls: m.cls, detail: m.detail || '' };
         s.tab.title = s.srvState.detail ? `${s.title}\n${m.label}：${s.srvState.detail}` : s.title; // 鼠标移到标签上也看得到在做什么
         renderDeskTabs();
@@ -326,10 +338,11 @@
       } else if (m.type === 'lat') {
         s.sshRtt = latSample(s, 'ssh', m.ssh);
         if (s === active) updateLat();
-      } else if (m.type === 'bell') {
-        // 同一件事的提醒 (见服务端 alert)：这个状态出来以后已经看过这个标签，不再挂铃铛
-        if (m.again && s.seenAt > (s.stateAt || 0)) return;
-        if (s !== active || document.hidden) s.tab.classList.add('ring');
+      } else if (m.type === 'notice') {
+        // 标签上的 🔔：有没看过的新通知才挂 (哪些算新通知、什么时候算看过由服务端记，见 Session.newNotice)
+        const viewing = s === active && !document.hidden;
+        if (viewing && m.seq > m.ack) reportWatching(); // 正在看：告诉服务端看过了
+        s.tab.classList.toggle('ring', m.seq > m.ack && !viewing);
       } else if (m.type === 'prompt-done') {
         dismissDialog(s.id);
       } else if (m.type === 'error') {

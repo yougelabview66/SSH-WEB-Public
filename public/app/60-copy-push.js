@@ -216,7 +216,6 @@
   for (const ev of ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart']) window.addEventListener(ev, onAct, { capture: true, passive: true });
   setInterval(() => { if (!idle && Date.now() - lastAct > IDLE_MS) { idle = true; reportWatching(); } }, 15000);
   document.addEventListener('visibilitychange', () => {
-    if (active) active.seenAt = Date.now(); // 切走 / 切回来：当前标签看到了现在
     reportWatching();
     sessions.forEach(syncMonitor); // 页面不可见时暂停性能监控采集
     if (!document.hidden && active) enableWebgl(active);
