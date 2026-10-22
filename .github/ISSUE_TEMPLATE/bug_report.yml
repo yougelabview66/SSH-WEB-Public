@@ -1,0 +1,40 @@
+name: Bug report / 问题反馈
+description: Something does not work as expected / 有功能不正常
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please remove passwords, keys, host names and IPs from logs and screenshots.
+        请先去掉日志和截图里的密码、密钥、主机名和 IP。安全问题请不要发在这里，见 SECURITY.md。
+  - type: input
+    id: version
+    attributes:
+      label: Version / 版本
+      description: Shown at the bottom of the side bar / 侧边栏底部显示的版本号
+      placeholder: v1.69.6
+    validations:
+      required: true
+  - type: dropdown
+    id: device
+    attributes:
+      label: Device / 设备
+      multiple: true
+      options: [Desktop browser / 电脑浏览器, Android, iPhone / iPad, Other / 其他]
+  - type: input
+    id: target
+    attributes:
+      label: Target host / 目标主机
+      placeholder: "e.g. Ubuntu 24.04 + tmux, Windows 11 + PowerShell, Synology DSM"
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened / 发生了什么
+      description: Steps to reproduce, what you expected, what you saw / 复现步骤、期望的结果、实际的结果
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots / 日志或截图
+      description: "`docker logs ssh-web`, browser console, screenshots"

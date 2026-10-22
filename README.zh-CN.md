@@ -1,5 +1,7 @@
 # SSH-WEB
 
+[![test](https://github.com/yougelabview66/SSH-WEB-Public/actions/workflows/test.yml/badge.svg)](https://github.com/yougelabview66/SSH-WEB-Public/actions/workflows/test.yml) [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 轻量的自托管 Web SSH 终端，专为在远程主机上跑 AI 编程助手（Claude Code、Codex、Gemini 等）设计，手机、电脑都能用。一个 Docker 容器就能跑，适合部署在 NAS 上。
@@ -67,12 +69,12 @@ docker compose up -d --build
 
 访问 `http://服务器IP:8888`。数据都在 `./data`，备份这个目录即可。群晖、威联通、飞牛等可以在 Container Manager 里用这个目录的 `docker-compose.yml` 创建项目。
 
-不用 compose：
+也可以直接用编好的镜像（amd64 / arm64），不用下载代码：
 
 ```bash
-docker build -t ssh-web .
 docker run -d --name ssh-web --restart unless-stopped \
-  -p 8888:8888 -v $(pwd)/data:/data -e AUTH_PASSWORD=你的密码 ssh-web
+  -p 8888:8888 -v $(pwd)/data:/data -e AUTH_PASSWORD=你的密码 \
+  ghcr.io/yougelabview66/ssh-web:latest
 ```
 
 ## 配置
@@ -109,11 +111,11 @@ SSH-WEB 是能登录你所有服务器的入口。放到公网时：
 npm install
 AUTH_PASSWORD=test npm start
 
-npx playwright install chromium   # 第一次需要
+npx playwright-core install chromium   # 第一次需要
 npm test                          # 或者只跑几个：npm test -- desk lat
 ```
 
-测试用真的浏览器连本机（127.0.0.1）上的模拟 SSH 服务器，不会连接真实主机。服务端代码在 `lib/`，前端在 `public/app/`（按编号顺序拼起来），Windows 守护程序在 `sshwebd/`（Go）。
+测试用真的浏览器连本机（127.0.0.1）上的模拟 SSH 服务器，不会连接真实主机。参与开发见 [CONTRIBUTING.md](CONTRIBUTING.md)。服务端代码在 `lib/`，前端在 `public/app/`（按编号顺序拼起来），Windows 守护程序在 `sshwebd/`（Go）。
 
 ## 致谢
 

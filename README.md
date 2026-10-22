@@ -1,5 +1,7 @@
 # SSH-WEB
 
+[![test](https://github.com/yougelabview66/SSH-WEB-Public/actions/workflows/test.yml/badge.svg)](https://github.com/yougelabview66/SSH-WEB-Public/actions/workflows/test.yml) [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 A lightweight, self-hosted web SSH terminal built for running AI coding agents (Claude Code, Codex, Gemini …) on remote machines from any device. Runs in a single Docker container — ideal for a NAS. The interface is currently in Chinese.
@@ -67,12 +69,12 @@ docker compose up -d --build
 
 Open `http://<server-ip>:8888`. All data lives in `./data` — back up that folder.
 
-Without compose:
+Or use the pre-built image (amd64 / arm64), no clone needed:
 
 ```bash
-docker build -t ssh-web .
 docker run -d --name ssh-web --restart unless-stopped \
-  -p 8888:8888 -v $(pwd)/data:/data -e AUTH_PASSWORD=change-me ssh-web
+  -p 8888:8888 -v $(pwd)/data:/data -e AUTH_PASSWORD=change-me \
+  ghcr.io/yougelabview66/ssh-web:latest
 ```
 
 ## Configuration
@@ -109,11 +111,11 @@ Please report vulnerabilities privately — see [SECURITY.md](SECURITY.md).
 npm install
 AUTH_PASSWORD=test npm start
 
-npx playwright install chromium   # first time only
+npx playwright-core install chromium   # first time only
 npm test                          # or: npm test -- desk lat
 ```
 
-Tests drive a real browser against mock SSH servers on 127.0.0.1; nothing touches real hosts. Server code is in `lib/`, front-end modules in `public/app/` (concatenated in numeric order), the Windows daemon in `sshwebd/` (Go).
+Tests drive a real browser against mock SSH servers on 127.0.0.1; nothing touches real hosts. See [CONTRIBUTING.md](CONTRIBUTING.md). Server code is in `lib/`, front-end modules in `public/app/` (concatenated in numeric order), the Windows daemon in `sshwebd/` (Go).
 
 ## Acknowledgements
 

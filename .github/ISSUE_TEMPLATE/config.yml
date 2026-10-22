@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability / 安全问题
+    url: https://github.com/yougelabview66/SSH-WEB-Public/security/advisories/new
+    about: Please report privately / 请私下报告，不要公开发 issue
