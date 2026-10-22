@@ -156,6 +156,22 @@ const B = BASE;
   const m = await (await browser.newContext({ ...devices['Pixel 7'] })).newPage(); m.on('pageerror', (e) => errors.push(e.message));
   await m.goto(B + '/'); await m.waitForSelector('.tab'); await wait(1000);
   ok(await m.isHidden('#hostFloat'), '手机上不显示悬浮窗');
+  // 手机上自己打开状态卡片：开着性能监控 / 搜索栏时让开，不挡关闭、搜索这些按钮
+  const own = m.locator('.term.active .owner-notice button'); if (await own.count() && await own.isVisible()) { await own.click(); await wait(300); }
+  const menu = async (id) => { await m.click('#btnMore'); await wait(200); await m.click(id); await wait(400); };
+  const onTop = (q) => m.evaluate((q) => { const e = document.querySelector(q); if (!e) return 'none'; const r = e.getBoundingClientRect(); const t = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return !!t && (t === e || e.contains(t)); }, q);
+  await menu('#btnFloatM');
+  ok(await m.isVisible('#hostFloat'), '手机：「更多 → 状态卡片」打开卡片');
+  await menu('#btnMon');
+  ok(await m.isHidden('#hostFloat') && await onTop('.term.active .mon [data-a=close]') === true, '手机：开着性能监控时卡片让开，关闭按钮点得到');
+  await m.click('.term.active .mon [data-a=close]'); await wait(400);
+  ok(await m.isVisible('#hostFloat'), '手机：关掉性能监控，卡片回来');
+  await menu('#btnSearch');
+  const tsBtns = await m.evaluate(() => [...document.querySelectorAll('.term.active .tsearch button')].map((b) => b.dataset.a));
+  const allOnTop = []; for (const a of tsBtns) allOnTop.push(await onTop(`.term.active .tsearch [data-a=${a}]`));
+  ok(await m.isHidden('#hostFloat') && tsBtns.length >= 4 && allOnTop.every((x) => x === true), '手机：开着搜索栏时卡片让开，搜索 / ↑ / ↓ / × 都点得到: ' + JSON.stringify([tsBtns, allOnTop]));
+  await m.click('.term.active .tsearch [data-a=close]'); await wait(400);
+  ok(await m.isVisible('#hostFloat'), '手机：关掉搜索栏，卡片回来');
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
   await browser.close(); process.exit();
 })().catch((e) => { console.error(e); process.exit(1); });

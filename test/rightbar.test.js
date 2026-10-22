@@ -206,6 +206,16 @@ run(async () => {
   const nw = Math.round((await p.locator(RB).boundingBox()).width), sw1 = await screenW();
   ok(Math.abs(nw - (pb.width + 100)) <= 2 && await p.evaluate(() => localStorage.getItem('sshweb.rbW')) == nw, `拖左边缘调宽度并记住 (${Math.round(pb.width)} → ${nw})`);
   ok(swMid === sw0 && sw1 < sw0 - 50, `拖的过程中终端不重排 (不卡)，松手才按新宽度排一次 (${sw0} → 拖着 ${swMid} → 松手 ${sw1})`);
+  // 窗口窄、左右两边栏都开着：顶栏按钮放不下时只留图标，「⋯ 更多」不压到右边栏的「项目」上
+  await p.setViewportSize({ width: 944, height: 547 }); await wait(500);
+  const top = await p.evaluate(() => {
+    const r = (q) => document.querySelector(q).getBoundingClientRect();
+    return { side: r('#sidebar').width, more: Math.round(r('#btnMore').right), main: Math.round(r('main').right), rb: Math.round(r('#rightBar').left),
+      lbl: getComputedStyle(document.querySelector('#btnMore .lbl')).display };
+  });
+  await p.screenshot({ path: shot('rb-narrow-top.png') });
+  ok(top.side > 100 && top.more <= top.main && top.more <= top.rb && top.lbl === 'none', '窄窗口、左右两边栏都开着：顶栏按钮只留图标，「更多」不压到右边栏: ' + JSON.stringify(top));
+  await p.setViewportSize({ width: 1280, height: 800 }); await wait(500);
   await p.click(`${RB} [data-a=collapse]`); await wait(500);
   const rail = await p.$$eval('#rightRail button', (xs) => xs.map((x) => [x.dataset.tab, x.textContent.trim()]));
   ok(await p.isHidden(RB) && JSON.stringify(rail) === JSON.stringify([['files', ''], ['git', '5']]) && await termW() > w0 - 100, '「»」收起：右边缘一列两个图标 (改动带数字)，终端恢复宽度: ' + JSON.stringify(rail));

@@ -124,6 +124,8 @@ label.check { margin: 6px 0 10px; }
 .host .ops button { padding: 0 6px; font-size: 12px; background: none; border: none; color: var(--muted); }
 .host .ops button:hover { color: var(--text); }
 .badge { font-size: 10px; padding: 0 5px; border-radius: 4px; background: var(--cf); color: #fff; flex-shrink: 0; }
+/* 淡色标记 (常驻)：主题绿描边 + 浅底，不抢眼 */
+.badge.soft { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent); }
 
 main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
 #tabbar { display: flex; align-items: stretch; background: var(--panel); border-bottom: 1px solid var(--border);
@@ -131,7 +133,8 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: r
   /* iOS 26 起主屏幕网页 App 顶部有一层系统画的 Liquid Glass 边缘模糊 (比状态栏多延伸 30~40pt，盖住标签)，网页没有开关；
      只有顶部是 fixed / sticky、带不透明背景、高过约 10px、宽占 90% 以上的元素时，WebKit 才不画模糊、改用它的颜色。
      标签栏本来就在最上面，改成 sticky 吸顶 (位置、外观不变) */
-  position: sticky; top: 0; z-index: 5; }
+  position: sticky; top: 0; z-index: 5;
+  container-type: inline-size; overflow: hidden; } /* 按宽度收起按钮上的字 (见 .tbtn)；实在放不下也不压到右边栏上 */
 #btnToggle { border: none; border-radius: 0; background: none; padding: 0 12px; }
 #tabs { display: flex; overflow-x: auto; flex: 1; scrollbar-width: none; }
 #tabs::-webkit-scrollbar { display: none; } /* 滚动条会占掉标签的高度；用滚轮 / 两边箭头 / 手指滑动翻 */
@@ -426,6 +429,8 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 /* 有「在做什么」时 (手机 / 平板上一直)：卡片竖着一张一行，展开固定宽度，不随着那行字变宽；收起照旧按内容宽 */
 #hostFloat.col:not(.min) { width: 375px; }
 @media (pointer: coarse) { #hostFloat.col:not(.min) { width: 250px; } } /* 手机 / 平板 */
+/* 手机 / 平板：开着性能监控 (占满终端) 或搜索栏时状态卡片先让开，不挡它们的按钮；关掉后回来 */
+@media (pointer: coarse) { main:has(.term.active .mon, .term.active .tsearch) #hostFloat { display: none; } }
 .dp-tabs.col .dp-tab { flex: 1 1 100%; min-width: 0; }
 .dp-tabs.col .dp-tab .nm { max-width: none; flex: 1; }
 .dp-tabs.col .dp-tab .dt { max-width: none; }
@@ -537,6 +542,8 @@ body.no-select { user-select: none; -webkit-user-select: none; }
   white-space: nowrap; flex-shrink: 0; }
 .tbtn.on { background: var(--bg); color: var(--accent); }
 @media (max-width: 760px) { .tbtn .lbl { display: none; } .tbtn { padding: 6px 10px; } }
+/* 顶栏窄 (左右两边栏都开着、窗口不大)：按钮只留图标，给标签留地方 */
+@container (max-width: 620px) { .tbtn .lbl { display: none; } .tbtn { padding: 6px 10px; } }
 
 /* 性能监控面板 (终端左侧) */
 .mon { width: 290px; flex-shrink: 0; background: var(--panel);
