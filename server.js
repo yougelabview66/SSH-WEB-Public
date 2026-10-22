@@ -37,7 +37,11 @@ const server = http.createServer(app);
 server.requestTimeout = 0;
 ws = attachWebSocket(server);
 // 端口预览的 WebSocket (开发服务的热更新等，见 lib/forward.js)
-server.on('upgrade', (req, socket, head) => { if (req.url.startsWith('/p/')) forward.upgrade(req, socket, head); });
+server.on('upgrade', (req, socket, head) => {
+  if (!req.url.startsWith('/p/')) return;
+  if (auth.localOnlyBlocked(req)) return socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n'); // 没设密码只许本机 (见 auth.js)
+  forward.upgrade(req, socket, head);
+});
 
 // 每秒判断一次所有已连接会话的主机状态 (没人打开网页时也判断，手机才能收到推送)
 setInterval(() => {
@@ -60,7 +64,7 @@ setInterval(() => {
 server.listen(PORT, HOST, () => {
   console.log(`SSH-WEB v${VERSION} 已启动: http://${HOST}:${PORT}`);
   if (!auth.authEnabled) {
-    console.warn('⚠ 未设置 AUTH_PASSWORD，网页无需登录即可使用，请勿暴露到公网！');
+    console.warn('⚠ 未设置 AUTH_PASSWORD：只允许在本机 (127.0.0.1) 访问，局域网 / 反向代理过来的都会被拒绝。要从别的设备访问请设置 AUTH_PASSWORD');
   } else if (auth.WEAK_PASSWORD) {
     console.warn('⚠ AUTH_PASSWORD 仍是默认占位密码或少于 8 位，请在 docker-compose.yml 里改成强密码！');
   }

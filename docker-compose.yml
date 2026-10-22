@@ -11,7 +11,7 @@ services:
     environment:
       - TZ=Asia/Shanghai
       - AUTH_USER=admin
-      - AUTH_PASSWORD=请修改为强密码   # 网页登录密码，留空则不需要登录（不推荐）
+      - AUTH_PASSWORD=请修改为强密码   # 网页登录密码；留空则只允许本机访问 (Docker 里等于用不了)
       # - SECRET=一串随机字符串      # 不填会自动生成并存到 /data/.secret
       # - SESSION_HOURS=720          # 多少小时没用过就要重新登录 (默认 30 天，用着会自动续期)
       # - COOKIE_SECURE=true         # 通过 HTTPS (如 Cloudflare 隧道) 访问时建议开启

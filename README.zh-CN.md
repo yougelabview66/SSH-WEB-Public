@@ -47,7 +47,7 @@ docker run -d --name ssh-web --restart unless-stopped \
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
-| `AUTH_USER` / `AUTH_PASSWORD` | `admin` / 空 | 网页登录。**密码为空就不需要登录**，只适合可信内网 |
+| `AUTH_USER` / `AUTH_PASSWORD` | `admin` / 空 | 网页登录。**不设密码时只允许本机（127.0.0.1）直接访问**，要从别的设备用请设置密码 |
 | `PORT` / `HOST` | `8888` / `0.0.0.0` | 监听地址 |
 | `SECRET` | 自动生成 | Cookie 签名和凭据加密用（存在 `data/.secret`），丢了已保存的密码就解不开 |
 | `COOKIE_SECURE` | `false` | 通过 HTTPS 访问时设为 `true` |
