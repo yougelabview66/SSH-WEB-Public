@@ -5,9 +5,9 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/yougelabview66/SSH-WEB.git"
+    "url": "git+https://github.com/yougelabview66/SSH-WEB-Public.git"
   },
-  "homepage": "https://github.com/yougelabview66/SSH-WEB",
+  "homepage": "https://github.com/yougelabview66/SSH-WEB-Public",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
