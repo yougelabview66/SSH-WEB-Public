@@ -21,11 +21,15 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
       st.write(AGENT);
       st.on('data', (d) => {
         d = d.toString();
+        if (mode === 'exiting') return; // 正在退出：这时收到的输入会被丢掉 (同真的 Claude Code)
         got += d;
         if (d === '\x03') {
           ctrlC.push(Date.now());
-          // 像 Claude Code：1 秒内连按两下 Ctrl+C 退出，回到 shell (stuck：怎么按都不退)
-          if (mode === 'agent' && ctrlC.length >= 2 && ctrlC[ctrlC.length - 1] - ctrlC[ctrlC.length - 2] < 1000) { mode = 'shell'; setTimeout(() => st.write(SHELL), 150); }
+          // 像 Claude Code：1 秒内连按两下 Ctrl+C 退出 —— 先清掉界面，过 1 秒才真的退出、回到 shell (stuck：怎么按都不退)
+          if (mode === 'agent' && ctrlC.length >= 2 && ctrlC[ctrlC.length - 1] - ctrlC[ctrlC.length - 2] < 1000) {
+            mode = 'exiting'; st.write('\x1b[2J\x1b[H');
+            setTimeout(() => { mode = 'shell'; st.write(SHELL); }, 1000);
+          }
         }
       });
     });
@@ -53,7 +57,7 @@ run(async () => {
   got = '';
   let r = await resume(sid, 'cd /home/demo/proj && claude --resume abc');
   ok(r.status === 200 && r.body.quit === true, '开着 Agent：先退出它: ' + JSON.stringify(r));
-  ok(/^\x03\x03cd \/home\/demo\/proj && claude --resume abc\r$/.test(got), '先发两下 Ctrl+C，Agent 退出回到 shell 以后才发恢复命令: ' + JSON.stringify(got));
+  ok(/^\x03\x03cd \/home\/demo\/proj && claude --resume abc\r$/.test(got), '先发两下 Ctrl+C，等 Agent 真的退出、shell 的提示符出来了才发恢复命令 (退出途中发的会被丢掉): ' + JSON.stringify(got));
 
   // 2. 已经在 shell 里：直接执行，不按 Ctrl+C
   got = '';
