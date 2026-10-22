@@ -149,7 +149,7 @@ func (d *daemon) handle(c net.Conn) {
 			m.Sessions = d.list()
 			writeJSON(c, fMsg, m)
 		case "kill":
-			if err := d.kill(req.ID); err != nil {
+			if err := d.kill(req.ID, req.Tag); err != nil {
 				writeJSON(c, fMsg, Msg{Type: "error", Error: err.Error()})
 			} else {
 				writeJSON(c, fMsg, Msg{Type: "ok", ID: req.ID})
@@ -210,12 +210,24 @@ func (s *session) info() SessionInfo {
 		LastOutput: ms(s.lastOut), LastInput: ms(s.lastIn), Clients: len(s.clients), Tags: tags, Cols: s.cols, Rows: s.rows}
 }
 
-func (d *daemon) kill(id string) error {
+// 结束会话。tag 不空：是这个标记的客户端要结束 (比如关掉标签时)，别的标记的客户端还接着就不结束 (别的标签正用着)
+func (d *daemon) kill(id, tag string) error {
 	d.mu.Lock()
 	s := d.sessions[id]
 	d.mu.Unlock()
 	if s == nil {
 		return errors.New("没有这个会话：" + id)
+	}
+	if tag != "" {
+		s.mu.Lock()
+		busy := false
+		for cl := range s.clients {
+			busy = busy || cl.tag != tag
+		}
+		s.mu.Unlock()
+		if busy {
+			return errors.New(errInUse)
+		}
 	}
 	log.Printf("结束会话 %s", id)
 	return s.p.Kill()

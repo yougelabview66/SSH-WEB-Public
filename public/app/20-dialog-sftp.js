@@ -75,30 +75,52 @@
     return m.prompts.map((_, i) => r.form.elements['a' + i].value);
   }
 
-  // 常驻会话 (Windows)：有没人接着的会话时问接哪个 (同会话历史的样子)。点一行或「接上」接上，「删除」点两下结束它
-  // (里面的程序会关掉)，「新建会话」开新的。返回 { id } / { kill } / { id: '' } 新建 / null 取消；在别的设备上答了返回 undefined
+  // 常驻会话：有没人接着的会话时问接哪个 (同会话历史的样子)。点一行或「接上」接上，「删除」点两下结束它
+  // (里面的程序会关掉)，「新建会话」开新的，「退出」关掉这个标签。别的标签正用着的标明在哪用、不能删，点它先问一句：
+  // 切到那个标签 / 在这里也打开 (两个标签显示同一个终端) / 返回。
+  // 返回 { id } / { id, share } / { kill } / { id: '' } 新建 / { go: 标签 } 切过去 / null 退出；在别的设备上答了返回 undefined
   async function daemonPickDialog(m, tag) {
-    const rows = (m.sessions || []).map((x) => `<div class="as-row dp-row" data-id="${esc(x.id)}">
+    const list = m.sessions || [];
+    const rows = list.map((x) => `<div class="as-row dp-row${x.busy ? ' dp-busy' : ''}" data-id="${esc(x.id)}">
       <div class="as-main"><div class="as-title">${esc(x.cwd || `会话 ${x.id}`)}</div>
-        ${x.name || x.title ? `<div class="as-prompt">${esc(x.name || x.title)}</div>` : ''}<div class="as-meta">${esc(x.when)}</div></div>
-      <div class="as-btns"><button type="button" data-a="pick" class="primary">接上</button><button type="button" data-a="kill">删除</button></div></div>`).join('');
+        ${x.name || x.title ? `<div class="as-prompt">${esc(x.name || x.title)}</div>` : ''}<div class="as-meta">${esc(x.when)}</div>
+        ${x.busy ? `<div class="dp-used">正在${esc(x.busy)}里使用中</div>` : ''}</div>
+      <div class="as-btns"><button type="button" data-a="pick" class="primary">接上</button>${x.busy
+        ? '<button type="button" data-a="kill" disabled title="正在使用中，不能删除">使用中</button>'
+        : '<button type="button" data-a="kill">删除</button>'}</div></div>`).join('');
     const html = (m.note ? `<p class="dp-note">${esc(m.note)}</p>` : '')
-      + (rows ? '<p class="muted">这台主机上有没接着的常驻会话，点一个接上，或者新建一个：</p>' : '<p class="muted">没有别的没人接着的常驻会话，点「新建会话」开一个。</p>')
+      + (rows ? '<p class="muted">这台主机上有还在运行的常驻会话，点一个接上，或者新建一个：</p>'
+        : '<p class="muted">这台主机上没有别的常驻会话了：点「新建会话」开一个，或者「退出」关掉这个标签。</p>')
       + `<div class="as-list dp-list">${rows}</div>`;
-    const r = await dialog('接上常驻会话', html, [
-      { label: '取消', value: null, cancel: true },
-      { label: '新建会话', value: { id: '' }, cls: 'primary', submit: true },
-    ], tag, (body, finish) => body.addEventListener('click', (e) => {
-      const row = e.target.closest('.dp-row');
-      if (!row) return;
-      const btn = e.target.closest('button');
-      if (btn?.dataset.a !== 'kill') return finish({ id: row.dataset.id });
-      // 删除要再点一次确认：里面还在跑的程序会被关掉
-      if (!btn.classList.contains('danger')) { btn.classList.add('danger'); btn.textContent = '确定删除？'; return; }
-      finish({ kill: row.dataset.id });
-    }));
-    if (r.dismissed) return undefined;
-    return r.value;
+    for (;;) {
+      const r = await dialog('接上常驻会话', html, [
+        { label: '退出', value: null, cancel: true },
+        { label: '新建会话', value: { id: '' }, cls: 'primary', submit: true },
+      ], tag, (body, finish) => body.addEventListener('click', (e) => {
+        const row = e.target.closest('.dp-row');
+        if (!row) return;
+        const btn = e.target.closest('button');
+        if (btn?.dataset.a !== 'kill') return finish({ id: row.dataset.id });
+        if (btn.disabled) return;
+        // 删除要再点一次确认：里面还在跑的程序会被关掉
+        if (!btn.classList.contains('danger')) { btn.classList.add('danger'); btn.textContent = '确定删除？'; return; }
+        finish({ kill: row.dataset.id });
+      }));
+      if (r.dismissed) return undefined;
+      const x = r.value?.id && list.find((y) => y.id === r.value.id);
+      if (!x?.busy) return r.value;
+      // 别的标签正用着：这个浏览器里就有那个标签的话可以直接切过去
+      const other = sessions.find((y) => !y.closed && y.remoteId && x.tags?.includes(y.remoteId));
+      const c = await dialog('这个会话正在使用中', `<p><b>${esc(x.cwd || `会话 ${x.id}`)}</b> 正在${esc(x.busy)}里使用中。</p>
+        <p class="muted">在这里也打开的话，两个标签显示同一个终端，在哪边打字都一样。</p>`, [
+        { label: '返回', value: 'back', cancel: true },
+        ...(other ? [{ label: '切到那个标签', value: 'go' }] : []),
+        { label: '在这里也打开', value: 'share', cls: 'primary', submit: true },
+      ], tag);
+      if (c.dismissed) return undefined;
+      if (c.value === 'share') return { id: x.id, share: true };
+      if (c.value === 'go') return { go: other };
+    }
   }
 
   // 主机指纹确认

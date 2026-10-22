@@ -314,6 +314,8 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 .dp-row:hover { border-color: var(--accent); }
 .dp-row .as-title { white-space: normal; word-break: break-all; }
 .dp-note { margin: 0 0 6px; color: var(--accent); font-size: 13px; }
+.dp-used { margin-top: 3px; font-size: 12px; color: var(--accent); }
+.dp-busy .as-btns button[disabled] { opacity: .5; cursor: not-allowed; }
 
 /* 端口预览 (见 27-forward.js) */
 .fwd-card { width: 560px; }

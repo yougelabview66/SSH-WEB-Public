@@ -106,8 +106,19 @@
     const top0 = $('#tabbar').offsetHeight;
     const maxR = Math.max(0, main.clientWidth - hostFloat.offsetWidth);
     const maxT = Math.max(top0, main.clientHeight - hostFloat.offsetHeight);
-    const r = Math.min(Math.max(0, hfPos.r ?? 12), maxR);
-    const t = Math.min(Math.max(top0, hfPos.t ?? top0 + 8), maxT);
+    let r = Math.min(Math.max(0, hfPos.r ?? 12), maxR);
+    let t = Math.min(Math.max(top0, hfPos.t ?? top0 + 8), maxT);
+    // 开着 SFTP 文件面板 (终端右边)：卡片在它上面会挡住面板的按钮 (关闭、刷新)，让到面板左边；放不下就挪到面板的按钮下面。
+    // 只是这时候让开，记的位置不变，面板关了就回去
+    const panel = active?.sftp?.open && $('.sftp', active.el);
+    if (panel && panel.offsetWidth) {
+      const mr = main.getBoundingClientRect(), pr = panel.getBoundingClientRect();
+      const pw = mr.right - pr.left;
+      if (r < pw) {
+        if (pw + 8 <= maxR) r = pw + 8;
+        else t = Math.min(Math.max(t, [...panel.querySelectorAll('.sftp-bar')].pop().getBoundingClientRect().bottom - mr.top + 8), maxT);
+      }
+    }
     hostFloat.style.right = r + 'px';
     hostFloat.style.top = t + 'px';
   }
@@ -124,6 +135,7 @@
     }
   }
   new ResizeObserver(() => { if (!hostFloat.classList.contains('hidden')) { alignHfHead(); placeHostFloat(); } }).observe(hostFloat.parentElement);
+  document.addEventListener('sftp-panel', () => { if (!hostFloat.classList.contains('hidden')) placeHostFloat(); }); // SFTP 面板开关、切标签 (见 25-latency.js)
 
   hostFloat.addEventListener('mousedown', onStatusDown);
   hostFloat.querySelector('.hf-head').addEventListener('pointerdown', (e) => {

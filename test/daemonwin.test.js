@@ -36,7 +36,7 @@ const shHome = path.join(home, 'shhome');
 fs.mkdirSync(shHome);
 fs.writeFileSync(path.join(shHome, '.profile'), 'PS1="$(printf \'\\033]9;9;\')\\$PWD$(printf \'\\007\')$ "\n');
 
-let conns = [], shells = 0, bridges = [], watchCh = null;
+let conns = [], shells = 0, bridges = [], watchCh = null, kills = [];
 new Server({ hostKeys: [hostKey()] }, (c) => {
   conns.push(c);
   c.on('error', () => {});
@@ -58,6 +58,13 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
         pr.stdout.on('data', (d) => { try { ch.write(d); } catch {} });
         pr.on('exit', (code) => { try { ch.exit(code || 0); ch.end(); } catch {} });
         ch.on('close', () => pr.kill('SIGKILL'));
+        return;
+      }
+      const k = /^"C:\\Users\\me\\\.ssh-web\\sshwebd[^"\\]*\.exe" (kill -t \S+ \d+)$/.exec(cmd);
+      if (k && BIN) { // 关标签时结束常驻会话
+        kills.push(cmd);
+        const pr = spawn(BIN, k[1].split(' '), { env: { ...process.env, SSHWEBD_HOME: dhome } });
+        pr.on('exit', (code) => out('', code || 0));
         return;
       }
       ch.stderr.write(`'${cmd.split(' ')[0]}' is not recognized as an internal or external command,\r\n`);
@@ -274,8 +281,13 @@ run(async () => {
   await p.click('#dialog .dp-row [data-a=kill]'); await wait(200);
   ok(await p.textContent('#dialog .dp-row [data-a=kill]') === '确定删除？' && await p.isVisible('#dialog .dp-row'), '点「删除」：先要再点一次确认 (里面的程序会被关掉)');
   await p.click('#dialog .dp-row [data-a=kill]');
+  await p.waitForSelector('#dialog:not(.hidden) .dp-note', { timeout: 15000 }); await wait(300);
+  const dlg2 = await p.evaluate(() => ({ note: document.querySelector('#dialog .dp-note')?.textContent, rows: document.querySelectorAll('#dialog .dp-row').length, text: document.getElementById('dialogBody').textContent,
+    btns: [...document.querySelectorAll('#dialogActions button')].map((b) => b.textContent) }));
+  ok(/^已结束：/.test(dlg2.note) && dlg2.rows === 0 && /新建会话.*退出/.test(dlg2.text) && dlg2.btns.join() === '退出,新建会话', '再点一次：结束了；删光了不自动新建，问新建还是退出: ' + JSON.stringify(dlg2));
+  await p.click('#dialogActions button:has-text("新建会话")');
   await p.waitForSelector('.tab.active .dot.ok', { timeout: 15000 }); await wait(800);
-  ok(await p.isHidden('#dialog') && /新建常驻会话/.test(await p.textContent('.term.active .xterm-rows').catch(() => '') || 'x') !== null, '再点一次：结束了，没有别的会话就直接新建');
+  ok(await p.isHidden('#dialog'), '点「新建会话」：开一个新的');
   // 常驻会话里往上滚：进历史视图 (同 tmux 里)，程序没开鼠标也一样
   await p.fill('#dInput', 'for i in $(seq 1 120); do echo line-$i; done'); await p.press('#dInput', 'Enter'); await wait(1500);
   const sb = await p.locator('.term.active .xterm-screen').boundingBox();
@@ -284,6 +296,59 @@ run(async () => {
   ok(lsv?.shown && lsv.has1, '常驻会话里往上滚：打开历史视图，前面的输出都在 (同 tmux 里): ' + JSON.stringify(lsv));
   await p.keyboard.press('Control+End'); await wait(500);
   ok(await p.locator('.term.active .lscroll').count() === 0, 'Ctrl+End：回到实时画面 (同 tmux 里)');
+  // 同一台主机再开标签：列表里也有这个标签正用着的会话，标明在哪用、不能删；点它先问一句，可以切到那个标签
+  const e1 = tab(host.id, 'DW');
+  await until(() => e1.prompts.length || /新建常驻会话 \d/.test(e1.out), 15000);
+  if (e1.prompts.length) e1.send({ type: 'daemon-pick-response', id: '' });
+  await until(() => /新建常驻会话 \d/.test(e1.out) && e1.last('status')?.status === 'connected', 15000);
+  await fetch(BASE + '/api/sessions/' + e1.msgs.find((m) => m.type === 'attached')?.session?.id, { method: 'DELETE' });
+  e1.ws.close(); await wait(800);
+  const tabs0 = await p.locator('.tab').count();
+  await row.click();
+  await p.waitForSelector('#dialog:not(.hidden) .dp-busy', { timeout: 15000 }); await wait(300);
+  const busyRow = await p.evaluate(() => { const r = document.querySelector('#dialog .dp-busy'); const k = r.querySelector('[data-a=kill]');
+    return { text: r.textContent.replace(/\s+/g, ' '), killOff: k.disabled, kill: k.textContent, last: r === [...document.querySelectorAll('#dialog .dp-row')].pop() }; });
+  await p.locator('#dialog .card, #dialog form').first().screenshot({ path: require('./helpers').shot('daemon-pick-busy.png') }).catch(() => {});
+  ok(/正在标签「DW-\d+」里使用中/.test(busyRow.text) && busyRow.killOff && busyRow.kill === '使用中' && busyRow.last, '列表里也有别的标签正用着的会话：排在后面、标明在哪个标签用着、不能删: ' + JSON.stringify(busyRow));
+  await p.click('#dialog .dp-busy');
+  await p.waitForSelector('#dialog:not(.hidden) #dialogActions button:has-text("切到那个标签")', { timeout: 5000 });
+  const ask = await p.evaluate(() => ({ title: document.getElementById('dialogTitle').textContent, btns: [...document.querySelectorAll('#dialogActions button')].map((b) => b.textContent) }));
+  ok(ask.title === '这个会话正在使用中' && ask.btns.join() === '返回,切到那个标签,在这里也打开', '点别的标签正用着的会话：先问一句 (返回 / 切到那个标签 / 在这里也打开): ' + JSON.stringify(ask));
+  await p.click('#dialogActions button:has-text("返回")'); await wait(300);
+  ok(await p.isVisible('#dialog .dp-busy'), '「返回」：回到列表');
+  await p.click('#dialog .dp-busy');
+  await p.click('#dialogActions button:has-text("切到那个标签")');
+  await p.waitForFunction((n) => document.querySelectorAll('.tab').length === n, tabs0, { timeout: 8000 }).catch(() => {}); await wait(500);
+  ok(await p.locator('.tab').count() === tabs0 && await p.isHidden('#dialog'), '「切到那个标签」：新开的标签关掉，回到正用着它的标签');
+  // 「退出」：关掉这个标签
+  await row.click();
+  await p.waitForSelector('#dialog:not(.hidden) .dp-row', { timeout: 15000 });
+  await p.click('#dialogActions button:has-text("退出")');
+  await p.waitForFunction((n) => document.querySelectorAll('.tab').length === n, tabs0, { timeout: 8000 }).catch(() => {}); await wait(500);
+  ok(await p.locator('.tab').count() === tabs0, '选择框点「退出」：关掉这个标签');
+  // 关接着常驻会话的标签：问要不要把常驻会话也结束 (取消 / 保留在后台 / 结束会话)
+  const lsIds = () => execFileSync(BIN, ['ls'], { env: { ...process.env, SSHWEBD_HOME: dhome } }).toString().split('\n').slice(1).map((l) => l.trim().split(/\s+/)[0]).filter((x) => /^\d+$/.test(x));
+  const ids0 = lsIds();
+  const closeAsk = async () => { await p.click('.tab.active .x'); await p.waitForSelector('#dialog:not(.hidden)', { timeout: 5000 });
+    return p.evaluate(() => ({ title: document.getElementById('dialogTitle').textContent, text: document.getElementById('dialogBody').textContent, btns: [...document.querySelectorAll('#dialogActions button')].map((b) => b.textContent).join() })); };
+  const cq = await closeAsk();
+  await p.locator('#dialog .card, #dialog form').first().screenshot({ path: require('./helpers').shot('daemon-close.png') }).catch(() => {});
+  ok(cq.title === '关闭标签' && /要把这个常驻会话也结束吗/.test(cq.text) && cq.btns === '取消,保留在后台,结束会话', '关接着常驻会话的标签：问要不要也结束这个常驻会话: ' + JSON.stringify(cq));
+  await p.click('#dialogActions button:has-text("取消")'); await wait(400);
+  ok(await p.locator('.tab').count() === tabs0, '「取消」：不关');
+  await closeAsk();
+  await p.click('#dialogActions button:has-text("保留在后台")');
+  await p.waitForFunction((n) => document.querySelectorAll('.tab').length === n, tabs0 - 1, { timeout: 8000 }).catch(() => {}); await wait(1000);
+  ok(await p.locator('.tab').count() === tabs0 - 1 && lsIds().join() === ids0.join(), '「保留在后台」：标签关了，常驻会话还在: ' + JSON.stringify([ids0, lsIds()]));
+  await row.click();
+  await p.waitForSelector('#dialog:not(.hidden) .dp-row', { timeout: 15000 });
+  const kid = await p.getAttribute('#dialog .dp-row', 'data-id');
+  await p.click('#dialog .dp-row');
+  await p.waitForSelector('.tab.active .dot.ok', { timeout: 15000 }); await wait(800);
+  await closeAsk();
+  await p.click('#dialogActions button:has-text("结束会话")');
+  await p.waitForFunction((n) => document.querySelectorAll('.tab').length === n, tabs0 - 1, { timeout: 8000 }).catch(() => {}); await wait(1500);
+  ok(/^"C:\\Users\\me\\\.ssh-web\\sshwebd[^"]*\.exe" kill -t \S+ \d+$/.test(kills.at(-1) || '') && await p.locator('.tab').count() === tabs0 - 1 && !lsIds().includes(kid) && lsIds().length === ids0.length - 1, `「结束会话」：标签关了，常驻会话 ${kid} 也结束了: ` + JSON.stringify(lsIds()));
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
   await browser.close();
   b.ws.close();

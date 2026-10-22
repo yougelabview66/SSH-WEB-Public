@@ -34,7 +34,7 @@ SSH-WEB ──SSH exec 通道 (不要终端)── sshwebd bridge ──命名�
 
 1. 在 SSH-WEB 里编辑这台主机（Windows 或 Linux），勾上「常驻会话」（新建主机默认勾着）。
 2. 连接时 SSH-WEB 自动把 sshwebd.exe 传到这台主机的 `~/.ssh-web/sshwebd-<哈希>.exe`（已经有了就不传；换个名字是因为正在运行的 exe 不能覆盖）。exe 是构建 Docker 镜像时从这个目录的源码编出来的；不用 Docker、直接跑 SSH-WEB 源码时，先按下面「编译」编出 `sshwebd/sshwebd.exe`，或者自己把 exe 放到主机的 `%USERPROFILE%\.ssh-web\sshwebd.exe`。
-3. **新开标签**：新建一个会话（默认 PowerShell）。如果有没人接着的会话，会弹窗问你接哪个，空着就新建。
+3. **新开标签**：新建一个会话（默认 PowerShell）。如果有没人接着的会话，会弹出列表问你接哪个（别的标签正用着的也列出来、标明在哪用，接之前先问一句，不能删），也可以新建或者退出（关掉这个标签）。
 4. **断线后**：这个标签重新连上，自动接回原来的会话，只补发断开期间的输出。
 5. **关了标签**：会话还在。下次新开标签时可以选它接上；在会话里 `exit` 才会结束它。
 
@@ -45,7 +45,7 @@ sshwebd attach [会话]   接上一个会话（不写：只有一个就接它，
     -shell 名字         新建时用的 shell：powershell（默认）/ cmd / pwsh，或者整条命令行
 sshwebd new [会话]      新建一个会话并接上
 sshwebd ls              列出会话
-sshwebd kill 会话       结束一个会话
+sshwebd kill 会话       结束一个会话 (-t 标记：别的标记的客户端还接着就不结束)
 sshwebd quit [-f]       结束守护进程（还有会话时要加 -f，会话全部结束）
 sshwebd bridge          给 SSH-WEB 用
 sshwebd serve           运行守护进程（一般不用手动运行，上面的命令会自动启动）

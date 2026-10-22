@@ -93,6 +93,7 @@
     b.classList.toggle('hidden', !active);
     b.disabled = !(active && active.sid);
     b.classList.toggle('on', !!(active && active.sftp && active.sftp.open));
+    document.dispatchEvent(new Event('sftp-panel')); // 状态卡片让开 / 回去 (见 40-host-status.js)
   }
 
   $('#btnSftp').addEventListener('click', () => {
