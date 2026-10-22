@@ -108,8 +108,19 @@ run(async () => {
   const edge = await p.evaluate(() => { const b = document.querySelector('#rightBar [data-a=collapse]').getBoundingClientRect(), r = document.getElementById('rightBar').getBoundingClientRect(); return Math.round(r.right - b.right); });
   ok(edge <= 10, `「»」贴着右边栏的右边 (离右边 ${edge}px)`);
   ok(JSON.stringify(headBtns) === JSON.stringify(['refresh', 'collapse']), '电脑：右上角只有刷新和「»」收起 (没有重复的关闭)，「»」在最右边: ' + JSON.stringify(headBtns));
-  const rowLook = await p.evaluate(() => { const r = document.querySelector('#rightBar .pf-row[data-rel="a.txt"]'); return { icon: !!r.querySelector('svg.ic'), fs: getComputedStyle(r).fontSize, color: getComputedStyle(r.querySelector('.pf-name')).color, st: r.querySelector('.pf-st').textContent }; });
-  ok(rowLook.icon && rowLook.fs === '12px' && rowLook.st === 'M' && rowLook.color !== 'rgb(15, 23, 42)', '文件树样式同 Orca：类型图标、12px 小字、改过的文件名用 git 状态色、右边状态字母: ' + JSON.stringify(rowLook));
+  const rowLook = await p.evaluate(() => { const r = document.querySelector('#rightBar .pf-row[data-rel="a.txt"]'); return { icon: !!r.querySelector('svg.fi'), fs: getComputedStyle(r).fontSize, color: getComputedStyle(r.querySelector('.pf-name')).color, st: r.querySelector('.pf-st').textContent }; });
+  ok(rowLook.icon && rowLook.fs === '13px' && rowLook.st === 'M' && rowLook.color !== 'rgb(15, 23, 42)', '文件树样式：类型图标、13px 字、改过的文件名用 git 状态色、右边状态字母: ' + JSON.stringify(rowLook));
+  // 彩色图标 (同 Antigravity / VS Code)：Markdown 蓝色 M↓、.gitignore 红色 git、node_modules 文件夹带绿点、普通文件夹不带
+  const icons = await p.evaluate(() => {
+    const ic = (rel) => document.querySelector(`#rightBar .pf-row[data-rel="${rel}"] svg.fi`);
+    return { md: ic('README.md')?.querySelector('path')?.getAttribute('stroke'), git: ic('.gitignore')?.querySelector('path')?.getAttribute('fill'),
+      nm: [...(ic('node_modules')?.querySelectorAll('circle') || [])].map((c) => c.getAttribute('fill')), sub: ic('sub')?.querySelectorAll('circle').length, w: ic('README.md')?.getBoundingClientRect().width };
+  });
+  ok(icons.md === '#519aba' && icons.git === '#f05033' && icons.nm.includes('#8bc34a') && icons.sub === 0 && icons.w === 16, '彩色图标：Markdown 蓝色 M↓、.gitignore 红色 git、node_modules 带绿点、普通文件夹不带，16px: ' + JSON.stringify(icons));
+  await p.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark')); await wait(200);
+  await p.locator(RB).screenshot({ path: shot('rb-icons-dark.png') });
+  await p.evaluate(() => document.documentElement.removeAttribute('data-theme')); await wait(200);
+  await p.locator(RB).screenshot({ path: shot('rb-icons-light.png') });
   const rows = () => p.$$eval(`${RB} .pf-row`, (xs) => xs.map((x) => [x.querySelector('.pf-name').textContent, x.dataset.dir ? 'd' : 'f', (x.className.match(/st-(\w+)/) || [])[1] || '', !!x.querySelector('.pf-dot'), x.classList.contains('heavy')]));
   let rs = await rows();
   ok(rs.some(([n, t, , dot]) => n === 'sub' && t === 'd' && dot) && rs.some(([n, , st]) => n === 'a.txt' && st === 'modified') && rs.some(([n, , st]) => n === 'new.txt' && st === 'untracked')

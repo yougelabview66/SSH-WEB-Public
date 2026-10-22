@@ -105,26 +105,73 @@
   };
   const STATUS = { modified: ['M', '修改'], added: ['A', '新增'], deleted: ['D', '删除'], renamed: ['R', '改名'], untracked: ['U', '未跟踪的新文件'], conflict: ['!', '有冲突'] };
   const abs = (s, rel) => (rel ? `${s.proj.root.replace(/\/$/, '')}/${rel}` : s.proj.root);
-  // 线条图标 (lucide，同 Orca)：箭头、文件夹 / 打开的文件夹、按类型的文件图标
+  // 图标：展开箭头是线条图标；文件夹、文件按类型画成彩色的 (参考 Antigravity / VS Code 的资源管理器)
   const svg = (d) => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
-  const FILE = '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>';
-  const ICON = {
-    chev: svg('<path d="m9 18 6-6-6-6"/>'),
-    folder: svg('<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>'),
-    open: svg('<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>'),
-    file: svg(FILE),
-    code: svg(FILE + '<path d="m10 13-2 2 2 2"/><path d="m14 17 2-2-2-2"/>'),
-    text: svg(FILE + '<path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>'),
-    image: svg(FILE + '<circle cx="10" cy="12" r="2"/><path d="m20 17-1.296-1.296a2.41 2.41 0 0 0-3.408 0L9 22"/>'),
-    json: svg(FILE + '<path d="M10 12a1 1 0 0 0-1 1v1a1 1 0 0 1-1 1 1 1 0 0 1 1 1v1a1 1 0 0 0 1 1"/><path d="M14 18a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1 1 1 0 0 1-1-1v-1a1 1 0 0 0-1-1"/>'),
+  const ICON = { chev: svg('<path d="m9 18 6-6-6-6"/>') };
+  const fi = (body, cls = '') => `<svg class="fi${cls}" viewBox="0 0 16 16" aria-hidden="true">${body}</svg>`;
+  // 字母 / 符号图标 (M↓、JS、{} …)
+  const T = (t, c, size = 8.6) => fi(`<text x="8" y="${8 + size * 0.36}" text-anchor="middle" font-size="${size}" font-weight="700" fill="${c}" font-family="Segoe UI,Helvetica,Arial,sans-serif">${t}</text>`);
+  const G = {
+    git: fi('<path d="M8 1.3 14.7 8 8 14.7 1.3 8Z" fill="#f05033"/><path d="M6.2 5.3 10 9.1M8 7.2v3.6" stroke="#fff" stroke-width="1.1" fill="none"/><circle cx="8" cy="10.9" r="1" fill="#fff"/><circle cx="10.2" cy="9.3" r="1" fill="#fff"/>'),
+    rss: fi('<circle cx="4" cy="12" r="1.6" fill="#e37933"/><path d="M2.6 7.6a5.8 5.8 0 0 1 5.8 5.8M2.6 3.6a9.8 9.8 0 0 1 9.8 9.8" stroke="#e37933" stroke-width="1.7" fill="none" stroke-linecap="round"/>'),
+    node: fi('<path d="M8 1.6 13.6 4.8v6.4L8 14.4 2.4 11.2V4.8Z" fill="none" stroke="#3fb984" stroke-width="1.5"/><path d="M8 5.2v5.6M5.6 6.6 8 5.2l2.4 1.4" stroke="#3fb984" stroke-width="1.3" fill="none"/>'),
+    react: fi('<g fill="none" stroke="#61dafb" stroke-width="1"><ellipse cx="8" cy="8" rx="6.6" ry="2.6"/><ellipse cx="8" cy="8" rx="6.6" ry="2.6" transform="rotate(60 8 8)"/><ellipse cx="8" cy="8" rx="6.6" ry="2.6" transform="rotate(120 8 8)"/></g><circle cx="8" cy="8" r="1.3" fill="#61dafb"/>'),
+    image: (c) => fi(`<rect x="1.8" y="2.8" width="12.4" height="10.4" rx="1.6" fill="none" stroke="${c}" stroke-width="1.4"/><circle cx="5.6" cy="6.3" r="1.3" fill="${c}"/><path d="m2.6 12.4 3.8-3.8 2.4 2.4 1.8-1.8 3 3" fill="none" stroke="${c}" stroke-width="1.3" stroke-linejoin="round"/>`),
+    lines: (c) => fi(`<path d="M3 4h10M3 7h10M3 10h10M3 13h6" stroke="${c}" stroke-width="1.4" stroke-linecap="round"/>`),
+    table: fi('<rect x="2" y="2.8" width="12" height="10.4" rx="1.2" fill="none" stroke="#8dc149" stroke-width="1.3"/><path d="M2 6.3h12M2 9.7h12M6.4 2.8v10.4" stroke="#8dc149" stroke-width="1.1"/>'),
+    gear: (c) => fi(`<circle cx="8" cy="8" r="2.2" fill="none" stroke="${c}" stroke-width="1.5"/><path d="M8 1.8v2M8 12.2v2M1.8 8h2M12.2 8h2M3.6 3.6l1.4 1.4M11 11l1.4 1.4M3.6 12.4 5 11M11 5l1.4-1.4" stroke="${c}" stroke-width="1.5" stroke-linecap="round"/>`),
+    db: fi('<ellipse cx="8" cy="4" rx="5" ry="2" fill="none" stroke="#e8a33d" stroke-width="1.3"/><path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2" fill="none" stroke="#e8a33d" stroke-width="1.3"/>'),
+    zip: fi('<rect x="3" y="1.8" width="10" height="12.4" rx="1.4" fill="none" stroke="#d4a24c" stroke-width="1.3"/><path d="M8 2v1.4M8 4.6V6M8 7.2v1.4" stroke="#d4a24c" stroke-width="1.4"/><rect x="6.6" y="9.4" width="2.8" height="2.6" rx=".6" fill="#d4a24c"/>'),
+    lock: fi('<rect x="3.2" y="7" width="9.6" height="7" rx="1.4" fill="#9da5b4"/><path d="M5.3 7V5.2a2.7 2.7 0 0 1 5.4 0V7" fill="none" stroke="#9da5b4" stroke-width="1.5"/>'),
+    docker: fi('<path d="M1.6 8.6h11.2c.9 0 1.4-.6 1.6-1.2.4.1.8.4 1 .8-.6.4-1 .5-1.4.5-.9 2.6-3.4 4.6-7 4.6-3.1 0-4.9-1.8-5.4-4.7Z" fill="#2496ed"/><path d="M3.4 6.2h1.8v1.8H3.4zM5.6 6.2h1.8v1.8H5.6zM7.8 6.2h1.8v1.8H7.8zM5.6 4h1.8v1.8H5.6zM7.8 4h1.8v1.8H7.8z" fill="#2496ed"/>'),
+    file: fi('<path d="M4 1.8h5.2L12.6 5.2v8.2a.8.8 0 0 1-.8.8H4a.8.8 0 0 1-.8-.8V2.6a.8.8 0 0 1 .8-.8Z" fill="none" stroke="#9da5b4" stroke-width="1.2"/><path d="M9 1.8v3.6h3.6" fill="none" stroke="#9da5b4" stroke-width="1.2"/>'),
+  };
+  // Markdown：M 加向下的箭头 (字太小画不清，用线条画)
+  G.md = (c) => fi(`<path d="M1.6 11.4V4.6l2.7 3.3L7 4.6v6.8M11.6 4.6v6.4M9.4 9l2.2 2.3L13.8 9" fill="none" stroke="${c}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`);
+  const EXT = {
+    md: G.md('#519aba'), markdown: G.md('#519aba'), mdx: G.md('#f9ac00'),
+    json: T('{}', '#cbcb41', 10.5), jsonc: T('{}', '#cbcb41', 10.5), json5: T('{}', '#cbcb41', 10.5),
+    js: T('JS', '#cbcb41'), mjs: T('JS', '#cbcb41'), cjs: T('JS', '#cbcb41'), ts: T('TS', '#3178c6'), mts: T('TS', '#3178c6'), cts: T('TS', '#3178c6'),
+    jsx: G.react, tsx: G.react, vue: T('V', '#41b883', 11), svelte: T('S', '#ff3e00', 11),
+    html: T('&lt;&gt;', '#e37933', 9.5), htm: T('&lt;&gt;', '#e37933', 9.5), css: T('#', '#519aba', 12), scss: T('#', '#f55385', 12), sass: T('#', '#f55385', 12), less: T('#', '#5b8bd8', 12),
+    py: T('PY', '#4b8bbe'), go: T('GO', '#00add8'), rs: T('RS', '#dea584'), java: T('J', '#e76f00', 11), kt: T('K', '#a97bff', 11), c: T('C', '#519aba', 11), h: T('H', '#a074c4', 11),
+    cpp: T('C++', '#519aba', 7.2), cc: T('C++', '#519aba', 7.2), hpp: T('H++', '#a074c4', 7.2), cs: T('C#', '#9b4f96'), rb: T('RB', '#cc342d'), php: T('php', '#a074c4', 7.2),
+    lua: T('LUA', '#51a0cf', 6.8), swift: T('SW', '#f05138'), dart: T('DT', '#00b4ab'),
+    sh: T('&gt;_', '#8dc149', 9.5), bash: T('&gt;_', '#8dc149', 9.5), zsh: T('&gt;_', '#8dc149', 9.5), fish: T('&gt;_', '#8dc149', 9.5),
+    ps1: T('&gt;_', '#519aba', 9.5), psm1: T('&gt;_', '#519aba', 9.5), bat: T('&gt;_', '#cbcb41', 9.5), cmd: T('&gt;_', '#cbcb41', 9.5),
+    yml: T('YML', '#a074c4', 6.8), yaml: T('YML', '#a074c4', 6.8), toml: G.gear('#6d8086'), ini: G.gear('#6d8086'), conf: G.gear('#6d8086'), cfg: G.gear('#6d8086'), properties: G.gear('#6d8086'), env: G.gear('#cbcb41'),
+    xml: G.rss, sql: G.db, db: G.db, sqlite: G.db,
+    png: G.image('#a074c4'), jpg: G.image('#a074c4'), jpeg: G.image('#a074c4'), gif: G.image('#a074c4'), webp: G.image('#a074c4'), bmp: G.image('#a074c4'), ico: G.image('#cbcb41'), avif: G.image('#a074c4'), svg: G.image('#ffb13b'),
+    txt: G.lines('#9da5b4'), log: G.lines('#9da5b4'), rst: G.lines('#9da5b4'), csv: G.table, tsv: G.table, pdf: T('PDF', '#e44d26', 6.8),
+    zip: G.zip, gz: G.zip, tgz: G.zip, tar: G.zip, '7z': G.zip, rar: G.zip, xz: G.zip, lock: G.lock,
+    exe: G.gear('#9da5b4'), dll: G.gear('#9da5b4'), so: G.gear('#9da5b4'), mod: T('GO', '#00add8'), sum: T('GO', '#6d8086'),
+  };
+  const NAME = {
+    'package.json': G.node, 'package-lock.json': G.node, 'yarn.lock': G.lock, 'pnpm-lock.yaml': G.lock,
+    dockerfile: G.docker, '.dockerignore': G.docker, makefile: G.gear('#e37933'), license: T('©', '#cbcb41', 11), 'license.md': T('©', '#cbcb41', 11),
+    '.editorconfig': G.gear('#6d8086'), '.npmrc': G.gear('#cb3837'), '.nvmrc': G.node, 'tsconfig.json': T('TS', '#3178c6'),
   };
   const fileIcon = (name) => {
-    const ext = (/\.([^.]+)$/.exec(name.toLowerCase()) || [])[1] || '';
-    if (/^(png|jpe?g|gif|webp|svg|bmp|ico|avif)$/.test(ext)) return ICON.image;
-    if (/^(json|jsonc|json5|lock)$/.test(ext)) return ICON.json;
-    if (/^(md|markdown|txt|log|rst|csv|tsv)$/.test(ext) || /^(readme|license|changelog)/i.test(name)) return ICON.text;
-    if (/^(js|mjs|cjs|ts|tsx|jsx|py|go|rs|java|kt|c|h|cpp|hpp|cc|cs|rb|php|sh|bash|zsh|ps1|bat|cmd|lua|swift|vue|svelte|html|css|scss|less|sql|yaml|yml|toml|ini|xml|conf)$/.test(ext)) return ICON.code;
-    return ICON.file;
+    const n = name.toLowerCase(), ext = (/\.([^.]+)$/.exec(n) || [])[1] || '';
+    if (NAME[n]) return NAME[n];
+    if (/^\.git(ignore|attributes|modules|keep)?$/.test(n)) return G.git;
+    if (/^docker-compose.*\.ya?ml$|^compose\.ya?ml$|^dockerfile\./.test(n)) return G.docker;
+    if (/^\.env(\.|$)/.test(n)) return G.gear('#cbcb41');
+    if (/^readme/.test(n) && !ext) return T('i', '#519aba', 11);
+    return EXT[ext] || G.file;
+  };
+  // 文件夹：灰色线条，常见的 (src、node_modules、assets …) 右下角带个彩色小圆点
+  const DIRC = {
+    src: '#e37933', source: '#e37933', app: '#e37933', node_modules: '#8bc34a', assets: '#26a69a', images: '#26a69a', img: '#26a69a', icons: '#26a69a', static: '#26a69a', public: '#26a69a', media: '#26a69a',
+    test: '#e44d26', tests: '#e44d26', __tests__: '#e44d26', spec: '#e44d26', e2e: '#e44d26', docs: '#519aba', doc: '#519aba', lib: '#a074c4', vendor: '#a074c4', components: '#26a69a',
+    scripts: '#8dc149', bin: '#8dc149', tools: '#8dc149', dist: '#d4a24c', build: '#d4a24c', out: '#d4a24c', target: '#d4a24c', config: '#6d8086', '.config': '#6d8086',
+    '.git': '#f05033', '.github': '#9da5b4', '.vscode': '#3794ff', '.claude': '#d97757', data: '#cbcb41', styles: '#f55385', css: '#f55385',
+  };
+  const FOLDER = '<path d="M1.8 3.4c0-.5.4-.9.9-.9h3.5l1.5 1.6h5.6c.5 0 .9.4.9.9v7.6c0 .5-.4.9-.9.9H2.7a.9.9 0 0 1-.9-.9Z" fill="none" stroke="currentColor" stroke-width="1.2"/>';
+  const FOLDER_OPEN = '<path d="M1.8 12.4V3.4c0-.5.4-.9.9-.9h3.5l1.5 1.6h4.9c.5 0 .9.4.9.9v1.5" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M1.8 12.4 3.6 7.4c.1-.4.5-.6.9-.6h10c.4 0 .7.4.6.8l-1.6 4.9c-.1.3-.4.5-.8.5H2.6Z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>';
+  const folderIcon = (name, open) => {
+    const c = DIRC[name.toLowerCase()];
+    return fi((open ? FOLDER_OPEN : FOLDER) + (c ? `<circle cx="12.4" cy="12.2" r="3.1" fill="var(--panel)"/><circle cx="12.4" cy="12.2" r="2.2" fill="${c}"/>` : ''), ' dir');
   };
   async function pfFetch(s, rel) {
     const r = await api('POST', '/api/project/ls', { sid: s.sid, path: abs(s, rel) });
@@ -145,7 +192,7 @@
         const p = rel ? `${rel}/${e.name}` : e.name, st = m.get(p);
         const open = e.dir && s.pf.open.has(p);
         rows.push(`<div class="pf-row${e.dir ? ' dir' : ''}${e.heavy ? ' heavy' : ''}${st ? ' st-' + st : ''}" data-rel="${esc(p)}" data-dir="${e.dir ? 1 : ''}" data-size="${e.size || 0}" style="padding-left:${6 + depth * 16}px">
-          <span class="pf-chev${e.dir ? (open ? ' open' : '') : ' none'}">${ICON.chev}</span>${e.dir ? (open ? ICON.open : ICON.folder) : fileIcon(e.name)}<span class="pf-name">${esc(e.name)}</span>
+          <span class="pf-chev${e.dir ? (open ? ' open' : '') : ' none'}">${ICON.chev}</span>${e.dir ? folderIcon(e.name, open) : fileIcon(e.name)}<span class="pf-name">${esc(e.name)}</span>
           ${e.dir && dirs.has(p) ? '<span class="pf-dot" title="里面有改动"></span>' : ''}${st ? `<span class="pf-st" title="${esc(STATUS[st]?.[1] || st)}">${STATUS[st]?.[0] || '?'}</span>` : ''}
           ${e.dir ? '' : '<button type="button" class="pf-more" data-a="more" title="更多操作">⋯</button>'}</div>`);
         if (open) walk(p, depth + 1);
