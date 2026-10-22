@@ -23,7 +23,7 @@
       const screen = s.box.querySelector('.xterm-screen');
       lh = (screen && s.term.rows && screen.clientHeight / s.term.rows) || 17;
     };
-    const wheelMode = () => s.term.modes.mouseTrackingMode !== 'none';
+    const wheelMode = () => s.term.modes.mouseTrackingMode !== 'none' || daemonHistory(s); // 常驻会话：手指滑也进历史视图
 
     // 交给 xterm 按滚轮处理，它会按程序要求的鼠标协议 (SGR 等) 编码发送
     const sendWheel = (dir) => {

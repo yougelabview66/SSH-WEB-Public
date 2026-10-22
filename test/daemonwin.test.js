@@ -105,7 +105,7 @@ function tab(hostId, title) {
     if (bin) { t.out += d.toString(); return; }
     const m = JSON.parse(d);
     t.msgs.push(m);
-    if (m.type === 'prompt') t.prompts.push(m);
+    if (m.type === 'prompt' || m.type === 'daemon-pick') t.prompts.push(m);
   });
   ws.on('open', () => ws.send(JSON.stringify({ type: 'connect', hostId, title, cols: 100, rows: 30 })));
   t.send = (o) => ws.send(JSON.stringify(o));
@@ -180,7 +180,7 @@ run(async () => {
   // 先多开一个常驻会话 (问接哪个时空着 = 新建)，关掉标签：现在有两个没人接着的
   const c0 = tab(host.id, 'DW');
   await until(() => c0.prompts.length, 15000);
-  c0.send({ type: 'prompt-response', answers: [''] });
+  c0.send({ type: 'daemon-pick-response', id: '' });
   await until(() => /新建常驻会话 \d/.test(c0.out) && c0.last('status')?.status === 'connected', 15000);
   const sid0 = c0.msgs.find((m) => m.type === 'attached')?.session?.id;
   await fetch(BASE + '/api/sessions/' + sid0, { method: 'DELETE' });
@@ -189,14 +189,15 @@ run(async () => {
   const b = tab(host.id, 'DW');
   await until(() => b.prompts.length, 15000);
   const pr0 = b.prompts[0] || {};
-  ok(/1\. \/tmp[\s\S]*2\. /.test(pr0.instructions || '') && /删 2/.test(pr0.instructions || ''), '问接哪个：两个会话都列出来，说明可以「删 N」结束: ' + JSON.stringify(pr0.instructions));
-  // 删 2：结束第 2 个，再问一次，只剩第 1 个
-  b.send({ type: 'prompt-response', answers: ['删 2'] });
+  const list0 = pr0.sessions || [];
+  ok(pr0.type === 'daemon-pick' && list0.length === 2 && list0[0].cwd === '/tmp' && list0[0].title === 'my-task' && /有输出 · .*开的/.test(list0[0].when),
+    '问接哪个：网页上列出两个会话 (所在文件夹、标题、多久前有输出): ' + JSON.stringify(list0));
+  // 删除第 2 个：结束它，再问一次，只剩第 1 个
+  b.send({ type: 'daemon-pick-response', kill: list0[1]?.id });
   await until(() => b.prompts.length > 1, 8000);
   const pr = b.prompts[1] || {};
-  ok(/^已结束：/.test(pr.instructions || '') && !/\n2\. /.test(pr.instructions || ''), '填「删 2」：第 2 个结束了，再问一次时只剩第 1 个: ' + JSON.stringify(pr.instructions));
-  ok(pr.title === '接上常驻会话' && /1\. \/tmp\n\s+my-task\n\s+.*有输出 · .*开的/.test(pr.instructions || ''), '新开标签：问接哪个常驻会话，每个显示所在文件夹、标题、多久前有输出: ' + JSON.stringify(pr.instructions));
-  b.send({ type: 'prompt-response', answers: ['1'] });
+  ok(/^已结束：/.test(pr.note || '') && pr.sessions?.length === 1 && pr.sessions[0].id === '1', '点「删除」：第 2 个结束了，再问一次时只剩第 1 个: ' + JSON.stringify(pr));
+  b.send({ type: 'daemon-pick-response', id: '1' });
   await until(() => b.out.includes('after-drop-2') && b.last('status')?.status === 'connected', 10000);
   ok(b.out.includes('接上常驻会话 1') && b.out.includes('hi-42') && b.out.includes('after-drop-2'), '选 1：接上，之前的输出全部补发');
 
@@ -231,6 +232,34 @@ run(async () => {
   ok(await badge.count() === 1 && look && look.color !== 'rgb(255, 255, 255)', '主机列表上标「常驻」(主题绿的淡色标记，不是橙底白字): ' + JSON.stringify(look));
   await row.hover(); await row.locator('[data-op=edit]').click();
   ok(await p.isChecked('#hostForm [name=winDaemon]'), '编辑主机：「Windows 常驻会话」勾着');
+  await p.keyboard.press('Escape'); await wait(300);
+  // 留一个没人接着的会话，再在网页上打开这台主机：弹出列表 (同会话历史的样子)，点两下「删除」结束它，删光了就新建
+  const e0 = tab(host.id, 'DW');
+  await until(() => e0.prompts.length, 15000);
+  e0.send({ type: 'daemon-pick-response', id: '' });
+  await until(() => /新建常驻会话 \d/.test(e0.out) && e0.last('status')?.status === 'connected', 15000);
+  await fetch(BASE + '/api/sessions/' + e0.msgs.find((m) => m.type === 'attached')?.session?.id, { method: 'DELETE' });
+  e0.ws.close(); await wait(800);
+  await row.click();
+  await p.waitForSelector('#dialog:not(.hidden) .dp-row', { timeout: 15000 });
+  const dlg = await p.evaluate(() => ({ title: document.getElementById('dialogTitle').textContent, rows: [...document.querySelectorAll('#dialog .dp-row')].map((r) => r.textContent.replace(/\s+/g, ' ').trim()),
+    btns: [...document.querySelectorAll('#dialogActions button')].map((b) => b.textContent) }));
+  await p.locator('#dialog .card, #dialog form').first().screenshot({ path: require('./helpers').shot('daemon-pick.png') }).catch(() => {});
+  ok(dlg.title === '接上常驻会话' && dlg.rows.length === 1 && /有输出 · .*开的/.test(dlg.rows[0]) && /接上/.test(dlg.rows[0]) && /删除/.test(dlg.rows[0]) && dlg.btns.includes('新建会话'),
+    '网页上：列表里每个会话一行 (文件夹、时间、「接上」「删除」)，下面有「新建会话」: ' + JSON.stringify(dlg));
+  await p.click('#dialog .dp-row [data-a=kill]'); await wait(200);
+  ok(await p.textContent('#dialog .dp-row [data-a=kill]') === '确定删除？' && await p.isVisible('#dialog .dp-row'), '点「删除」：先要再点一次确认 (里面的程序会被关掉)');
+  await p.click('#dialog .dp-row [data-a=kill]');
+  await p.waitForSelector('.tab.active .dot.ok', { timeout: 15000 }); await wait(800);
+  ok(await p.isHidden('#dialog') && /新建常驻会话/.test(await p.textContent('.term.active .xterm-rows').catch(() => '') || 'x') !== null, '再点一次：结束了，没有别的会话就直接新建');
+  // 常驻会话里往上滚：进历史视图 (同 tmux 里)，程序没开鼠标也一样
+  await p.fill('#dInput', 'for i in $(seq 1 120); do echo line-$i; done'); await p.press('#dInput', 'Enter'); await wait(1500);
+  const sb = await p.locator('.term.active .xterm-screen').boundingBox();
+  await p.mouse.move(sb.x + sb.width / 2, sb.y + sb.height / 2); await p.mouse.wheel(0, -300); await wait(1500);
+  const lsv = await p.evaluate(() => { const v = document.querySelector('.term.active .lscroll'); return v ? { shown: !!v.offsetParent, has1: v.textContent.includes('line-1\n') || /line-1(?!\d)/.test(v.textContent) } : null; });
+  ok(lsv?.shown && lsv.has1, '常驻会话里往上滚：打开历史视图，前面的输出都在 (同 tmux 里): ' + JSON.stringify(lsv));
+  await p.keyboard.press('Control+End'); await wait(500);
+  ok(await p.locator('.term.active .lscroll').count() === 0, 'Ctrl+End：回到实时画面 (同 tmux 里)');
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
   await browser.close();
   b.ws.close();
