@@ -1,6 +1,6 @@
 'use strict';
 // 会话历史点「继续」：标签里还开着 Agent (Claude Code 等) 时，恢复命令会打进它的输入框 ——
-// 先按两下 Ctrl+C 退出它，等 Agent 的界面没了 (回到 shell) 再执行；普通 shell 直接执行、不多按 Ctrl+C；
+// 先按两下 Ctrl+C 退出它 (Grok 这种界面上没有特别的字的，光标停在 > 开头的输入行上也认得)，等回到 shell 再执行；普通 shell 直接执行、不多按 Ctrl+C；
 // 退不出来就不执行，提示手动退出。
 // 这台是 Linux 主机，勾着「常驻会话」(新建主机默认勾上)：安静地开普通终端，不提示「常驻会话没开起来」，主机列表上不标「常驻」
 const { Server } = require('ssh2');
@@ -63,6 +63,12 @@ run(async () => {
   got = '';
   r = await resume(sid, 'claude --resume def');
   ok(r.status === 200 && r.body.quit === false && got === 'claude --resume def\r', '在 shell 里：直接执行，不多按 Ctrl+C: ' + JSON.stringify([r.body, got]));
+
+  // 2b. 开着 Grok 这种界面上没有特别的字的 Agent (只有输入行 > )：光标停在 > 开头的输入行上也算，先退出再执行
+  mode = 'agent'; ctrlC = []; st.write('\x1b[2J\x1b[H Grok\r\n\r\n> \x1b[3;3H'); await wait(600);
+  got = '';
+  r = await resume(sid, 'claude --resume from-grok');
+  ok(r.status === 200 && r.body.quit === true && /^\x03\x03claude --resume from-grok\r$/.test(got), '从 Grok 切到 Claude 的对话：先退出 Grok，回到 shell 再执行: ' + JSON.stringify([r.body, got]));
 
   // 3. Agent 怎么都退不出来：不执行，提示手动退出
   mode = 'stuck'; st.write(AGENT); await wait(500);
