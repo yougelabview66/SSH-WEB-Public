@@ -72,7 +72,9 @@
   const histPanel = $('#history');
   let histItems = [];
   let favItems = [];
-  let histTab = 'fav'; // 每次打开都先显示「★ 收藏」
+  // 记住上次看的选项卡 (这台设备上)：下次打开历史面板还在那里 (比如一直用「💬 会话历史」)
+  const HIST_TABS = ['fav', 'hist', 'agents'];
+  let histTab = (() => { try { const t = localStorage.getItem('sshweb.histTab'); return HIST_TABS.includes(t) ? t : 'fav'; } catch { return 'fav'; } })();
 
   const fmtAgo = (t) => {
     const d = (Date.now() - t) / 1000;
@@ -85,7 +87,6 @@
 
   async function openHistory() {
     histPanel.classList.remove('hidden');
-    histTab = 'fav';
     histAgentsFor = null; // 会话历史每次打开都重新读
     $('#histSearch').value = '';
     $('#favInput').value = '';
@@ -297,6 +298,7 @@
 
   histPanel.querySelectorAll('.htabs button').forEach((b) => b.addEventListener('click', () => {
     histTab = b.dataset.tab;
+    try { localStorage.setItem('sshweb.histTab', histTab); } catch {}
     renderHistory();
   }));
   $('#favAdd').addEventListener('submit', async (e) => {
