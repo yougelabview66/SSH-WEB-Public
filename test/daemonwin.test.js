@@ -247,6 +247,10 @@ run(async () => {
   const look = await badge.evaluate((e) => { const cs = getComputedStyle(e); return { color: cs.color, accent: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() }; }).catch(() => null);
   await badge.screenshot({ path: require('./helpers').shot('daemon-badge.png') }).catch(() => {});
   ok(await badge.count() === 1 && look && look.color !== 'rgb(255, 255, 255)', '主机列表上标「常驻」(主题绿的淡色标记，不是橙底白字): ' + JSON.stringify(look));
+  // 勾着常驻会话、还没连过的主机也标 (不用等认出系统；只有认出是 macOS 这类不支持的才不标)
+  await addHost('NEWDW', 2399, { winDaemon: true });
+  await p.reload(); await p.waitForSelector('#app:not(.hidden)'); await wait(500);
+  ok(await p.locator('.host', { hasText: 'NEWDW' }).first().locator('.badge', { hasText: '常驻' }).count() === 1, '勾着常驻会话、还没连过的主机：也标「常驻」');
   await row.hover(); await row.locator('[data-op=edit]').click();
   ok(await p.isChecked('#hostForm [name=winDaemon]'), '编辑主机：「常驻会话」勾着');
   await p.keyboard.press('Escape'); await wait(300);
