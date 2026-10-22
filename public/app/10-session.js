@@ -49,7 +49,7 @@
     enableTouchScroll(s);
     // tmux 里往上滚：拦下来改成本地快速滚动 (见 openLocalScroll)；手机滑动也会变成滚轮事件走到这里
     s.term.attachCustomWheelEventHandler((e) => localScrollWheel(s, e));
-    // 程序没开鼠标时 xterm 自己滚动，不经过上面的处理：Windows 常驻会话要在它之前拦下来，走历史视图 (见 daemonHistory)
+    // 程序没开鼠标时 xterm 自己滚动，不经过上面的处理：常驻会话 (Windows)要在它之前拦下来，走历史视图 (见 daemonHistory)
     s.box.addEventListener('wheel', (e) => {
       if (s.bypassWheel || s.term.modes.mouseTrackingMode !== 'none' || !daemonHistory(s) || e.target.closest('.lscroll')) return;
       if (localScrollWheel(s, e) === false) { e.preventDefault(); e.stopPropagation(); }
@@ -133,7 +133,7 @@
       return true;
     });
     // 选中就复制 (同 tmux 开了鼠标时松开就复制)：电脑上在终端里用鼠标选中文字 (拖动、双击选词、三击选行)，
-    // 松开时自动复制到剪贴板。没有 tmux 的会话 (Windows 常驻会话、直接的 shell) 靠这个；tmux 自己选的 (没按 Shift) 不经过这里
+    // 松开时自动复制到剪贴板。没有 tmux 的会话 (常驻会话 (Windows)、直接的 shell) 靠这个；tmux 自己选的 (没按 Shift) 不经过这里
     if (!isTouch) {
       // 只看「在终端里按下、松开后有选中的文字」：只是点一下 xterm 会清掉选中，不会误复制。
       // 不靠 onSelectionChange 判断有没有选：xterm 在松开之后才发它。用捕获阶段：xterm 自己的鼠标处理可能不让事件冒泡上来
@@ -326,7 +326,7 @@
           if (answers === undefined) return; // 已在其他设备上回答
           send(s, answers ? { type: 'prompt-response', answers } : { type: 'prompt-response', cancel: true });
         });
-      } else if (m.type === 'daemon-pick') { // Windows 常驻会话：选接哪个 (见 lib/session/daemon.js 的 pickDaemon)
+      } else if (m.type === 'daemon-pick') { // 常驻会话 (Windows)：选接哪个 (见 lib/session/daemon.js 的 pickDaemon)
         activate(s);
         daemonPickDialog(m, s.id).then((r) => {
           if (r === undefined) return; // 已在其他设备上选了

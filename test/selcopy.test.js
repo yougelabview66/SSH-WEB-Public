@@ -1,6 +1,6 @@
 'use strict';
 // 电脑上选中就复制：在终端里用鼠标拖动选中 / 双击选词，松开就复制到剪贴板 (同 tmux 开了鼠标时)，
-// 没有 tmux 的会话 (Windows 常驻会话、直接的 shell) 也一样；只是点一下 (没选中) 不动剪贴板
+// 没有 tmux 的会话 (常驻会话 (Windows)、直接的 shell) 也一样；只是点一下 (没选中) 不动剪贴板
 const { BASE, ok, wait, launch, hostKey, addHost } = require('./helpers');
 const { Server } = require('ssh2');
 new Server({ hostKeys: [hostKey()] }, (c) => {

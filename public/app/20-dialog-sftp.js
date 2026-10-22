@@ -75,7 +75,7 @@
     return m.prompts.map((_, i) => r.form.elements['a' + i].value);
   }
 
-  // Windows 常驻会话：有没人接着的会话时问接哪个 (同会话历史的样子)。点一行或「接上」接上，「删除」点两下结束它
+  // 常驻会话 (Windows)：有没人接着的会话时问接哪个 (同会话历史的样子)。点一行或「接上」接上，「删除」点两下结束它
   // (里面的程序会关掉)，「新建会话」开新的。返回 { id } / { kill } / { id: '' } 新建 / null 取消；在别的设备上答了返回 undefined
   async function daemonPickDialog(m, tag) {
     const rows = (m.sessions || []).map((x) => `<div class="as-row dp-row" data-id="${esc(x.id)}">

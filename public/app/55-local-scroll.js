@@ -8,7 +8,7 @@
   const LS_CHUNK = 100; // 历史视图按块放进页面，每块这么多行
 
 
-  // Windows 常驻会话 (sshwebd，没有 tmux)：程序没开鼠标 (比如 Claude Code) 也走历史视图，同 tmux 里的用法
+  // 常驻会话 (Windows) (sshwebd，没有 tmux)：程序没开鼠标 (比如 Claude Code) 也走历史视图，同 tmux 里的用法
   // (历史取自服务器上这个终端的记录)；全屏程序 (备用屏幕) 照旧交给程序
   const daemonHistory = (s) => !!s.params?.daemonId && s.term.buffer.active.type !== 'alternate';
 
@@ -18,7 +18,7 @@
     // 刚往下滚回实时画面：这一下滚动剩下的 (滚轮 / 触摸板末尾常带一两格反方向的抖动) 都不算，免得又打开历史视图
     if (s.lsWheelUntil > Date.now()) { s.lsWheelUntil = Date.now() + LS_WHEEL_QUIET; return false; }
     if (s.scrollLoading) { s.heldWheel += e.deltaY < 0 ? 1 : -1; return false; } // 等结果期间的滚动先记下 (往上为正)
-    // 程序开了鼠标 (tmux) 才试 (不是 tmux 的话服务端很快回 no-tmux，一段时间内不再试)；Windows 常驻会话一直试。
+    // 程序开了鼠标 (tmux) 才试 (不是 tmux 的话服务端很快回 no-tmux，一段时间内不再试)；常驻会话 (Windows)一直试。
     // Windows 没开常驻会话：不取历史 (不用 psmux 了)，滚轮按终端默认的方式处理
     if (e.deltaY >= 0 || !s.sid || (s.term.modes.mouseTrackingMode === 'none' && !daemonHistory(s))) return true;
     if (s.winHost && !daemonHistory(s)) return true;
