@@ -65,6 +65,28 @@ run(async () => {
     return 'ok';
   }, a.id); await wait(500);
   ok(viaSw === 'ok' && !(await ringA()) && /-1$/.test(await p.textContent('.tab.active .title')), '点开通知：跳到那个标签，铃铛去掉');
+
+  // 做完了、看过了才切走：过一阵 Claude Code 没人理会又响一次 (同一件事的提醒)，不再挂铃铛
+  const tabOf = (one) => p.locator('.tab').filter({ has: p.locator('.title', { hasText: one ? /-1$/ : /-2$/ }) }).first();
+  emit({ hook_event_name: 'Stop', last_assistant_message: '做完了' }); await wait(800);
+  await tabOf(false).click(); await wait(500);
+  shells[0].write('\x07'); await wait(500);
+  ok(!(await ringA()), '做完以后看过了再切走，过一阵又响铃 (Claude Code 的提醒)：不挂铃铛');
+  // 切走以后又做完了一次 (还没看)：照样挂
+  emit({ hook_event_name: 'UserPromptSubmit', prompt: '再做' }); await wait(500);
+  emit({ hook_event_name: 'Stop', last_assistant_message: '又做完了' }); await wait(800);
+  shells[0].write('\x07'); await wait(500);
+  ok(await ringA(), '切走以后新的完成：铃铛');
+  await tabOf(true).click(); await wait(300); await tabOf(false).click(); await wait(500);
+  ok(!(await ringA()), '看过了：铃铛去掉');
+  // 看过以后又往这个标签发了内容 (跑了个命令)，命令结束响铃：是新的事，照样挂
+  const ws2 = new WebSocket(BASE.replace('http', 'ws') + '/ws');
+  await new Promise((r) => ws2.on('open', r));
+  ws2.send(JSON.stringify({ type: 'attach', id: a.id, cols: 80, rows: 24 })); await wait(500);
+  ws2.send(JSON.stringify({ type: 'data', data: 'make\r' })); await wait(800);
+  shells[0].write('\x07'); await wait(500);
+  ok(await ringA(), '看过以后又发了内容，再响铃：铃铛');
+  ws2.close();
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
   await browser.close();
 });
