@@ -250,6 +250,27 @@ run(async () => {
   fakeAgent.kill(); await wait(300);
   await fetch(BASE + '/api/agent-sessions/resume', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sid, cmd: 'echo back', cwd: repo }) });
   await p.waitForSelector(`${RB} .pf-row[data-rel="a.txt"]`, { timeout: 8000 }).catch(() => {});
+  // 钩子漏了事件：记的还是原来仓库，主机上却有个后来才启动的 Agent 在别的目录跑着 (旧的被直接杀掉、在别处又开了一个，还没报事件)：
+  // 以正在跑的 Agent 的目录为准
+  const pinfo = () => fetch(BASE + '/api/project/info', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sid }) }).then((r) => r.json());
+  await wait(2500); // 钩子最后一次报目录之后过一会儿才启动
+  const agent2 = spawn(path.join(home, 'claude'), ['300'], { cwd: other, env: { LC_SSHWEB: sid, PATH: process.env.PATH }, stdio: 'ignore' });
+  kids.push(agent2); await wait(1500);
+  let pi = await pinfo();
+  ok(pi.root === other && pi.source === 'agent', '钩子记的目录和后来启动的 Agent 对不上：以正在跑的 Agent 的目录为准: ' + JSON.stringify(pi));
+  // Claude Code 执行命令的子进程 (命令行里带 ~/.claude/shell-snapshots，在别的目录里) 比 Agent 新：不能当成 Agent
+  const tmpd = path.join(home, 'tmp-work'); fs.mkdirSync(tmpd);
+  const snap = spawn('sh', ['-c', 'sleep 300; true', path.join(home, '.claude', 'shell-snapshots', 'snapshot-sh-1.sh')], { cwd: tmpd, env: { LC_SSHWEB: sid, PATH: process.env.PATH }, stdio: 'ignore' });
+  kids.push(snap); await wait(300);
+  const t0 = Date.now();
+  pi = await pinfo();
+  ok(pi.root === other && pi.source === 'agent', `Agent 执行命令的子进程 (命令行里带 .claude、在别的目录) 不当成 Agent (${Date.now() - t0}ms): ` + JSON.stringify(pi));
+  // 会话历史切到原来仓库的对话 (正在跑的 Agent 比这次报的早：还没退出的旧 Agent)：用新报的目录
+  await fetch(BASE + '/api/agent-sessions/resume', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sid, cmd: 'echo back2', cwd: repo }) });
+  await wait(800);
+  pi = await pinfo();
+  ok(pi.root === repo && pi.source === 'agent', '会话历史切过去 (旧的 Agent 还没退)：用新报的目录，不被旧 Agent 推翻: ' + JSON.stringify(pi));
+  snap.kill(); agent2.kill(); await wait(300);
   await p.fill(`${RB} .rb-dir input`, '/'); await p.press(`${RB} .rb-dir input`, 'Enter'); await wait(1500);
   ok(await p.locator(`${RB} .pf-row`).count() > 0 && /不是 git 仓库/.test(await p.evaluate(() => { document.querySelector('#rightBar .rb-tabs [data-tab=git]').click(); return document.querySelector('#rightBar .gp-body').textContent; })), '手动填不是仓库的目录：「项目」照样能看文件，「改动」提示不是 git 仓库');
   await p.fill(`${RB} .rb-dir input`, ''); await p.press(`${RB} .rb-dir input`, 'Enter'); await wait(1200);
