@@ -316,6 +316,7 @@
         // 事情已经处理掉了 (Agent 接着干活了 / 从「完成」「待选择」变成别的：在别的设备上看过、回答过)：铃铛去掉
         const was = s.srvState?.cls;
         if (m.cls === 'run' || ((was === 'done' || was === 'bad') && m.cls !== was)) s.tab.classList.remove('ring');
+        if (m.label !== s.srvState?.label) s.stateAt = Date.now();
         s.srvState = { label: m.label, cls: m.cls, detail: m.detail || '' };
         s.tab.title = s.srvState.detail ? `${s.title}\n${m.label}：${s.srvState.detail}` : s.title; // 鼠标移到标签上也看得到在做什么
         renderDeskTabs();
@@ -326,6 +327,8 @@
         s.sshRtt = latSample(s, 'ssh', m.ssh);
         if (s === active) updateLat();
       } else if (m.type === 'bell') {
+        // 同一件事的提醒 (见服务端 alert)：这个状态出来以后已经看过这个标签，不再挂铃铛
+        if (m.again && s.seenAt > (s.stateAt || 0)) return;
         if (s !== active || document.hidden) s.tab.classList.add('ring');
       } else if (m.type === 'prompt-done') {
         dismissDialog(s.id);
