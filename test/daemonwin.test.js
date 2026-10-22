@@ -36,7 +36,7 @@ const shHome = path.join(home, 'shhome');
 fs.mkdirSync(shHome);
 fs.writeFileSync(path.join(shHome, '.profile'), 'PS1="$(printf \'\\033]9;9;\')\\$PWD$(printf \'\\007\')$ "\n');
 
-let conns = [], shells = 0, bridges = [];
+let conns = [], shells = 0, bridges = [], watchCh = null;
 new Server({ hostKeys: [hostKey()] }, (c) => {
   conns.push(c);
   c.on('error', () => {});
@@ -49,7 +49,7 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
       const ch = a(), cmd = info.command;
       const out = (t, code) => { if (t) ch.write(t); ch.exit(code); ch.end(); };
       if (cmd === 'echo %OS%;$env:OS') return out('Windows_NT;$env:OS\r\n', 0);
-      if (cmd.includes('watch.ps1')) return out('SSHWEB_HOOKS=0\r\n', 0);
+      if (cmd.includes('watch.ps1')) { watchCh = ch; ch.write('SSHWEB_HOOKS=1\r\n'); return; } // 装了钩子：事件从这里来
       const m = /^"C:\\Users\\me\\\.ssh-web\\(sshwebd[^"\\]*\.exe)" bridge$/.exec(cmd);
       if (m && BIN) { // 真的跑 bridge (Windows 的 OpenSSH 在 SSH 断开时结束整个会话的进程：这里通道关了就杀掉它)
         bridges.push({ cmd, exe: m[1] });
@@ -173,6 +173,10 @@ run(async () => {
   const pi = await (await fetch(BASE + '/api/project/info', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sid, dir: '' }) })).json();
   ok(pi.source === 'terminal' && JSON.stringify(pi).includes('tmp'), '常驻会话：右边栏的项目目录是 shell 报的当前目录 (cd 过去的): ' + JSON.stringify(pi).slice(0, 160));
 
+  // Claude Code 的钩子报来它干活的目录 (`cd 某处; claude` 这种一行命令，shell 报的还是 cd 之前的)：接会话时优先显示它
+  watchCh?.write(JSON.stringify({ v: 2, t: Math.floor(Date.now() / 1000), agent: 'claude', tabs: sid, pane: '', hook_event_name: 'UserPromptSubmit', prompt: '改代码', cwd: '/home/demo/proj' }) + '\n');
+  await wait(800);
+
   // ---- 3. 关掉标签 (常驻会话还在)，再开一个标签：问接哪个，选 1 接上 (全部补发)
   await fetch(BASE + '/api/sessions/' + sid, { method: 'DELETE' });
   a.ws.close();
@@ -190,8 +194,8 @@ run(async () => {
   await until(() => b.prompts.length, 15000);
   const pr0 = b.prompts[0] || {};
   const list0 = pr0.sessions || [];
-  ok(pr0.type === 'daemon-pick' && list0.length === 2 && list0[0].cwd === '/tmp' && list0[0].title === 'my-task' && /有输出 · .*开的/.test(list0[0].when),
-    '问接哪个：网页上列出两个会话 (所在文件夹、标题、多久前有输出): ' + JSON.stringify(list0));
+  ok(pr0.type === 'daemon-pick' && list0.length === 2 && list0[0].cwd === '/home/demo/proj' && list0[0].title === 'my-task' && /有输出 · .*开的/.test(list0[0].when),
+    '问接哪个：网页上列出两个会话 (文件夹以 Claude 干活的目录为准、标题、多久前有输出): ' + JSON.stringify(list0));
   // 删除第 2 个：结束它，再问一次，只剩第 1 个
   b.send({ type: 'daemon-pick-response', kill: list0[1]?.id });
   await until(() => b.prompts.length > 1, 8000);

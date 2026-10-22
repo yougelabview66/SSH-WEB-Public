@@ -38,11 +38,15 @@ type winPty struct {
 	closed    atomic.Bool
 }
 
-// PowerShell 启动后先跑的：代码页切到 UTF-8；每次显示提示符时先上报当前目录 (ESC ] 9 ; 9 ; 路径 BEL，同 Windows Terminal
-// 的建议写法，守护进程和 SSH-WEB 据此知道会话在哪个文件夹)，原来的提示符 (自己配置的也一样) 照常显示。
-// 放在命令行的双引号里：里面不能有双引号
+// PowerShell 启动后先跑的：代码页切到 UTF-8；上报当前目录 (ESC ] 9 ; 9 ; 路径 BEL，同 Windows Terminal 的建议写法，
+// 守护进程和 SSH-WEB 据此知道会话在哪个文件夹)：每次显示提示符时，以及运行命令前目录变了的时候
+// (`cd D:\x; claude` 这种一行命令，cd 之后提示符要等 claude 退出才出来；PreCommandLookupAction 在找 claude 这个命令前就会跑)。
+// 上报的那段只用变量和 .NET 方法、不调用命令 (调用命令本身又会触发 PreCommandLookupAction)。
+// 原来的提示符 (自己配置的也一样) 照常显示。放在命令行的双引号里：里面不能有双引号
 const psInit = `chcp.com 65001 > $null; $global:__sshwebdPrompt = $function:prompt; ` +
-	`function global:prompt { [char]27 + ']9;9;' + $PWD.ProviderPath + [char]7 + (& $global:__sshwebdPrompt) }`
+	`$global:__sshwebdCwd = { $d = $PWD.ProviderPath; if ($d -ne $global:__sshwebdLast) { $global:__sshwebdLast = $d; [Console]::Write([char]27 + ']9;9;' + $d + [char]7) } }; ` +
+	`$ExecutionContext.InvokeCommand.PreCommandLookupAction = $global:__sshwebdCwd; ` +
+	`function global:prompt { $global:__sshwebdLast = ''; & $global:__sshwebdCwd; & $global:__sshwebdPrompt }`
 
 // 要启动的程序。cmd / PowerShell 先把代码页切到 UTF-8 (65001)：直接写 UTF-8 字节的程序 (比如 Claude Code)
 // 中文才不乱 (Orca 也这么做)。别的当成整条命令行
