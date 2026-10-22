@@ -86,6 +86,7 @@
   };
 
   async function openHistory() {
+    if (active) histPanel.dataset.tab = active.id; // 手机上同性能监控 (见 tabPanels)
     histPanel.classList.remove('hidden');
     histAgentsFor = null; // 会话历史每次打开都重新读
     $('#histSearch').value = '';

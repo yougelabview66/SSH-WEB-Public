@@ -9,11 +9,12 @@ const path = require('path');
 const { spawn, execFileSync } = require('child_process');
 const { Server, utils: { sftp: { OPEN_MODE, STATUS_CODE } } } = require('ssh2');
 const WebSocket = require('ws');
-const { BASE, ok, wait, run, launch, hostKey, addHost } = require('./helpers');
+const { BASE, ok, wait, run, launch, hostKey, addHost, killUnder } = require('./helpers');
 
 const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sshweb-dw-')));
 const dhome = path.join(home, 'daemon'); // 守护进程的数据目录 (socket、日志)
 fs.mkdirSync(dhome);
+killUnder(home); // 中途出错退出时也结束这里起的守护进程
 const HOME = '/C:/Users/me';
 const until = async (fn, ms) => { for (const end = Date.now() + ms; !fn() && Date.now() < end;) await wait(100); };
 const SRV_EXE = '/tmp/sshweb-dw-sshwebd.exe'; // 服务器上的 sshwebd.exe (见开头的 @env)
@@ -278,6 +279,8 @@ run(async () => {
   await p.locator('#dialog .card, #dialog form').first().screenshot({ path: require('./helpers').shot('daemon-pick.png') }).catch(() => {});
   ok(dlg.title === '接上常驻会话' && dlg.rows.length === 1 && /有输出 · .*开的/.test(dlg.rows[0]) && /接上/.test(dlg.rows[0]) && /删除/.test(dlg.rows[0]) && dlg.btns.includes('新建会话'),
     '网页上：列表里每个会话一行 (文件夹、时间、「接上」「删除」)，下面有「新建会话」: ' + JSON.stringify(dlg));
+  // 删除时弹窗不关掉重开：数一下弹窗被藏起来几次
+  await p.evaluate(() => { window.__dlgHides = 0; new MutationObserver(() => { if (document.getElementById('dialog').classList.contains('hidden')) window.__dlgHides++; }).observe(document.getElementById('dialog'), { attributes: true, attributeFilter: ['class'] }); });
   await p.click('#dialog .dp-row [data-a=kill]'); await wait(200);
   ok(await p.textContent('#dialog .dp-row [data-a=kill]') === '确定删除？' && await p.isVisible('#dialog .dp-row'), '点「删除」：先要再点一次确认 (里面的程序会被关掉)');
   await p.click('#dialog .dp-row [data-a=kill]');
@@ -285,6 +288,7 @@ run(async () => {
   const dlg2 = await p.evaluate(() => ({ note: document.querySelector('#dialog .dp-note')?.textContent, rows: document.querySelectorAll('#dialog .dp-row').length, text: document.getElementById('dialogBody').textContent,
     btns: [...document.querySelectorAll('#dialogActions button')].map((b) => b.textContent) }));
   ok(/^已结束：/.test(dlg2.note) && dlg2.rows === 0 && /新建会话.*退出/.test(dlg2.text) && dlg2.btns.join() === '退出,新建会话', '再点一次：结束了；删光了不自动新建，问新建还是退出: ' + JSON.stringify(dlg2));
+  ok(await p.evaluate(() => window.__dlgHides) === 0, '删除时弹窗一直开着，在原地刷新列表 (不关掉再开一个)');
   await p.click('#dialogActions button:has-text("新建会话")');
   await p.waitForSelector('.tab.active .dot.ok', { timeout: 15000 }); await wait(800);
   ok(await p.isHidden('#dialog'), '点「新建会话」：开一个新的');
@@ -310,14 +314,20 @@ run(async () => {
     return { text: r.textContent.replace(/\s+/g, ' '), killOff: k.disabled, kill: k.textContent, last: r === [...document.querySelectorAll('#dialog .dp-row')].pop() }; });
   await p.locator('#dialog .card, #dialog form').first().screenshot({ path: require('./helpers').shot('daemon-pick-busy.png') }).catch(() => {});
   ok(/正在标签「DW-\d+」里使用中/.test(busyRow.text) && busyRow.killOff && busyRow.kill === '使用中' && busyRow.last, '列表里也有别的标签正用着的会话：排在后面、标明在哪个标签用着、不能删: ' + JSON.stringify(busyRow));
+  await p.evaluate(() => { window.__dlgHides = 0; });
   await p.click('#dialog .dp-busy');
-  await p.waitForSelector('#dialog:not(.hidden) #dialogActions button:has-text("切到那个标签")', { timeout: 5000 });
-  const ask = await p.evaluate(() => ({ title: document.getElementById('dialogTitle').textContent, btns: [...document.querySelectorAll('#dialogActions button')].map((b) => b.textContent) }));
-  ok(ask.title === '这个会话正在使用中' && ask.btns.join() === '返回,切到那个标签,在这里也打开', '点别的标签正用着的会话：先问一句 (返回 / 切到那个标签 / 在这里也打开): ' + JSON.stringify(ask));
-  await p.click('#dialogActions button:has-text("返回")'); await wait(300);
-  ok(await p.isVisible('#dialog .dp-busy'), '「返回」：回到列表');
+  await p.waitForSelector('#dialog:not(.hidden) .dp-confirm [data-c=go]', { timeout: 5000 });
+  const ask = await p.evaluate(() => ({ title: document.getElementById('dialogTitle').textContent, btns: [...document.querySelectorAll('#dialog .dp-confirm button')].map((b) => b.textContent), acts: !!document.getElementById('dialogActions').offsetParent }));
+  await p.locator('#dialog .card, #dialog form').first().screenshot({ path: require('./helpers').shot('daemon-pick-confirm.png') }).catch(() => {});
+  ok(ask.title === '这个会话正在使用中' && ask.btns.join() === '返回,切到那个标签,在这里也打开' && !ask.acts && await p.evaluate(() => window.__dlgHides) === 0,
+    '点别的标签正用着的会话：同一个弹窗里先问一句 (返回 / 切到那个标签 / 在这里也打开): ' + JSON.stringify(ask));
+  await p.keyboard.press('Escape'); await wait(300);
+  ok(await p.isVisible('#dialog .dp-busy') && await p.evaluate(() => window.__dlgHides) === 0, '「返回」(Esc)：回到列表，弹窗没关');
   await p.click('#dialog .dp-busy');
-  await p.click('#dialogActions button:has-text("切到那个标签")');
+  await p.click('#dialog .dp-confirm [data-c=back]'); await wait(300);
+  ok(await p.isVisible('#dialog .dp-busy'), '点「返回」：回到列表');
+  await p.click('#dialog .dp-busy');
+  await p.click('#dialog .dp-confirm [data-c=go]');
   await p.waitForFunction((n) => document.querySelectorAll('.tab').length === n, tabs0, { timeout: 8000 }).catch(() => {}); await wait(500);
   ok(await p.locator('.tab').count() === tabs0 && await p.isHidden('#dialog'), '「切到那个标签」：新开的标签关掉，回到正用着它的标签');
   // 「退出」：关掉这个标签

@@ -51,6 +51,7 @@
       : s.term.buffer.active.type === 'alternate' ? `${n} 行 (全屏程序只有当前画面)` : `${n} 行`;
     mInput.blur();
     ta.style.paddingBottom = '';
+    $('#copyPanel').dataset.tab = s.id; // 手机上同性能监控 (见 tabPanels)
     $('#copyPanel').classList.remove('hidden');
     if (n && line >= 0) scrollToLine(ta, Math.min(line, n - 1), at?.y);
     else { ta._place = null; ta.scrollTop = ta.scrollHeight; } // 定位到最新内容

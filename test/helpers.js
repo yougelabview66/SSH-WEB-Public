@@ -42,4 +42,16 @@ async function waitFor(page, fn, arg, ms = 15000) {
 }
 const run = (fn) => fn().then(() => process.exit()).catch((e) => { console.error('✘ 测试出错: ' + (e.stack || e)); process.exit(1); });
 
-module.exports = { BASE, ok, wait, shot, launch, post, addHost, run, hostKey, waitFor, chromium, devices };
+// 测试退出时 (包括中途出错)：结束程序文件在这个临时目录里的进程 (测试起的 sshwebd 守护进程；里面还有会话时它不会自己退出)
+function killUnder(dir) {
+  process.on('exit', () => {
+    for (const p of fs.readdirSync('/proc')) {
+      if (!/^\d+$/.test(p)) continue;
+      let exe = '';
+      try { exe = fs.readlinkSync(`/proc/${p}/exe`); } catch { continue; }
+      if (exe.startsWith(dir + '/')) try { process.kill(+p, 'SIGKILL'); } catch {}
+    }
+  });
+}
+
+module.exports = { BASE, ok, wait, shot, launch, post, addHost, run, hostKey, waitFor, chromium, devices, killUnder };

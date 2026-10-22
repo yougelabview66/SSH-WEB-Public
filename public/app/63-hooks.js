@@ -31,7 +31,8 @@
     closeHooks();
     const el = hooksEl = document.createElement('div');
     const host = s.baseTitle || s.title;
-    el.className = 'overlay hooksp';
+    el.className = 'overlay hooksp tab-panel';
+    el.dataset.tab = s.id; // 手机上同性能监控 (见 tabPanels)
     el.innerHTML = `<div class="card wide hooks-card">
       <div class="hist-head"><h3>🔔 钩子通知</h3><button type="button" data-a="close" title="关闭 (Esc)">×</button></div>
       <div class="hk-host"><span class="hk-name"></span> · <span class="hk-script">正在检查…</span></div>

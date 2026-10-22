@@ -26,7 +26,8 @@
   function openAgentSessions(s) {
     closeAgentSessions();
     const el = asEl = document.createElement('div');
-    el.className = 'overlay agentsp';
+    el.className = 'overlay agentsp tab-panel';
+    el.dataset.tab = s.id; // 手机上同性能监控 (见 tabPanels)
     el.innerHTML = `<div class="card wide as-card">
       <div class="hist-head"><h3>💬 会话历史</h3><button type="button" data-a="close" title="关闭 (Esc)">×</button></div>
     </div>`;

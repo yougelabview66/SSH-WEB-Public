@@ -513,7 +513,7 @@
       if (!notes.length || !s || inputLocked(s)) return; // 别的设备在用
       insertText(s, gitNotesText(gp.data.root, notes));
       gitNotes.delete(gp.data.root);
-      if (isTouch) setRbState('closed'); // 手机上右边栏盖着输入栏：关掉才看得到
+      if (isTouch) setRbState('closed'); // 手机上右边栏盖着终端：关掉看 Agent 收到
       else gpRender();
     }
   });
