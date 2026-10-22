@@ -86,6 +86,7 @@
   async function daemonPickDialog(m, tag, onKill) {
     let cur = m, body = null, confirming = null;
     const acts = () => $('#dialogActions');
+    const pickTitle = () => `接上常驻会话${cur.tab ? `（${cur.tab}）` : ''}`; // 带上是哪个标签：几个标签同时问时分得清
     const listHtml = () => {
       const list = cur.sessions || [];
       const rows = list.map((x) => `<div class="as-row dp-row${x.busy ? ' dp-busy' : ''}" data-id="${esc(x.id)}">
@@ -103,7 +104,7 @@
       if (!body) return;
       body.innerHTML = listHtml();
       acts().classList.remove('hidden');
-      $('#dialogTitle').textContent = '接上常驻会话';
+      $('#dialogTitle').textContent = pickTitle();
     };
     // 还有别的连接：同一个弹窗里换成确认，问要不要强制连接 (这个浏览器里就有接着它的标签的话可以直接切过去)
     const showConfirm = (x) => {
@@ -139,7 +140,7 @@
     window.addEventListener('keydown', onEsc, true);
     dpOpen = { tag, update: (m2) => { cur = m2; if (!confirming) showList(); } };
     try {
-      const r = await dialog('接上常驻会话', '', [
+      const r = await dialog(pickTitle(), '', [
         { label: '退出', value: null, cancel: true },
         { label: '新建会话', value: { id: '' }, cls: 'primary', submit: true },
       ], tag, (b, finish) => {

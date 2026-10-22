@@ -1,4 +1,5 @@
 'use strict';
+// @env DAEMON_AUTO_RECONNECT=0
 // @env SSHWEBD_DIR=/tmp/sshweb-dl-bin
 // 常驻会话 (sshwebd) 在 Linux 主机上：连上时认出是 Linux、什么架构，把 Linux 版传到 ~/.ssh-web/sshwebd-<哈希> (加执行权限)，
 // 开一个不要终端的通道跑 bridge，终端在守护进程里。用不用 tmux 都行：
