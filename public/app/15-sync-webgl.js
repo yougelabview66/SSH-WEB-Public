@@ -158,9 +158,7 @@
   // 切标签不接管：这个标签别的设备在用就锁着 (镜像显示)，点「在本机继续」才接管 (见 42-owner.js)
   function activate(s) {
     const prev = active;
-    if (prev && !document.hidden) prev.seenAt = Date.now(); // 看到什么时候 (铃铛的提醒判断，见 10-session.js)
     active = s;
-    if (!document.hidden) s.seenAt = Date.now();
     s.shown = true;
     // 还没看过的后台标签 (只收了状态，见 10-session.js)：现在要画面
     if (s.lite && s.ws?.readyState === WebSocket.OPEN) { s.lite = false; send(s, { type: 'sync', offset: s.offset }); }

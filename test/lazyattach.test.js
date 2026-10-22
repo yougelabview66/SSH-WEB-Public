@@ -54,7 +54,13 @@ run(async () => {
   ok((await bottom(p)).includes('T2-BOTTOM'), '当前标签显示正常');
   ok(await p.locator('.tab .dot.ok').count() === 2, '后台标签的连接状态照常显示 (绿点)');
 
-  // 后台标签响提示音：标签照常闪
+  // 后台标签里按回车跑了个命令 (另一台设备上发的)，结束时响提示音：标签照常闪 (只响不算新通知，见 bellclear 测试)
+  const sid0 = (await (await fetch(BASE + '/api/sessions')).json()).sort((x, y) => x.created - y.created)[0].id;
+  const ws = new (require('ws'))(BASE.replace('http', 'ws') + '/ws');
+  await new Promise((r) => ws.on('open', r));
+  ws.send(JSON.stringify({ type: 'attach', id: sid0, cols: 80, rows: 24 })); await wait(500);
+  ws.send(JSON.stringify({ type: 'data', data: 'make\r' })); await wait(500);
+  ws.close();
   streams[0].write('\x07'); await wait(1000);
   ok(await p.evaluate(() => [...document.querySelectorAll('.tab')].some((t) => !t.classList.contains('active') && t.classList.contains('ring'))), '后台标签有提示音：标签照常提醒');
 
