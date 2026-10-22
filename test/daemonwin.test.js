@@ -1,4 +1,5 @@
 'use strict';
+// @env DAEMON_AUTO_RECONNECT=0
 // @env SSHWEBD_EXE=/tmp/sshweb-dw-sshwebd.exe
 // 常驻会话 (Windows) (sshwebd)：主机设置里打开后，连上时开一个不要终端的通道跑 ~/.ssh-web/ 里的 sshwebd bridge，
 // 终端在守护进程里 (服务器上有 sshwebd.exe 就先传过去)。这里模拟一台 Windows 主机 (SSH 默认 cmd)，bridge 用真的 sshwebd (Linux 版，用 sshwebd/ 的源码编，
@@ -277,8 +278,8 @@ run(async () => {
   const dlg = await p.evaluate(() => ({ title: document.getElementById('dialogTitle').textContent, rows: [...document.querySelectorAll('#dialog .dp-row')].map((r) => r.textContent.replace(/\s+/g, ' ').trim()),
     btns: [...document.querySelectorAll('#dialogActions button')].map((b) => b.textContent) }));
   await p.locator('#dialog .card, #dialog form').first().screenshot({ path: require('./helpers').shot('daemon-pick.png') }).catch(() => {});
-  ok(dlg.title === '接上常驻会话' && dlg.rows.length === 1 && /有输出 · .*开的/.test(dlg.rows[0]) && /接上/.test(dlg.rows[0]) && /删除/.test(dlg.rows[0]) && dlg.btns.includes('新建会话'),
-    '网页上：列表里每个会话一行 (文件夹、时间、「接上」「删除」)，下面有「新建会话」: ' + JSON.stringify(dlg));
+  ok(/^接上常驻会话（DW-\d+）$/.test(dlg.title) && dlg.rows.length === 1 && /有输出 · .*开的/.test(dlg.rows[0]) && /接上/.test(dlg.rows[0]) && /删除/.test(dlg.rows[0]) && dlg.btns.includes('新建会话'),
+    '网页上：标题带上是哪个标签，列表里每个会话一行 (文件夹、时间、「接上」「删除」)，下面有「新建会话」: ' + JSON.stringify(dlg));
   // 删除时弹窗不关掉重开：数一下弹窗被藏起来几次
   await p.evaluate(() => { window.__dlgHides = 0; new MutationObserver(() => { if (document.getElementById('dialog').classList.contains('hidden')) window.__dlgHides++; }).observe(document.getElementById('dialog'), { attributes: true, attributeFilter: ['class'] }); });
   await p.click('#dialog .dp-row [data-a=kill]'); await wait(200);
