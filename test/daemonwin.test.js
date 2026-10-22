@@ -30,6 +30,11 @@ function linuxBin() {
   return out;
 }
 const BIN = linuxBin();
+// 会话里 shell 的主目录：.profile 设提示符，每次显示时先报当前目录 (OSC 9;9，同 sshwebd 给 Windows 的 PowerShell / cmd 加的)。
+// sshwebd 按登录 shell 启动 (sh -l)，/etc/profile 会改掉环境变量里的 PS1，所以写在 .profile 里
+const shHome = path.join(home, 'shhome');
+fs.mkdirSync(shHome);
+fs.writeFileSync(path.join(shHome, '.profile'), 'PS1="$(printf \'\\033]9;9;\')\\$PWD$(printf \'\\007\')$ "\n');
 
 let conns = [], shells = 0, bridges = [];
 new Server({ hostKeys: [hostKey()] }, (c) => {
@@ -48,7 +53,7 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
       const m = /^"C:\\Users\\me\\\.ssh-web\\(sshwebd[^"\\]*\.exe)" bridge$/.exec(cmd);
       if (m && BIN) { // 真的跑 bridge (Windows 的 OpenSSH 在 SSH 断开时结束整个会话的进程：这里通道关了就杀掉它)
         bridges.push({ cmd, exe: m[1] });
-        const pr = spawn(BIN, ['bridge'], { env: { ...process.env, SSHWEBD_HOME: dhome, SSHWEBD_IDLE: '3s', SHELL: '/bin/sh', PS1: '$ ', ENV: '' } });
+        const pr = spawn(BIN, ['bridge'], { env: { ...process.env, SSHWEBD_HOME: dhome, SSHWEBD_IDLE: '3s', SHELL: '/bin/sh', HOME: shHome, ENV: '' } });
         ch.on('data', (d) => pr.stdin.write(d));
         pr.stdout.on('data', (d) => { try { ch.write(d); } catch {} });
         pr.on('exit', (code) => { try { ch.exit(code || 0); ch.end(); } catch {} });
@@ -163,14 +168,34 @@ run(async () => {
   ok(hist?.ok && hist.data.includes('hi-42') && hist.data.includes('after-drop-2') && hist.data.includes('\x1b[0;31mRED-42'),
     '常驻会话往上滚看历史：从服务器上的终端记录拿 (之前的输出都在、带颜色): ' + JSON.stringify((hist?.data || hist?.reason || '').slice(-200)));
 
+  // 提示符报的当前目录 (OSC 9;9，sshwebd 给 Windows 的 PowerShell / cmd 加上的)：右边栏的项目目录用它
+  a.type("cd /tmp; printf '\\033]0;my-task\\007'\r"); await wait(800);
+  const pi = await (await fetch(BASE + '/api/project/info', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sid, dir: '' }) })).json();
+  ok(pi.source === 'terminal' && JSON.stringify(pi).includes('tmp'), '常驻会话：右边栏的项目目录是 shell 报的当前目录 (cd 过去的): ' + JSON.stringify(pi).slice(0, 160));
+
   // ---- 3. 关掉标签 (常驻会话还在)，再开一个标签：问接哪个，选 1 接上 (全部补发)
   await fetch(BASE + '/api/sessions/' + sid, { method: 'DELETE' });
   a.ws.close();
   await wait(800);
+  // 先多开一个常驻会话 (问接哪个时空着 = 新建)，关掉标签：现在有两个没人接着的
+  const c0 = tab(host.id, 'DW');
+  await until(() => c0.prompts.length, 15000);
+  c0.send({ type: 'prompt-response', answers: [''] });
+  await until(() => /新建常驻会话 \d/.test(c0.out) && c0.last('status')?.status === 'connected', 15000);
+  const sid0 = c0.msgs.find((m) => m.type === 'attached')?.session?.id;
+  await fetch(BASE + '/api/sessions/' + sid0, { method: 'DELETE' });
+  c0.ws.close();
+  await wait(800);
   const b = tab(host.id, 'DW');
   await until(() => b.prompts.length, 15000);
-  const pr = b.prompts[0] || {};
-  ok(pr.title === '接上常驻会话' && /1\. 会话 1 · .*有输出/.test(pr.instructions || ''), '新开标签：问要接上哪个没人接着的常驻会话: ' + JSON.stringify(pr.instructions));
+  const pr0 = b.prompts[0] || {};
+  ok(/1\. \/tmp[\s\S]*2\. /.test(pr0.instructions || '') && /删 2/.test(pr0.instructions || ''), '问接哪个：两个会话都列出来，说明可以「删 N」结束: ' + JSON.stringify(pr0.instructions));
+  // 删 2：结束第 2 个，再问一次，只剩第 1 个
+  b.send({ type: 'prompt-response', answers: ['删 2'] });
+  await until(() => b.prompts.length > 1, 8000);
+  const pr = b.prompts[1] || {};
+  ok(/^已结束：/.test(pr.instructions || '') && !/\n2\. /.test(pr.instructions || ''), '填「删 2」：第 2 个结束了，再问一次时只剩第 1 个: ' + JSON.stringify(pr.instructions));
+  ok(pr.title === '接上常驻会话' && /1\. \/tmp\n\s+my-task\n\s+.*有输出 · .*开的/.test(pr.instructions || ''), '新开标签：问接哪个常驻会话，每个显示所在文件夹、标题、多久前有输出: ' + JSON.stringify(pr.instructions));
   b.send({ type: 'prompt-response', answers: ['1'] });
   await until(() => b.out.includes('after-drop-2') && b.last('status')?.status === 'connected', 10000);
   ok(b.out.includes('接上常驻会话 1') && b.out.includes('hi-42') && b.out.includes('after-drop-2'), '选 1：接上，之前的输出全部补发');
@@ -184,13 +209,14 @@ run(async () => {
   // ---- 4b. 服务器上有 sshwebd.exe：传到 ~/.ssh-web/sshwebd-<哈希>.exe 用它 (正在运行的 exe 不能覆盖，所以换名字)
   fs.writeFileSync(SRV_EXE, 'exe on server');
   const c = tab(host.id, 'DW');
-  await until(() => c.out.includes('新建常驻会话 2') && c.last('status')?.status === 'connected', 15000);
+  await until(() => /新建常驻会话 \d/.test(c.out) && c.last('status')?.status === 'connected', 15000);
+  const cid = /新建常驻会话 (\d+)/.exec(c.out)?.[1];
   const up = fs.readdirSync(edir).find((n) => /^sshwebd-[0-9a-f]{8}\.exe$/.test(n));
   ok(up && fs.readFileSync(path.join(edir, up), 'utf8') === 'exe on server' && c.out.includes('正在把 sshwebd 传到主机') && bridges.at(-1).exe === up,
     `服务器上的 sshwebd.exe 传过去 (${up}) 再用它: ` + JSON.stringify(bridges.at(-1)));
   ok(fs.readdirSync(edir).sort().join() === [up, 'sshwebd.exe'].sort().join(), '主机上自己放的 sshwebd.exe 不删，没有留下 .part');
   c.type('exit\r');
-  await until(() => c.out.includes('常驻会话 2 已结束'), 8000);
+  await until(() => c.out.includes(`常驻会话 ${cid} 已结束`), 8000);
   c.ws.close();
 
   // ---- 5. 网页：主机列表上标「常驻」，编辑主机时勾着

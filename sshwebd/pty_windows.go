@@ -38,20 +38,27 @@ type winPty struct {
 	closed    atomic.Bool
 }
 
+// PowerShell 启动后先跑的：代码页切到 UTF-8；每次显示提示符时先上报当前目录 (ESC ] 9 ; 9 ; 路径 BEL，同 Windows Terminal
+// 的建议写法，守护进程和 SSH-WEB 据此知道会话在哪个文件夹)，原来的提示符 (自己配置的也一样) 照常显示。
+// 放在命令行的双引号里：里面不能有双引号
+const psInit = `chcp.com 65001 > $null; $global:__sshwebdPrompt = $function:prompt; ` +
+	`function global:prompt { [char]27 + ']9;9;' + $PWD.ProviderPath + [char]7 + (& $global:__sshwebdPrompt) }`
+
 // 要启动的程序。cmd / PowerShell 先把代码页切到 UTF-8 (65001)：直接写 UTF-8 字节的程序 (比如 Claude Code)
 // 中文才不乱 (Orca 也这么做)。别的当成整条命令行
 func shellCmdline(shell string) (string, string) {
 	switch strings.ToLower(shell) {
 	case "", "powershell":
-		return `powershell.exe -NoLogo -NoExit -Command "chcp.com 65001 > $null"`, "powershell"
+		return `powershell.exe -NoLogo -NoExit -Command "` + psInit + `"`, "powershell"
 	case "pwsh":
-		return `pwsh.exe -NoLogo -NoExit -Command "chcp.com 65001 > $null"`, "pwsh"
+		return `pwsh.exe -NoLogo -NoExit -Command "` + psInit + `"`, "pwsh"
 	case "cmd":
 		comspec := os.Getenv("ComSpec")
 		if comspec == "" {
 			comspec = `C:\Windows\System32\cmd.exe`
 		}
-		return windows.EscapeArg(comspec) + ` /K chcp 65001>nul`, "cmd"
+		// 提示符前面加上报当前目录的 ESC ] 9 ; 9 ; 路径 ESC \ (同 Windows Terminal 的建议写法)
+		return windows.EscapeArg(comspec) + ` /K chcp 65001>nul & prompt $E]9;9;$P$E\$P$G`, "cmd"
 	}
 	return shell, shell
 }

@@ -289,3 +289,20 @@ func buildArgs(out string) []string {
 	}
 	return []string{"build", "-o", out, "."}
 }
+
+// 输出里的终端标题 (OSC 0 / 2) 和当前目录 (OSC 9;9，Windows Terminal 的写法；OSC 7 file://) 记下来，列表里显示
+func TestScanOsc(t *testing.T) {
+	s := &session{}
+	s.scanOsc([]byte("x\x1b]0;✳ 修复登录\x07y\x1b]9;9;\"D:\\code\\my-app\"\x1b\\PS D:\\code\\my-app> "))
+	if s.title != "✳ 修复登录" || s.cwd != `D:\code\my-app` {
+		t.Fatalf("标题 / 目录不对：%q %q", s.title, s.cwd)
+	}
+	s.scanOsc([]byte("\x1b]7;file://host/tmp/a%20b\x07"))
+	if s.cwd != "/tmp/a b" {
+		t.Fatalf("OSC 7 的目录不对：%q", s.cwd)
+	}
+	s.scanOsc([]byte("\x1b]9;4;3;50\x07")) // 进度条，不是目录
+	if s.cwd != "/tmp/a b" {
+		t.Fatalf("进度条被当成目录：%q", s.cwd)
+	}
+}

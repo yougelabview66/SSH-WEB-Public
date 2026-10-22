@@ -8,9 +8,12 @@ import (
 	"errors"
 	"log"
 	"net"
+	"net/url"
 	"os"
+	"runtime"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -44,7 +47,7 @@ type session struct {
 	cwd        string
 	created    time.Time
 	p          ptyProc
-	mu         sync.Mutex // 管 ring / clients / title / 大小 / 时间
+	mu         sync.Mutex // 管 ring / clients / title / cwd / 大小 / 时间
 	ring       *ring
 	clients    map[*client]struct{}
 	title      string
@@ -406,7 +409,7 @@ func (s *session) run() {
 			s.mu.Lock()
 			s.ring.write(chunk)
 			s.lastOut = time.Now()
-			s.scanTitle(chunk)
+			s.scanOsc(chunk)
 			for cl := range s.clients {
 				s.send(cl, f)
 			}
@@ -432,20 +435,43 @@ func (s *session) run() {
 	s.mu.Unlock()
 }
 
-// 记下终端标题 (OSC 0 / 2：ESC ] 0 ; 标题 BEL)，列表里显示。跨两块输出的不管
-func (s *session) scanTitle(p []byte) {
-	for i := 0; i+3 < len(p); i++ {
-		if p[i] != 0x1b || p[i+1] != ']' || (p[i+2] != '0' && p[i+2] != '2') || p[i+3] != ';' {
+// 从输出里记下终端标题 (OSC 0 / 2：ESC ] 0 ; 标题 BEL) 和当前目录 (OSC 9;9：ESC ] 9 ; 9 ; 路径 BEL，Windows Terminal 的写法，
+// 默认的 shell 每次显示提示符时发一次，见 shellCmdline；也认 OSC 7 file://主机/路径)，列表里显示。跨两块输出的不管
+func (s *session) scanOsc(p []byte) {
+	for i := 0; i+2 < len(p); i++ {
+		if p[i] != 0x1b || p[i+1] != ']' {
 			continue
 		}
-		for j := i + 4; j < len(p); j++ {
-			if p[j] == 0x07 || (p[j] == 0x1b && j+1 < len(p) && p[j+1] == '\\') {
-				if t := string(p[i+4 : j]); len(t) <= 256 {
-					s.title = t
-				}
-				i = j
-				break
+		for j := i + 2; j < len(p) && j-i < 4096; j++ {
+			if p[j] != 0x07 && !(p[j] == 0x1b && j+1 < len(p) && p[j+1] == '\\') {
+				continue
 			}
+			v := string(p[i+2 : j])
+			switch {
+			case strings.HasPrefix(v, "0;") || strings.HasPrefix(v, "2;"):
+				if len(v) <= 258 {
+					s.title = v[2:]
+				}
+			case strings.HasPrefix(v, "9;9;"):
+				s.cwd = strings.Trim(v[4:], `"`)
+			case strings.HasPrefix(v, "7;file://"):
+				if u, err := url.Parse(v[2:]); err == nil && u.Path != "" {
+					s.cwd = osPath(u.Path)
+				}
+			}
+			i = j
+			break
 		}
 	}
+}
+
+// OSC 7 里的路径 → 本机的写法 (Windows：/D:/x → D:\x)
+func osPath(p string) string {
+	if runtime.GOOS == "windows" {
+		p = strings.TrimPrefix(p, "/")
+		if len(p) >= 2 && p[1] == ':' {
+			p = strings.ReplaceAll(p, "/", `\`)
+		}
+	}
+	return p
 }
