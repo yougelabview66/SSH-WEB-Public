@@ -80,7 +80,7 @@
   async function daemonPickDialog(m, tag) {
     const rows = (m.sessions || []).map((x) => `<div class="as-row dp-row" data-id="${esc(x.id)}">
       <div class="as-main"><div class="as-title">${esc(x.cwd || `会话 ${x.id}`)}</div>
-        ${x.title ? `<div class="as-prompt">${esc(x.title)}</div>` : ''}<div class="as-meta">${esc(x.when)}</div></div>
+        ${x.name || x.title ? `<div class="as-prompt">${esc(x.name || x.title)}</div>` : ''}<div class="as-meta">${esc(x.when)}</div></div>
       <div class="as-btns"><button type="button" data-a="pick" class="primary">接上</button><button type="button" data-a="kill">删除</button></div></div>`).join('');
     const html = (m.note ? `<p class="dp-note">${esc(m.note)}</p>` : '')
       + '<p class="muted">这台主机上有没接着的常驻会话，点一个接上，或者新建一个：</p>'

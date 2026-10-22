@@ -186,6 +186,8 @@ run(async () => {
   await until(() => c0.prompts.length, 15000);
   c0.send({ type: 'daemon-pick-response', id: '' });
   await until(() => /新建常驻会话 \d/.test(c0.out) && c0.last('status')?.status === 'connected', 15000);
+  // 控制台窗口默认的标题 (「管理员: C:\WINDOWS\…\powershell.exe」)：看不出是哪个会话，列表里不显示
+  c0.type("printf '\\033]0;管理员: C:\\\\WINDOWS\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\\007'\r"); await wait(600);
   const sid0 = c0.msgs.find((m) => m.type === 'attached')?.session?.id;
   await fetch(BASE + '/api/sessions/' + sid0, { method: 'DELETE' });
   c0.ws.close();
@@ -194,8 +196,9 @@ run(async () => {
   await until(() => b.prompts.length, 15000);
   const pr0 = b.prompts[0] || {};
   const list0 = pr0.sessions || [];
-  ok(pr0.type === 'daemon-pick' && list0.length === 2 && list0[0].cwd === '/home/demo/proj' && list0[0].title === 'my-task' && /有输出 · .*开的/.test(list0[0].when),
-    '问接哪个：网页上列出两个会话 (文件夹以 Claude 干活的目录为准、标题、多久前有输出): ' + JSON.stringify(list0));
+  ok(pr0.type === 'daemon-pick' && list0.length === 2 && list0[0].cwd === '/home/demo/proj' && list0[0].name === 'Claude：改代码' && list0[0].title === 'my-task' && /有输出 · .*开的/.test(list0[0].when),
+    '问接哪个：网页上列出两个会话 (文件夹以 Claude 干活的目录为准、会话名称、多久前有输出): ' + JSON.stringify(list0));
+  ok(list0[1] && list0[1].title === '' && !list0[1].name, '控制台窗口默认的标题 (管理员: …powershell.exe) 不显示: ' + JSON.stringify(list0[1]));
   // 删除第 2 个：结束它，再问一次，只剩第 1 个
   b.send({ type: 'daemon-pick-response', kill: list0[1]?.id });
   await until(() => b.prompts.length > 1, 8000);
