@@ -65,7 +65,7 @@
     if (rbState === 'closed' || !active) return;
     if (force || rb.s !== active) { rb.s = active; rbDir.value = active.projDir || ''; projLoad(); }
   }
-  setInterval(() => rbSync(false), 500);
+  setInterval(() => { if (!document.hidden) rbSync(false); }, 500); // 页面在后台不跑 (手机省电)；回到前台下一次就同步上
 
   // Agent 做完了：右边栏开着、是这个标签，就刷新 (改动列表、文件树)
   function gitOnState(s, m) {
@@ -373,7 +373,7 @@
         const slash = f.path.lastIndexOf('/');
         const n = notes.filter((x) => x.path === f.path).length;
         return `<div class="gp-file" data-i="${i}" title="${esc(t)}${f.from ? '：' + esc(f.from) + ' → ' + esc(f.path) : ''}">
-          <span class="gp-st st-${f.status}">${f.status === 'untracked' ? '新' : b}</span>
+          <span class="gp-st st-${esc(f.status)}">${f.status === 'untracked' ? '新' : b}</span>
           <span class="gp-name"><b>${esc(f.path.slice(slash + 1))}</b><span class="gp-path">${esc(slash > 0 ? f.path.slice(0, slash) : '')}</span></span>
           ${n ? `<span class="gp-nb" title="${n} 条批注">✎${n}</span>` : ''}
           <span class="gp-cnt">${f.binary ? '二进制' : f.add != null ? `<i class="a">+${f.add}</i> <i class="d">−${f.del}</i>` : ''}</span>
@@ -416,7 +416,7 @@
     gpRenderNotes();
     const [b, t] = STATUS[f.status] || ['?', f.status];
     const head = `<div class="gp-fhead"><button type="button" data-a="back" title="回到文件列表">← 返回</button>
-      <span class="gp-st st-${f.status}" title="${esc(t)}">${f.status === 'untracked' ? '新' : b}</span><span class="gp-fpath">${esc(f.path)}</span></div>`;
+      <span class="gp-st st-${esc(f.status)}" title="${esc(t)}">${f.status === 'untracked' ? '新' : b}</span><span class="gp-fpath">${esc(f.path)}</span></div>`;
     if (r.binary) { gpBody.innerHTML = head + '<div class="gp-msg">二进制文件，看不了文字对比</div>'; return; }
     const lines = gp.lines = parseDiff(r.diff);
     const all = notesOf(), notes = all.filter((x) => x.path === f.path);

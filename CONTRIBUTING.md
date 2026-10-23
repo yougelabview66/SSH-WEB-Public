@@ -16,7 +16,7 @@ AUTH_PASSWORD=test npm start           # http://127.0.0.1:8888
 ```
 
 - Server code lives in `lib/`, the browser app in `public/app/` — files are concatenated in numeric order into one script, so a new module gets a number after the modules it depends on. Restart the server after front-end changes.
-- The Windows terminal daemon is in `sshwebd/` (Go). After changing it run `npm test -- sshwebd daemonwin`.
+- The terminal daemon is in `sshwebd/` (Go; Windows ConPTY + Linux pty). After changing it run `npm test -- sshwebd daemonwin daemonlinux daemonauto`.
 - Code comments and UI text are currently in Chinese; English is fine in your contributions.
 
 ## Tests
@@ -26,7 +26,7 @@ npm test               # everything (about 15 minutes)
 npm test -- desk lat   # only test/desk.test.js and test/lat.test.js
 ```
 
-Each test starts its own server on a random 127.0.0.1 port with a temporary data directory and talks to mock SSH servers — nothing touches real hosts. Please add or update a test for any behaviour you change; CI runs the whole suite on every pull request.
+Each test starts its own server on a random 127.0.0.1 port with a temporary data directory and talks to mock SSH servers — nothing touches real hosts. Please add or update a test for any behaviour you change; CI (on the public repo) runs the whole suite on every pull request.
 
 ## Pull requests
 

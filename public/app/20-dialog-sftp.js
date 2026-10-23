@@ -53,7 +53,9 @@
       document.addEventListener('keydown', onKey, true);
       onBody?.($('#dialogBody'), finish);
       dlg.classList.remove('hidden');
-      (f.querySelector('input') || f.querySelector('button.primary, button.danger'))?.focus();
+      // 焦点：有输入框给输入框；没有就给主按钮。危险的按钮 (结束会话、仍然打开…) 不默认聚焦，免得电脑上一个回车就执行了，
+      // 只有危险按钮时聚焦取消
+      (f.querySelector('input') || f.querySelector('#dialogActions button.primary') || f.querySelector('#dialogActions button:not(.danger)'))?.focus();
     });
     const p = dialogQueue.then(run);
     dialogQueue = p.catch(() => {});

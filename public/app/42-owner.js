@@ -67,9 +67,11 @@
   // 接着常驻会话的标签：问要不要把常驻会话也结束 (结束 = 里面的程序关掉；保留 = 在主机后台接着跑，下次打开这台主机能接上)。
   // 这个浏览器里别的标签也接着同一个会话：不问，只关这个标签
   async function askClose(s) {
+    let asked = false;
     if (isLocked(s)) {
       const who = s.ownerOnline ? `正在${s.ownerName}上使用` : `是${s.ownerName}在用的 (现在断开了)`;
       if (!confirm(`这个标签${who}，关掉会断开 SSH 连接，${s.ownerName}上的这个标签也会一起关掉。确定关闭？`)) return;
+      asked = true;
     }
     const did = s.sid && s.params?.daemonId;
     const shared = did && sessions.some((x) => x !== s && !x.closed && x.params?.daemonId === did && x.params?.hostId === s.params.hostId);
@@ -83,6 +85,8 @@
       if (!r.value || s.closed) return;
       return closeSession(s, false, r.value === 'kill');
     }
+    // 普通会话 (不是常驻会话)：关了 SSH 就断了，里面的 Claude Code 等一起结束、找不回来。手机上点标签时手指一偏就点到 ×，先问一句
+    if (isTouch && !asked && s.sid && !did && !confirm(`关闭「${s.title}」？\n\n会断开 SSH 连接，里面正在运行的程序 (比如 Claude Code) 会一起结束。`)) return;
     closeSession(s);
   }
 

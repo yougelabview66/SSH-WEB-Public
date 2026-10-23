@@ -1,5 +1,6 @@
 #!/bin/sh
 # 用法见 Dockerfile：ENTRYPOINT，CMD 为 node server.js
+# (占位密码「请修改为强密码」由 server.js 启动时拒绝，见 lib/auth.js)
 # 可选：设置 PUID / PGID 时，把 /data 交给这个用户，再用这个用户身份运行 (不用 root)。
 # 不设置时和以前一样以 root 运行，已有的部署不受影响。
 set -e

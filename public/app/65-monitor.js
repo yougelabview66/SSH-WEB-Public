@@ -50,7 +50,7 @@
     const el = document.createElement('div');
     el.className = 'mon';
     el.innerHTML = `
-      <div class="mon-head"><span class="mh">性能监控</span><button data-a="close" title="关闭">×</button></div>
+      <div class="mon-head"><span class="mh">性能监控</span><button data-a="close" title="关闭" aria-label="关闭">×</button></div>
       <div class="sub m-os"></div>
       <div class="sub m-up"></div>
       <div class="m-body"><div class="note" style="margin-top:14px">正在采集…</div></div>

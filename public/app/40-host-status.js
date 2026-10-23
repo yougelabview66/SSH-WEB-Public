@@ -22,7 +22,7 @@
       const dt = x.sid && x.srvState?.detail;
       return `<div class="dp-tab${x === active ? ' cur' : ''}" data-k="${i}">
         <span class="${$('.dot', x.tab).className}"></span><span class="nm">${esc($('.title', x.tab).textContent)}</span>
-        <span class="stt ${cls}">${st}</span>${dt ? `<span class="dt" title="${esc(dt)}">${esc(dt)}</span>` : ''}</div>`;
+        <span class="stt ${esc(cls)}">${esc(st)}</span>${dt ? `<span class="dt" title="${esc(dt)}">${esc(dt)}</span>` : ''}</div>`;
     }).join('');
     // 有主机要显示在做什么时 (手机 / 平板上一直这样)，卡片竖着一张一行，悬浮窗展开时固定宽度 (不随着那行字变宽，太长的省略)
     const col = isTouch || deskTabList.some((x) => x.sid && x.srvState?.detail);
@@ -43,7 +43,7 @@
     }).join('');
     if (hfSum.innerHTML !== sum) hfSum.innerHTML = sum;
   }
-  setInterval(renderDeskTabs, 500);
+  setInterval(() => { if (!document.hidden || pipWin) renderDeskTabs(); }, 500); // 页面在后台不跑 (手机省电)；置顶小窗口开着照常刷新
 
   // 按下就切标签 (每 0.5 秒会重画，不等 click)，不抢走输入框焦点
   function onStatusDown(e) {

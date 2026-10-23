@@ -125,15 +125,20 @@
     try { return !!window.WebglAddon && !!document.createElement('canvas').getContext('webgl2'); } catch { return false; }
   })();
   let webglFails = webglSupported ? 0 : 3;
+  let webglOkTimer = 0;
 
   function enableWebgl(s) {
     if (s.webgl || s.closed || webglFails >= 3) return;
     const addon = new WebglAddon.WebglAddon();
     try {
+      // 切到后台、锁屏时浏览器回收 GPU 上下文是正常的，不算失败 (以前锁屏三次以后这个页面就再也不用 WebGL 了，只能刷新)；
+      // 在前台用着时丢的才算，正常用一段时间后清零
       addon.onContextLoss(() => {
-        webglFails++;
+        if (!document.hidden) webglFails++;
         disableWebgl(s);
       });
+      clearTimeout(webglOkTimer);
+      webglOkTimer = setTimeout(() => { if (s.webgl === addon && webglFails < 3) webglFails = 0; }, 10 * 60 * 1000);
       s.term.loadAddon(addon);
       s.webgl = addon;
     } catch {
@@ -222,6 +227,14 @@
     }
     try { s.ws && s.ws.close(); } catch {}
     s.ro.disconnect();
+    for (const off of s.offs || []) try { off(); } catch {} // 挂在 window / document 上的监听 (见 10-session.js 的复制)
+    // 属于这个标签的弹层 (历史、会话历史、钩子、文件预览、端口预览、复制文本)：标签没了也一起关掉 (各自的关闭函数，连 Esc 监听一起摘掉)，
+    // 不留在页面里挡快捷键
+    for (const [sel, close] of [['.fpreview', () => closePreview()], ['.fwd', () => closeForward()], ['.hooksp', () => closeHooks()],
+      ['.agentsp', () => closeAgentSessions()], ['#history', () => $('#history').classList.add('hidden')], ['#copyPanel', () => closeCopyPanel()]]) {
+      const o = document.querySelector(sel);
+      if (o && o.dataset.tab === s.id) try { close(); } catch {}
+    }
     s.term.dispose();
     s.el.remove();
     s.tab.remove();

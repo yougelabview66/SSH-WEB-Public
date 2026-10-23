@@ -179,6 +179,8 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: r
 .tab .title { overflow: hidden; text-overflow: ellipsis; }
 .tab .x { background: none; border: none; padding: 0 4px; color: var(--muted); }
 .tab .x:hover { color: var(--danger); }
+/* 手机 / 平板：× 加宽到手指点得准 (原来只有十几像素宽，点标签时容易点到) */
+@media (pointer: coarse) { .tab .x { padding: 0 10px; min-width: 32px; margin-right: -6px; } }
 
 /* isolation：xterm 内部图层的 z-index 只在终端区域内生效，不会盖住输入栏上边缘的拖动条 */
 #terms { flex: 1; position: relative; background: var(--term-bg); min-height: 0; isolation: isolate; }
@@ -192,7 +194,7 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: r
 @media (max-width: 760px) {
   #sidebar { position: fixed; inset: 0 auto 0 0; z-index: 20; width: 80%; max-width: 300px;
     transform: translateX(-100%); transition: transform .2s; }
-  #app.side-open #sidebar { transform: none; box-shadow: 0 0 30px var(--shadow); }
+  #app.side-open #sidebar { transform: none; box-shadow: 0 0 30px var(--shadow); z-index: 55; } /* 打开时盖住标签的弹层和右边栏 (45 / 40)，确认框 (60) 还在它上面 */
   .host .ops { display: flex; }
   .row { flex-wrap: wrap; }
 }

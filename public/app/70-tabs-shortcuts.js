@@ -131,7 +131,7 @@
       const [st, cls] = !x.sid ? ['未连接', 'off'] : x.srvState ? [x.srvState.label, x.srvState.cls] : ['空闲', 'idle'];
       return `<div class="dp-tab${x === active ? ' cur' : ''}" data-k="${i}">
         <span class="${$('.dot', x.tab).className}"></span><span class="nm">${esc($('.title', x.tab).textContent)}</span>
-        <span class="stt ${cls}">${st}</span></div>`;
+        <span class="stt ${esc(cls)}">${esc(st)}</span></div>`;
     }).join('');
     if (tabListPop.innerHTML !== html) tabListPop.innerHTML = html;
     const r = btnTabList.getBoundingClientRect();
@@ -199,7 +199,7 @@
     if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
     const n = /^Digit([1-9])$/.exec(e.code);
     if (!n && e.code !== 'ArrowLeft' && e.code !== 'ArrowRight') return;
-    if (document.querySelector('.overlay:not(.hidden)')) return; // 弹窗打开时不切换
+    if (document.querySelector('.overlay:not(.hidden):not(.tab-away)')) return; // 弹窗打开时不切换
     const list = tabOrder();
     if (!list.length) return;
     e.preventDefault();
@@ -227,7 +227,7 @@
     const now = Date.now();
     if (now - altLast > 400) { altLast = now; return; }
     altLast = 0;
-    if (isTouch || !active || document.querySelector('.overlay:not(.hidden)')) return;
+    if (isTouch || !active || document.querySelector('.overlay:not(.hidden):not(.tab-away)')) return;
     const inDesk = document.activeElement === dInput;
     if (active.scrollView) closeLocalScroll(active); // 历史视图打开时下方输入框是藏起来的：先回到实时画面，再放回输入框
     if (inDesk) { active.term.focus(); termDirect = true; }

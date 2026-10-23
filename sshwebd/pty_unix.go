@@ -2,7 +2,7 @@
 
 package main
 
-// Linux / macOS：用系统的 pty (主要是开发、测试用；这些系统上有 tmux)
+// Linux / macOS：用系统的 pty (Linux 是正式支持的；macOS 主要是开发、测试用)
 
 import (
 	"bytes"
