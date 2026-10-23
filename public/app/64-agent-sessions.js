@@ -18,7 +18,7 @@
     document.removeEventListener('keydown', asKey, true);
   }
   function asKey(e) {
-    if (e.key !== 'Escape') return;
+    if (e.key !== 'Escape' || !$('#dialog').classList.contains('hidden')) return; // 上面开着确认框：Esc 只关确认框
     e.preventDefault();
     e.stopPropagation();
     closeAgentSessions();
@@ -153,11 +153,26 @@
         b.textContent = (await copyText(x.cmd)) ? '已复制' : '复制失败';
         setTimeout(() => { b.textContent = '复制'; }, 1500);
       } else if (b.dataset.a === 'resume') {
+        // 先查这个对话有没有正在别处用 (别的标签里的 Agent、主机上的进程)：在用就同常驻会话的选择框一样问 —— 否 / 切到那个标签 / 是，仍然打开。
+        // 查不了 (旧版服务、网络问题) 不拦，照常问一句
+        if (b.disabled) return;
+        const ag = agent, title = x.title || x.prompt || x.id;
+        b.disabled = true; const t0 = b.textContent; b.textContent = '正在检查…';
+        let busy = null;
+        try { busy = await api('POST', '/api/agent-sessions/busy', { sid: s.sid, agent: ag, id: x.id }); } catch {}
+        b.disabled = false; b.textContent = t0;
+        if (busy?.busy?.length) {
+          const tab = (busy.tabs || []).map((t) => sessions.find((y) => !y.closed && y.remoteId === t.tag)).find(Boolean);
+          const r = await dialog('这个对话正在别处使用', `<p><b>${esc(title)}</b> ${esc(busy.busy.join('；'))}。要在这里也打开吗？</p>
+            <p class="muted">两边同时开着同一个对话，都会往同一个会话文件里写，对话记录可能会乱。一般切过去接着用就行。</p>`,
+          [{ label: '否', value: null, cancel: true }, ...(tab ? [{ label: '切到那个标签', value: 'go' }] : []), { label: '是，仍然打开', value: 'open', cls: 'danger' }]);
+          if (r.value === 'go') { done(); if (!tab.closed) activate(tab); return; }
+          if (r.value !== 'open') return;
+        } else if (!confirm(`在当前终端执行：\n${x.cmd}\n\n这个标签里开着 Agent (Claude Code 等) 的话，会先退出它再执行。`)) return;
         // 服务端执行：标签里还开着 Agent 的话先退出它 (两下 Ctrl+C)，回到 shell 提示符再执行 (见 lib/agent-sessions.js)
-        if (!confirm(`在当前终端执行：\n${x.cmd}\n\n这个标签里开着 Agent (Claude Code 等) 的话，会先退出它再执行。`)) return;
         done();
         focusTerm(s);
-        const name = `${(AS_AGENTS.find(([id]) => id === agent) || [, 'Claude'])[1]}：${x.title || x.prompt || x.id}`; // 常驻会话的选择框里显示
+        const name = `${(AS_AGENTS.find(([id]) => id === ag) || [, 'Claude'])[1]}：${title}`; // 常驻会话的选择框里显示
         api('POST', '/api/agent-sessions/resume', { sid: s.sid, cmd: x.cmd, name, cwd: x.cwd || '' }).catch((err) => alert(err.message));
       }
     });
