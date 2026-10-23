@@ -1,7 +1,8 @@
   // ------------------------------------------------------------ Agent 会话历史 (服务端见 lib/agent-sessions.js)
   // 「⋯ 更多 → 会话历史」弹窗，和「历史」面板里的「💬 会话历史」选项卡 (见 50-history.js) 用的是同一个部件 (agentSessionsView)：
   // 这台主机上 Claude Code / Grok / Codex / Gemini / OpenCode 以前的会话，按最近排；
-  // 打字筛选列出来的 (标题、第一句话、目录)，回车或点「搜索」在全部会话内容里搜；「继续」在当前终端执行恢复命令，「复制」复制这条命令
+  // 打字筛选列出来的 (标题、第一句话、目录)，回车或点「搜索」在全部会话内容里搜；「继续」在当前终端执行恢复命令，「复制」复制这条命令；
+// 「删除」点两下：服务端先查有没有 Agent 在用 (钩子报的、主机上的进程、文件刚写过)，在用就问要不要强制，会话文件移到主机的 ~/.ssh-web/trash/
   let asEl = null;
   const AS_AGENTS = [['claude', 'Claude'], ['grok', 'Grok'], ['codex', 'Codex'], ['gemini', 'Gemini'], ['opencode', 'OpenCode']];
   const AS_TESTED = ['claude', 'grok'];
@@ -63,7 +64,8 @@
           <div class="as-main"><div class="as-title">${esc(x.title || x.prompt || '(没有标题)')}</div>
             ${x.title && x.prompt ? `<div class="as-prompt">${esc(x.prompt)}</div>` : ''}
             <div class="as-meta">${esc(x.cwd || '目录不明')} · ${fmtAgo(x.mtime)} · ${fmtSize(x.size)}</div></div>
-          <div class="as-btns"><button type="button" data-a="copy" title="复制恢复命令">复制</button>
+          <div class="as-btns"><button type="button" data-a="del" title="删除这个会话 (移到主机的 ~/.ssh-web/trash/，点两下)">删除</button>
+            <button type="button" data-a="copy" title="复制恢复命令">复制</button>
             <button type="button" data-a="resume" class="primary" title="${esc(x.cmd)}">继续</button></div>
         </div>`).join('') || `<div class="as-empty">${q ? `没有找到含「${esc(q)}」的会话` : input.value.trim() ? '没有符合的会话（回车或点「搜索」在全部内容里搜）' : '这台主机上没找到这个 Agent 的会话'}</div>`;
     };
@@ -110,6 +112,43 @@
       if (!b || !row) return;
       const x = items[+row.dataset.i];
       if (!x) return;
+      if (b.dataset.a === 'del') {
+        // 点两下：第一下变成「确定删除？」(3 秒内再点)；服务端先查有没有 Agent 在用，在用就问要不要强制删除
+        if (!b.classList.contains('danger')) {
+          b.classList.add('danger'); b.textContent = '确定删除？';
+          clearTimeout(b._t); b._t = setTimeout(() => { b.classList.remove('danger'); b.textContent = '删除'; }, 3000);
+          return;
+        }
+        clearTimeout(b._t);
+        const ag = agent, title = x.title || x.prompt || x.id, list0 = items;
+        const del = async (force) => {
+          b.disabled = true; b.textContent = force ? '正在删除…' : '正在检查…'; row.classList.add('dp-killing');
+          const r = await fetch('/api/agent-sessions/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin',
+            body: JSON.stringify({ sid: s.sid, agent: ag, id: x.id, force }) });
+          const d = await r.json().catch(() => ({}));
+          if (r.status === 401) showLogin();
+          if (r.status === 409 && d.busy) return d;
+          if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+          return d;
+        };
+        try {
+          let d = await del(false);
+          if (d.busy && !confirm(`「${title}」可能正被占用：\n· ${d.busy.join('\n· ')}\n\n还要删除吗？正在用它的 Agent 可能出错或者重新写出这个文件。`)) {
+            b.disabled = false; b.classList.remove('danger'); b.textContent = '删除'; row.classList.remove('dp-killing');
+            return;
+          }
+          if (d.busy) d = await del(true);
+          if (items !== list0) return load(); // 删的时候列表换过了 (切了 Agent、刷新完了)：重新读
+          items = items.filter((y) => y !== x);
+          for (const [k, v] of asCache) if (k.endsWith('|' + ag)) asCache.set(k, { ...v, items: v.items.filter((y) => y.id !== x.id) });
+          info.textContent = `已删除「${title}」，会话文件移到了主机的 ${d.trash}`;
+          render();
+        } catch (err) {
+          b.disabled = false; b.classList.remove('danger'); b.textContent = '删除'; row.classList.remove('dp-killing');
+          alert('删除失败：' + err.message);
+        }
+        return;
+      }
       if (b.dataset.a === 'copy') {
         b.textContent = (await copyText(x.cmd)) ? '已复制' : '复制失败';
         setTimeout(() => { b.textContent = '复制'; }, 1500);
