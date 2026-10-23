@@ -130,6 +130,11 @@ run(async () => {
   await until(() => states[states.length - 1]?.[1] === '要执行命令：via ssh', 3000);
   ok(states[states.length - 1]?.[1] === '要执行命令：via ssh', 'SSH 连进来的终端里的 Agent (标了 ssh)：照常交给标签');
 
+  // 开头带 BOM：Windows PowerShell 5.1 读没有 BOM 的 .ps1 按系统代码页 (GBK) 解码，中文注释吃掉换行、整个脚本解析失败。
+  // 下面在 Linux 上跑的是 pwsh (默认 UTF-8)，测不出这个问题，所以单独看一眼
+  ok(HOOK_PS1.startsWith('﻿') && WATCH_PS1.startsWith('﻿') && fs.readFileSync(path.join(home, '.ssh-web/hook.ps1')).subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf])),
+    'hook.ps1 / watch.ps1 开头带 UTF-8 BOM (Windows PowerShell 5.1 才按 UTF-8 读)');
+
   // ---- 钩子脚本本身：本机有 PowerShell (pwsh / SSHWEB_PWSH) 就真的跑一遍
   const pwsh = process.env.SSHWEB_PWSH || ['pwsh', 'powershell'].find((x) => { try { execFileSync('sh', ['-c', `command -v ${x}`], { stdio: 'ignore' }); return true; } catch { return false; } });
   if (pwsh) {
