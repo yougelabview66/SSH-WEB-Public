@@ -333,7 +333,7 @@
   $('#histAll').addEventListener('change', renderHistory);
   histPanel.addEventListener('mousedown', (e) => { if (e.target === histPanel) closeHistory(); });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !histPanel.classList.contains('hidden')) closeHistory();
+    if (e.key === 'Escape' && !histPanel.classList.contains('hidden') && $('#dialog').classList.contains('hidden')) closeHistory(); // 开着确认框：Esc 只关它
   });
   $('#histClear').addEventListener('click', async () => {
     const all = showAll();
