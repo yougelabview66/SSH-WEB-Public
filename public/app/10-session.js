@@ -356,6 +356,12 @@
           if (r?.go) { if (!r.go.closed) activate(r.go); r = null; }
           send(s, r ? { type: 'daemon-pick-response', ...r } : { type: 'daemon-pick-response', cancel: true });
         });
+      } else if (m.type === 'daemon-update') { // 主机上在跑的 sshwebd 是旧版、里面还有常驻会话：要不要现在强制换成新版 (见 lib/session/daemon.js)
+        activate(s);
+        dialog('sshwebd 有新版本', `<p>主机上在跑的 sshwebd 是 v${esc(m.old)}，SSH-WEB 带了 v${esc(m.ver)}，里面还有 ${m.n} 个常驻会话在跑。</p>
+          <p class="muted">换成新版会结束这些会话（里面正跑的程序一起结束；Claude Code 等的对话可以在「💬 会话历史」里继续）。先用现有的也行，下次连接时再问。</p>`,
+        [{ label: '否，先用现有的', value: null, cancel: true }, { label: '是，换成新版', value: true, cls: 'danger' }])
+          .then((r) => send(s, { type: 'daemon-update-response', update: r.value === true }));
       } else if (m.type === 'tmux-history') {
         onTmuxHistory(s, m);
       } else if (m.type === 'owner') {
