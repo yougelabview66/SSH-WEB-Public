@@ -299,9 +299,12 @@
           <button type="button" data-tab="hist">🕘 历史</button>
           <button type="button" data-tab="agents" title="这台主机上 Claude Code / Grok 等 Agent 以前的会话">💬 会话历史</button>
         </div>
+        <button type="button" id="histClose" title="关闭 (Esc)" aria-label="关闭">×</button>
+      </div>
+      <div class="hist-search">
+        <input id="histSearch" placeholder="搜索命令…" autocomplete="off" autocapitalize="off" spellcheck="false">
         <label class="check"><input type="checkbox" id="histAll"> 全部主机</label>
       </div>
-      <input id="histSearch" placeholder="搜索命令…" autocomplete="off" autocapitalize="off" spellcheck="false">
       <form id="favAdd" class="fav-add hidden" autocomplete="off">
         <input id="favInput" placeholder="添加常用命令，如 tmux attach" autocapitalize="off" spellcheck="false">
         <button type="submit" class="primary">添加</button>
@@ -310,8 +313,6 @@
       <div id="histAgents" class="hidden"></div>
       <div class="actions">
         <button type="button" id="histClear" class="danger">清空</button>
-        <span class="spacer"></span>
-        <button type="button" id="histClose" class="primary">关闭</button>
       </div>
     </div>
   </div>

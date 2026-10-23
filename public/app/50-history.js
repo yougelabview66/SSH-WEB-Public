@@ -156,7 +156,7 @@
   function renderAgentsTab() {
     const box = $('#histAgents');
     const on = histTab === 'agents';
-    for (const x of ['#histSearch', '#histList', '#favAdd', '#histClear', '.hist-head label.check']) histPanel.querySelector(x).classList.toggle('hidden', on || (x === '#favAdd' && histTab !== 'fav'));
+    for (const x of ['#histSearch', '#histList', '#favAdd', '#histClear', '.hist-search label.check']) histPanel.querySelector(x).classList.toggle('hidden', on || (x === '#favAdd' && histTab !== 'fav'));
     box.classList.toggle('hidden', !on);
     if (!on) return false;
     if (!active?.sid) { box.innerHTML = '<div class="sftp-msg">先连上一台主机，才能看它上面的会话</div>'; histAgentsFor = null; return true; }
