@@ -1,6 +1,6 @@
 {
   "name": "ssh-web",
-  "version": "1.82.1",
+  "version": "1.82.2",
   "description": "Lightweight self-hosted web SSH terminal for running AI coding agents from any device",
   "license": "MIT",
   "repository": {
