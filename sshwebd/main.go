@@ -29,7 +29,7 @@ const usage = `sshwebd %s：SSH-WEB 的终端守护程序
 
 用法：
   sshwebd attach [会话]   接上一个会话 (不写：只有一个就接它，没有就新建，多个让你选)；Ctrl+] 离开 (会话继续跑)
-      -shell 名字         新建时用的 shell：powershell (默认) / cmd / pwsh，或者整条命令行
+      -shell 名字         新建时用的 shell：Windows 是 powershell (默认) / cmd / pwsh，Linux 空着用登录 shell；也可以是整条命令行
   sshwebd new [会话]      新建一个会话并接上
   sshwebd ls              列出会话
   sshwebd kill 会话       结束一个会话 (-t 标记：别的标记的客户端还接着就不结束)

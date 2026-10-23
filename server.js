@@ -61,6 +61,14 @@ setInterval(() => {
   }
 }, 60 * 1000).unref();
 
+// docker-compose.yml 里的占位密码是公开的：不启动，免得照抄部署后谁都能登录
+if (auth.PLACEHOLDER_PASSWORD) {
+  console.error('✘ AUTH_PASSWORD 还是 docker-compose.yml 里的占位密码「请修改为强密码」，这个密码是公开的，谁都能登录。\n'
+    + '  请改成你自己的强密码后再启动。\n'
+    + '✘ AUTH_PASSWORD is still the public placeholder from docker-compose.yml. Change it to your own strong password.');
+  process.exit(1);
+}
+
 server.listen(PORT, HOST, () => {
   console.log(`SSH-WEB v${VERSION} 已启动: http://${HOST}:${PORT}`);
   if (!auth.authEnabled) {

@@ -12,7 +12,7 @@
     document.removeEventListener('keydown', hooksKey, true);
   }
   function hooksKey(e) {
-    if (e.key !== 'Escape') return;
+    if (e.key !== 'Escape' || hooksEl?.classList.contains('tab-away')) return; // 在别的标签上藏着：不管
     e.preventDefault();
     e.stopPropagation();
     closeHooks();
@@ -34,7 +34,7 @@
     el.className = 'overlay hooksp tab-panel';
     el.dataset.tab = s.id; // 手机上同性能监控 (见 tabPanels)
     el.innerHTML = `<div class="card wide hooks-card">
-      <div class="hist-head"><h3>🔔 钩子通知</h3><button type="button" data-a="close" title="关闭 (Esc)">×</button></div>
+      <div class="hist-head"><h3>🔔 钩子通知</h3><button type="button" data-a="close" title="关闭 (Esc)" aria-label="关闭">×</button></div>
       <div class="hk-host"><span class="hk-name"></span> · <span class="hk-script">正在检查…</span></div>
       <div class="hint hk-note">装上后，Agent 开始干活、要权限、问问题、做完、出错时会直接告诉 SSH-WEB：主机状态更准，
         推送写得出具体内容（比如「要执行命令：npm test」「做完了：……」）。<br>
@@ -102,5 +102,6 @@
     });
     document.addEventListener('keydown', hooksKey, true);
     document.body.appendChild(el);
+    if (!isTouch) $('[data-a=close]', el).focus({ preventScroll: true }); // 焦点离开下方输入框：打的字、回车不会发到后面的终端
     refresh();
   }

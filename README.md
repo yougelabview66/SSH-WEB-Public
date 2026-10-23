@@ -131,7 +131,7 @@ npx playwright-core install chromium   # first time only
 npm test                          # or: npm test -- desk lat
 ```
 
-Tests drive a real browser against mock SSH servers on 127.0.0.1; nothing touches real hosts. See [CONTRIBUTING.md](CONTRIBUTING.md). Server code is in `lib/`, front-end modules in `public/app/` (concatenated in numeric order), the Windows daemon in `sshwebd/` (Go).
+Tests drive a real browser against mock SSH servers on 127.0.0.1; nothing touches real hosts. See [CONTRIBUTING.md](CONTRIBUTING.md). Server code is in `lib/`, front-end modules in `public/app/` (concatenated in numeric order), the terminal daemon in `sshwebd/` (Go, Windows ConPTY + Linux pty).
 
 ## Acknowledgements
 

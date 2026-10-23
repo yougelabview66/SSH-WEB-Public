@@ -48,4 +48,4 @@
     s.copyBtn.classList.toggle('hidden', !mode);
     if (mode && s.copyBtn.dataset.mode !== mode) { s.copyBtn.dataset.mode = mode; s.copyBtn.title = EXIT_KEYS[mode][1]; }
   }
-  setInterval(() => { if (active) updateCopyModeBtn(active); }, 300);
+  setInterval(() => { if (active && !document.hidden) updateCopyModeBtn(active); }, 300); // 页面在后台不跑 (手机省电)

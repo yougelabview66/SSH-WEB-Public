@@ -138,7 +138,7 @@
         <button data-a="mkdir">+ 文件夹</button>
         <button data-a="cd" title="终端切换到此目录">终端 cd</button>
         <span class="spacer"></span>
-        <button data-a="close" title="关闭">×</button>
+        <button data-a="close" title="关闭" aria-label="关闭">×</button>
         <input type="file" multiple hidden>
       </div>
       <div class="sftp-list"></div>

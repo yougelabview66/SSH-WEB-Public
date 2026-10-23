@@ -14,7 +14,7 @@
     if (previewSess && previewSess === active) focusTerm(previewSess);
   }
   function previewKey(e) {
-    if (e.key !== 'Escape') return;
+    if (e.key !== 'Escape' || previewEl?.classList.contains('tab-away')) return; // 在别的标签上藏着：不管
     e.preventDefault();
     e.stopPropagation(); // Esc 只关预览，不发给终端
     closePreview();
@@ -32,7 +32,7 @@
     el.dataset.tab = s.id; // 手机上同性能监控：只占标签栏到快捷键之间，切到别的标签时藏起来 (见 15-sync-webgl.js 的 activate)
     el.innerHTML = `<div class="card fp-card">
       <div class="fp-head"><span class="fp-name"></span>
-        <button type="button" data-a="dl">⬇ 下载</button><button type="button" data-a="close" title="关闭 (Esc)">×</button></div>
+        <button type="button" data-a="dl">⬇ 下载</button><button type="button" data-a="close" title="关闭 (Esc)" aria-label="关闭">×</button></div>
       <div class="fp-body"><div class="sftp-msg">加载中…</div></div></div>`;
     const nameEl = $('.fp-name', el), body = $('.fp-body', el);
     nameEl.textContent = name;

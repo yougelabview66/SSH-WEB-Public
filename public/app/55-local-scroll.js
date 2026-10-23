@@ -199,7 +199,7 @@
 
   // 历史视图打开时 Esc 只用来返回，不发给终端 (免得打断 Claude Code)
   window.addEventListener('keydown', (e) => {
-    if (!active?.scrollView || document.querySelector('.overlay:not(.hidden)')) return;
+    if (!active?.scrollView || document.querySelector('.overlay:not(.hidden):not(.tab-away)')) return;
     if (e.target.closest?.('.tsearch')) return; // 在搜索框里按的 (Esc 关搜索框，见 58-term-search.js)
     if (e.key === 'Escape') {
       e.preventDefault();

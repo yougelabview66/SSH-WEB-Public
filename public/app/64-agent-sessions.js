@@ -18,7 +18,7 @@
     document.removeEventListener('keydown', asKey, true);
   }
   function asKey(e) {
-    if (e.key !== 'Escape' || !$('#dialog').classList.contains('hidden')) return; // 上面开着确认框：Esc 只关确认框
+    if (e.key !== 'Escape' || !$('#dialog').classList.contains('hidden') || asEl?.classList.contains('tab-away')) return; // 上面开着确认框：Esc 只关确认框
     e.preventDefault();
     e.stopPropagation();
     closeAgentSessions();
@@ -30,7 +30,7 @@
     el.className = 'overlay agentsp tab-panel';
     el.dataset.tab = s.id; // 手机上同性能监控 (见 tabPanels)
     el.innerHTML = `<div class="card wide as-card">
-      <div class="hist-head"><h3>💬 会话历史</h3><button type="button" data-a="close" title="关闭 (Esc)">×</button></div>
+      <div class="hist-head"><h3>💬 会话历史</h3><button type="button" data-a="close" title="关闭 (Esc)" aria-label="关闭">×</button></div>
     </div>`;
     const view = agentSessionsView(s, closeAgentSessions);
     $('.as-card', el).appendChild(view.el);

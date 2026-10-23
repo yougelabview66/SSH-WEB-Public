@@ -139,19 +139,23 @@
       // 不靠 onSelectionChange 判断有没有选：xterm 在松开之后才发它。用捕获阶段：xterm 自己的鼠标处理可能不让事件冒泡上来
       let pressed = false;
       s.box.addEventListener('mousedown', (e) => { if (e.button === 0) pressed = true; }, true);
-      window.addEventListener('mouseup', (e) => {
+      // 挂在 window 上：关标签时要摘掉 (closeSession 里 s.offs)，不然一直留着，还拉着整个终端不让回收
+      const onUp = (e) => {
         if (!pressed || e.button !== 0) return;
         pressed = false;
         setTimeout(() => { // 等 xterm 处理完这次松开
+          if (s.closed) return;
           const text = s.term.getSelection();
           if (text.trim()) copyText(text).then((done) => { if (done) fontToast(s, '已复制', 900); });
         }, 0);
-      }, true);
+      };
+      window.addEventListener('mouseup', onUp, true);
+      (s.offs ||= []).push(() => window.removeEventListener('mouseup', onUp, true));
     }
 
     s.tab = document.createElement('div');
     s.tab.className = 'tab';
-    s.tab.innerHTML = '<span class="dot"></span><span class="title"></span><button class="x" title="关闭">×</button>';
+    s.tab.innerHTML = '<span class="dot"></span><span class="title"></span><button class="x" title="关闭" aria-label="关闭">×</button>';
     // 标签显示「主机名-序号」: 家里 NAS-1、家里 NAS-2…，新开的标签接着同一主机当前最大的序号往后排
     // (有 1 和 3 时新开的是 4，不补空出的 2)；该主机没有打开的标签时从 1 开始
     if (restore && restore.n) {
@@ -230,13 +234,19 @@
     setStatus(s, 'wait');
     if (s.box.clientWidth && !s.scrollView) s.fit.fit();
 
+    // 旧的连接还开着 (点「重试」、回前台重连时)：先关掉，不然服务端那边多挂一个
+    const old = s.ws;
+    if (old && old.readyState <= WebSocket.OPEN) { s.ws = null; try { old.close(); } catch {} }
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     const ws = new WebSocket(`${proto}://${location.host}/ws`);
     ws.binaryType = 'arraybuffer';
     s.ws = ws;
+    s.lastMsg = Date.now();
 
     ws.onopen = () => {
+      if (s.ws !== ws) return;
       s.retries = 0;
+      s.lastMsg = Date.now();
       // 连上时的尺寸。要不要当使用者 (终端按这台设备排版)：最先用的客户端锁定标签，别人只能点「在本机继续」接管 ——
       // 这里只在没人用时才当 ('auto')；原来就是这台在用的 (同一个页面重连、同一个浏览器刷新)，服务端认得出 (pageId / deviceId)，还是它。
       // 是不是这台在用 (s.mine) 先照旧，服务端连上就会重新告诉：锁着的断线重连期间也锁着，打的字不会发出去
@@ -255,12 +265,18 @@
       } else {
         ws.send(JSON.stringify({ type: 'connect', ...s.params, title: s.baseTitle, n: s.n, histHost: s.histHost, pageId, deviceId, ...size }));
       }
-      // 应用层心跳，避免 Cloudflare / 反向代理 100 秒空闲断开
+      // 应用层心跳，避免 Cloudflare / 反向代理 100 秒空闲断开；服务端每次都回 pong。
+      // 两次心跳 (60 秒) 都没收到任何东西：连接已经死了 (换网络后 TCP 断了，readyState 却还是 OPEN)，关掉重连
       clearInterval(s.ping);
-      s.ping = setInterval(() => send(s, { type: 'ping' }), 25000);
+      s.ping = setInterval(() => {
+        if (s.ws !== ws) return clearInterval(s.ping);
+        if (Date.now() - (s.lastMsg || 0) > 60000) { try { ws.close(); } catch {} return; }
+        send(s, { type: 'ping' });
+      }, 25000);
     };
     ws.onmessage = (ev) => {
       if (s.ws !== ws) return;
+      s.lastMsg = Date.now(); // 收到过东西 (输出 / pong) = 连接还活着 (见心跳和 wakeTabs)
       if (ev.data instanceof ArrayBuffer) {
         if (s.offset !== undefined) s.offset += ev.data.byteLength;
         s.lastOut = Date.now();
@@ -392,13 +408,31 @@
       updateSftpBtn();
       setStatus(s, 'wait');
       if (!s.remoteId) { showReconnect(s, '重试'); return; }
-      // 网络断开：后台会话仍在，自动重新挂载
+      // 网络断开：后台会话仍在，自动重新挂载。断网又在后台时先不试 (费电)，回到前台 / 网络恢复时马上重连 (见下面的 wakeTabs)
       const delay = Math.min(1000 * 2 ** (s.retries || 0), 10000);
       s.retries = (s.retries || 0) + 1;
       if (s.retries > 3) showReconnect(s, '正在重新连接… 点击立即重试');
+      if (document.hidden && navigator.onLine === false) return;
       s.retryTimer = setTimeout(() => connect(s), delay);
     };
   }
+
+  // 回到前台、网络恢复：在等重试的标签马上重连 (不用等最长 10 秒的退避)；看着连着的发一个心跳，
+  // 8 秒还没回话就是假死的连接 (锁屏期间断了还没发现)，关掉重连
+  function wakeTabs() {
+    if (document.hidden) return;
+    for (const s of sessions) {
+      if (s.closed || !s.remoteId) continue;
+      const ws = s.ws;
+      if (!ws || ws.readyState > WebSocket.OPEN) { connect(s); continue; }
+      if (ws.readyState !== WebSocket.OPEN) continue;
+      const at = Date.now();
+      send(s, { type: 'ping' });
+      setTimeout(() => { if (s.ws === ws && (s.lastMsg || 0) < at) try { ws.close(); } catch {} }, 8000);
+    }
+  }
+  document.addEventListener('visibilitychange', wakeTabs);
+  window.addEventListener('online', wakeTabs);
 
   function doneRestoring(s) {
     s.restoring?.remove();

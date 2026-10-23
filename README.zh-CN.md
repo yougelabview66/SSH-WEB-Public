@@ -131,7 +131,7 @@ npx playwright-core install chromium   # 第一次需要
 npm test                          # 或者只跑几个：npm test -- desk lat
 ```
 
-测试用真的浏览器连本机（127.0.0.1）上的模拟 SSH 服务器，不会连接真实主机。参与开发见 [CONTRIBUTING.md](CONTRIBUTING.md)。服务端代码在 `lib/`，前端在 `public/app/`（按编号顺序拼起来），Windows 守护程序在 `sshwebd/`（Go）。
+测试用真的浏览器连本机（127.0.0.1）上的模拟 SSH 服务器，不会连接真实主机。参与开发见 [CONTRIBUTING.md](CONTRIBUTING.md)。服务端代码在 `lib/`，前端在 `public/app/`（按编号顺序拼起来），终端守护程序在 `sshwebd/`（Go；Windows 用 ConPTY，Linux 用 pty）。
 
 ## 致谢
 

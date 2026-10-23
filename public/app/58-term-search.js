@@ -7,7 +7,7 @@
 
   window.addEventListener('keydown', (e) => {
     if (!(e.ctrlKey || e.metaKey) || !e.shiftKey || e.altKey || e.code !== 'KeyF') return;
-    if (!active || document.querySelector('.overlay:not(.hidden)')) return;
+    if (!active || document.querySelector('.overlay:not(.hidden):not(.tab-away)')) return;
     e.preventDefault();
     e.stopPropagation();
     openTermSearch(active);
@@ -24,7 +24,7 @@
       <span class="ts-info"></span>
       <button type="button" data-a="prev" title="上一个 (回车)">↑</button>
       <button type="button" data-a="next" title="下一个 (Shift+回车)">↓</button>
-      <button type="button" data-a="close" title="关闭 (Esc)">×</button>`;
+      <button type="button" data-a="close" title="关闭 (Esc)" aria-label="关闭">×</button>`;
     s.box.appendChild(el);
     ts = { s, el, input: $('input', el), info: $('.ts-info', el), matches: [], cur: -1, mode: 'term', dirty: true };
     const { input } = ts;
