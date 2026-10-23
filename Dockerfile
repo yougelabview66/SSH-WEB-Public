@@ -4,10 +4,12 @@ WORKDIR /src
 COPY sshwebd/go.mod sshwebd/go.sum ./
 RUN go mod download
 COPY sshwebd/*.go ./
+# version.txt：版本号 (传到主机上的文件名带上它，见 lib/session/daemon.js)
 RUN CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o /out/sshwebd.exe . \
  && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o /out/sshwebd-linux-amd64 . \
  && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o /out/sshwebd-linux-arm64 . \
- && CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -trimpath -ldflags "-s -w" -o /out/sshwebd-linux-armv7 .
+ && CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -trimpath -ldflags "-s -w" -o /out/sshwebd-linux-armv7 . \
+ && sed -n 's/^var version = "\(.*\)"$/\1/p' main.go > /out/version.txt && test -s /out/version.txt
 
 FROM node:22-alpine
 

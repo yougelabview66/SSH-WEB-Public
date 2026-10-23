@@ -28,12 +28,12 @@ SSH-WEB ──SSH exec 通道 (不要终端)── sshwebd bridge ──命名�
   - 守护进程没在跑就先启动它。
   - 输出一行 `SSHWEBD READY <版本>`，之后两个方向都是一行一段 base64。原因是 sshd 的默认 shell 是 PowerShell 时，会把程序的输出当文字按代码页重新解码，原始字节会被改坏（Orca 的经验）。
 - **命名管道**：只有自己这个用户能连。管道带一个中等完整性标签：管理员账号通过 SSH 启动的守护进程是高权限的，不加这个标签，桌面上普通权限的终端连不上。
-- **不用 `powershell -EncodedCommand`**：它是 Windows Defender 的报警项。SSH-WEB 直接执行 `sshwebd-<哈希>.exe bridge`。
+- **不用 `powershell -EncodedCommand`**：它是 Windows Defender 的报警项。SSH-WEB 直接执行 `sshwebd-v<版本>.exe bridge`。
 
 ## 和 SSH-WEB 一起用
 
 1. 在 SSH-WEB 里编辑这台主机（Windows 或 Linux），勾上「常驻会话」（新建主机默认勾着）。
-2. 连接时 SSH-WEB 自动把 sshwebd.exe 传到这台主机的 `~/.ssh-web/sshwebd-<哈希>.exe`（已经有了就不传；换个名字是因为正在运行的 exe 不能覆盖）。exe 是构建 Docker 镜像时从这个目录的源码编出来的；不用 Docker、直接跑 SSH-WEB 源码时，先按下面「编译」编出 `sshwebd/sshwebd.exe`，或者自己把 exe 放到主机的 `%USERPROFILE%\.ssh-web\sshwebd.exe`。
+2. 连接时 SSH-WEB 自动把 sshwebd.exe 传到这台主机的 `~/.ssh-web/sshwebd-v<版本>.exe`（如 `sshwebd-v0.1.6.exe`；已经有了就不传；同一个版本重新编过、正在运行的又换不掉时传成 `sshwebd-v0.1.6-2.exe`）。版本号来自编出来的文件旁边的 `version.txt`（构建 Docker 镜像时写），没有就读 `main.go` 里的 `version`。exe 是构建 Docker 镜像时从这个目录的源码编出来的；不用 Docker、直接跑 SSH-WEB 源码时，先按下面「编译」编出 `sshwebd/sshwebd.exe`，或者自己把 exe 放到主机的 `%USERPROFILE%\.ssh-web\sshwebd.exe`。
 3. **新开标签**：新建一个会话（默认 PowerShell）。主机上有常驻会话时会弹出列表问你接哪个（还有连接的也列出来、标明在哪接着，接上或删除前先问要不要强制），也可以新建或者退出（关掉这个标签）。
 4. **断线后**：这个标签重新连上，自动接回原来的会话，只补发断开期间的输出。
 5. **关了标签**：会话还在。下次新开标签时可以选它接上；在会话里 `exit` 才会结束它。
@@ -51,7 +51,7 @@ sshwebd bridge          给 SSH-WEB 用
 sshwebd serve           运行守护进程（一般不用手动运行，上面的命令会自动启动）
 ```
 
-在电脑上打开终端（Windows Terminal 等），运行 `%USERPROFILE%\.ssh-web\sshwebd-<哈希>.exe attach`（文件名看 `.ssh-web` 文件夹里的），就能接上手机上开的同一个会话；两边可以同时用。
+在电脑上打开终端（Windows Terminal 等），运行 `%USERPROFILE%\.ssh-web\sshwebd-v<版本>.exe attach`（文件名看 `.ssh-web` 文件夹里的），就能接上手机上开的同一个会话；两边可以同时用。
 
 日志在 `%USERPROFILE%\.ssh-web\sshwebd.log`。
 

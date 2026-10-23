@@ -143,8 +143,8 @@ run(async () => {
   await until(() => /新建常驻会话 \d/.test(a.out) && a.last('status')?.status === 'connected', 20000);
   let oldGone = false; try { process.kill(oldD.pid, 0); } catch { oldGone = true; }
   ok(/主机上的 sshwebd 是旧版 0\.1\.0，换成 \d/.test(a.out) && oldGone, '主机上跑着旧版守护进程、没有会话：换成新版: ' + JSON.stringify(a.out.slice(0, 300)));
-  const up = fs.readdirSync(path.join(home, '.ssh-web')).find((n) => /^sshwebd-[0-9a-f]{8}$/.test(n));
-  ok(a.out.includes('新建常驻会话 1') && up && (fs.statSync(path.join(home, '.ssh-web', up)).mode & 0o111), '认出 Linux：传 sshwebd-<哈希> (有执行权限)，新建常驻会话: ' + JSON.stringify([up, a.out.slice(-120)]));
+  const up = fs.readdirSync(path.join(home, '.ssh-web')).find((n) => /^sshwebd-v[0-9.]+(-\d+)?$/.test(n));
+  ok(a.out.includes('新建常驻会话 1') && up && (fs.statSync(path.join(home, '.ssh-web', up)).mode & 0o111), '认出 Linux：传 sshwebd-v<版本> (有执行权限)，新建常驻会话: ' + JSON.stringify([up, a.out.slice(-120)]));
   const h = (await (await fetch(BASE + '/api/hosts')).json()).find((x) => x.id === host.id);
   ok(h && h.os === 'linux', '记下这台是 Linux (主机列表上标「常驻」): ' + JSON.stringify(h && h.os));
   await until(() => /\$ $/.test(a.out), 5000);
@@ -350,7 +350,7 @@ run(async () => {
   const rid = /新建常驻会话 (\d+)/.exec(r1.out)[1];
   for (const c of conns) c.end();
   await until(() => r1.out.includes('连接已断开'), 5000);
-  const dbin = path.join(home, '.ssh-web', fs.readdirSync(path.join(home, '.ssh-web')).find((n) => /^sshwebd-[0-9a-f]{8}$/.test(n)));
+  const dbin = path.join(home, '.ssh-web', fs.readdirSync(path.join(home, '.ssh-web')).find((n) => /^sshwebd-v[0-9.]+(-\d+)?$/.test(n)));
   execFileSync(dbin, ['kill', rid], { env: ENV });
   await wait(1200);
   const r2 = tab(host.id);

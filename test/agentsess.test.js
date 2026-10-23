@@ -177,6 +177,32 @@ run(async () => {
   const mb = await m.evaluate(() => { const c = document.querySelector('.as-card').getBoundingClientRect(), b = document.querySelector('.as-row [data-a=resume]').getBoundingClientRect(); return { l: c.left, r: c.right, w: innerWidth, br: b.right }; });
   ok(mb.l >= 0 && mb.r <= mb.w && mb.br <= mb.r, '手机：面板和「继续」按钮都在屏幕里: ' + J(mb));
   await m.screenshot({ path: shot('agent-sessions-mobile.png') });
+  await m.locator('.agentsp [data-a=close]').tap(); await wait(300);
+
+  // ---- 手机：历史面板先显示，历史 / 收藏在后台读 (接口慢也不等)
+  await m.route('**/api/history', async (rt) => { await new Promise((r) => setTimeout(r, 2000)); rt.continue(); });
+  await m.tap('#btnHistory'); await wait(300);
+  const early = await m.evaluate(() => ({ shown: getComputedStyle(document.getElementById('history')).display !== 'none', list: document.getElementById('histList').textContent }));
+  ok(early.shown && /加载中/.test(early.list), '手机：历史接口慢，面板也马上出来，列表显示加载中: ' + J(early));
+  await m.tap('#history .htabs [data-tab=agents]'); await wait(200);
+  const ag = await m.evaluate(() => ({ rows: document.querySelectorAll('#histAgents .as-row').length, info: document.querySelector('#histAgents .as-info')?.textContent || '' }));
+  ok(ag.rows > 0 || /正在/.test(ag.info), '手机：「💬 会话历史」不等历史接口，马上开始读: ' + J(ag));
+  await m.tap('#history .htabs [data-tab=hist]'); await wait(200);
+  ok(/加载中/.test(await m.textContent('#histList')), '手机：历史还没读到，「🕘 历史」也显示加载中');
+  await wait(2200);
+  ok(!/加载中/.test(await m.textContent('#histList')), '读到后：「🕘 历史」换成内容');
+  await m.unroute('**/api/history');
+  await m.tap('#histClose'); await wait(300);
+
+  // ---- 手机：在一个标签上打开过历史面板，切到另一个标签再打开，面板还能出来 (以前带着 tab-away 一直藏着)
+  await m.tap('#btnToggle'); await m.locator('.host', { hasText: 'AS' }).first().tap(); await m.waitForSelector('.tab.active .dot.ok'); await wait(800);
+  await m.tap('#btnHistory'); await wait(300);
+  await m.tap('#histClose'); await wait(300);
+  await m.locator('.tab').first().tap(); await wait(500);
+  if (await m.isVisible('.term.active .owner-notice button')) { await m.tap('.term.active .owner-notice button'); await wait(800); }
+  await m.tap('#btnHistory'); await wait(300);
+  ok(await m.isVisible('#history'), '手机：切到别的标签再打开历史面板，面板显示出来');
+  await m.tap('#histClose'); await wait(300);
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
   await browser.close();
   fs.rmSync(home, { recursive: true, force: true });

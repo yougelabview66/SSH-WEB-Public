@@ -121,6 +121,14 @@ run(async () => {
   emit({ hook_event_name: 'Stop', last_assistant_message: '改好了' });
   await until(() => states[states.length - 1]?.[0] === '完成', 3000);
   ok(states[states.length - 1]?.[1] === '做完了：改好了', '做完：完成「做完了：改好了」');
+  // 新版钩子脚本 (v3)：主机上自己开的终端里的 Agent (父进程里没有 sshd，没标 ssh) 不交给网页上的标签；SSH 连进来的照常交
+  const n0 = states.length;
+  emit({ v: 3, hook_event_name: 'PermissionRequest', tool_name: 'Bash', command: 'local only' });
+  await wait(800);
+  ok(states.length === n0, '主机上自己开的终端里的 Agent：不交给网页上的标签 (不推送): ' + JSON.stringify(states.slice(n0)));
+  emit({ v: 3, ssh: true, hook_event_name: 'PermissionRequest', tool_name: 'Bash', command: 'via ssh' });
+  await until(() => states[states.length - 1]?.[1] === '要执行命令：via ssh', 3000);
+  ok(states[states.length - 1]?.[1] === '要执行命令：via ssh', 'SSH 连进来的终端里的 Agent (标了 ssh)：照常交给标签');
 
   // ---- 钩子脚本本身：本机有 PowerShell (pwsh / SSHWEB_PWSH) 就真的跑一遍
   const pwsh = process.env.SSHWEB_PWSH || ['pwsh', 'powershell'].find((x) => { try { execFileSync('sh', ['-c', `command -v ${x}`], { stdio: 'ignore' }); return true; } catch { return false; } });

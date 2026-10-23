@@ -85,22 +85,31 @@
     return new Date(t).toLocaleDateString();
   };
 
+  // 先显示面板 (读到过就先显示上次的)，历史 / 收藏在后台读；「💬 会话历史」选项卡不等它们，马上开始读
+  let histLoaded = false, histErr = '', histSeq = 0;
   async function openHistory() {
     if (active) histPanel.dataset.tab = active.id; // 手机上同性能监控 (见 tabPanels)
     histPanel.classList.remove('hidden');
+    tabPanels(); // 在别的标签上打开过：面板还带着 tab-away (手机上不显示)，要按现在的标签重新判断
     histAgentsFor = null; // 会话历史每次打开都重新读
     $('#histSearch').value = '';
     $('#favInput').value = '';
     $('#histAll').checked = !active;
-    $('#histList').innerHTML = '<div class="sftp-msg">加载中…</div>';
     if (isTouch) mInput.blur();
-    try {
-      [histItems, favItems] = await Promise.all([api('GET', '/api/history'), api('GET', '/api/favorites')]);
-      renderHistory();
-    } catch (e) {
-      $('#histList').innerHTML = `<div class="sftp-msg" style="color:var(--danger)">${esc(e.message)}</div>`;
-    }
+    histErr = '';
+    renderHistory();
     if (!isTouch) $('#histSearch').focus();
+    const my = ++histSeq;
+    try {
+      const [h, f] = await Promise.all([api('GET', '/api/history'), api('GET', '/api/favorites')]);
+      if (my !== histSeq) return;
+      [histItems, favItems] = [h, f];
+      histLoaded = true;
+    } catch (e) {
+      if (my !== histSeq) return;
+      histErr = e.message;
+    }
+    if (!histPanel.classList.contains('hidden') && histTab !== 'agents') renderHistory();
   }
 
   function closeHistory() {
@@ -171,6 +180,11 @@
     clear.textContent = all ? '清空全部' : '清空本主机';
     clear.disabled = !items.length;
     list.innerHTML = '';
+    if (!histLoaded) { // 第一次还没读到：读不到就显示原因 (读到过的话读失败了也接着显示上次的)
+      clear.disabled = true;
+      list.innerHTML = histErr ? `<div class="sftp-msg" style="color:var(--danger)">${esc(histErr)}</div>` : '<div class="sftp-msg">加载中…</div>';
+      return;
+    }
     if (!items.length) {
       list.innerHTML = histTab === 'fav'
         ? '<div class="sftp-msg">还没有收藏的命令<br><span class="hint">在上面输入框添加，或在「历史」里点 ☆ 收藏</span></div>'
