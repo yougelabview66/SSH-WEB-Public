@@ -266,11 +266,11 @@
         ws.send(JSON.stringify({ type: 'connect', ...s.params, title: s.baseTitle, n: s.n, histHost: s.histHost, pageId, deviceId, ...size }));
       }
       // 应用层心跳，避免 Cloudflare / 反向代理 100 秒空闲断开；服务端每次都回 pong。
-      // 两次心跳 (60 秒) 都没收到任何东西：连接已经死了 (换网络后 TCP 断了，readyState 却还是 OPEN)，关掉重连
+      // 不在这里判断「多久没收到东西就断开重连」：ping/pong 往返慢一个周期 (隧道卡、主机忙) 就会把好连接误杀，
+      // 制造一次莫名其妙的断线；假死连接的检测放在回到前台时做 (wakeTabs 发一个 ping，几秒没回才断)
       clearInterval(s.ping);
       s.ping = setInterval(() => {
         if (s.ws !== ws) return clearInterval(s.ping);
-        if (Date.now() - (s.lastMsg || 0) > 60000) { try { ws.close(); } catch {} return; }
         send(s, { type: 'ping' });
       }, 25000);
     };
