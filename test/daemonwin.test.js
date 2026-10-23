@@ -228,7 +228,7 @@ run(async () => {
   const c = tab(host.id, 'DW');
   await until(() => /新建常驻会话 \d/.test(c.out) && c.last('status')?.status === 'connected', 15000);
   const cid = /新建常驻会话 (\d+)/.exec(c.out)?.[1];
-  const up = fs.readdirSync(edir).find((n) => /^sshwebd-[0-9a-f]{8}\.exe$/.test(n));
+  const up = fs.readdirSync(edir).find((n) => /^sshwebd-v[0-9.]+(-\d+)?\.exe$/.test(n));
   ok(up && fs.readFileSync(path.join(edir, up), 'utf8') === 'exe on server' && c.out.includes('正在把 sshwebd 传到主机') && bridges.at(-1).exe === up,
     `服务器上的 sshwebd.exe 传过去 (${up}) 再用它: ` + JSON.stringify(bridges.at(-1)));
   ok(fs.readdirSync(edir).sort().join() === [up, 'sshwebd.exe'].sort().join(), '主机上自己放的 sshwebd.exe 不删，没有留下 .part');

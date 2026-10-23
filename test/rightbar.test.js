@@ -253,18 +253,20 @@ run(async () => {
   // 钩子漏了事件：记的还是原来仓库，主机上却有个后来才启动的 Agent 在别的目录跑着 (旧的被直接杀掉、在别处又开了一个，还没报事件)：
   // 以正在跑的 Agent 的目录为准
   const pinfo = () => fetch(BASE + '/api/project/info', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sid }) }).then((r) => r.json());
-  await wait(5000); // 钩子最后一次报目录之后过一会儿才启动 (主机上的启动时间只精确到秒，最多早估 2 秒)
+  // 钩子报的目录优先：主机上找到的 Agent 在别的目录 (别的窗格、它的子进程等)，不拿它推翻钩子报的 (以前会来回跳)
+  await wait(11000); // 过了会话历史刚切过去的宽限期
   const agent2 = spawn(path.join(home, 'claude'), ['300'], { cwd: other, env: { LC_SSHWEB: sid, PATH: process.env.PATH }, stdio: 'ignore' });
   kids.push(agent2); await wait(1500);
   let pi = await pinfo();
-  ok(pi.root === other && pi.source === 'agent', '钩子记的目录和后来启动的 Agent 对不上：以正在跑的 Agent 的目录为准: ' + JSON.stringify(pi));
+  const pi2 = await pinfo();
+  ok(pi.root === repo && pi2.root === repo && pi.source === 'agent', '主机上找到的 Agent 在别的目录：照样用钩子报的目录，读几次都不跳: ' + JSON.stringify([pi, pi2]));
   // Claude Code 执行命令的子进程 (命令行里带 ~/.claude/shell-snapshots，在别的目录里) 比 Agent 新：不能当成 Agent
   const tmpd = path.join(home, 'tmp-work'); fs.mkdirSync(tmpd);
   const snap = spawn('sh', ['-c', 'sleep 300; true', path.join(home, '.claude', 'shell-snapshots', 'snapshot-sh-1.sh')], { cwd: tmpd, env: { LC_SSHWEB: sid, PATH: process.env.PATH }, stdio: 'ignore', detached: true });
   kids.push(snap); await wait(300);
   const t0 = Date.now();
   pi = await pinfo();
-  ok(pi.root === other && pi.source === 'agent', `Agent 执行命令的子进程 (命令行里带 .claude、在别的目录) 不当成 Agent (${Date.now() - t0}ms): ` + JSON.stringify(pi));
+  ok(pi.root === repo && pi.source === 'agent', `Agent 执行命令的子进程在别的目录：照样用钩子报的目录 (${Date.now() - t0}ms): ` + JSON.stringify(pi));
   // 会话历史切到原来仓库的对话 (正在跑的 Agent 比这次报的早：还没退出的旧 Agent)：用新报的目录
   await fetch(BASE + '/api/agent-sessions/resume', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sid, cmd: 'echo back2', cwd: repo }) });
   await wait(800);

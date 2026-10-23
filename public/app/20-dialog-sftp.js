@@ -86,7 +86,8 @@
   async function daemonPickDialog(m, tag, onKill) {
     let cur = m, body = null, confirming = null;
     const acts = () => $('#dialogActions');
-    const pickTitle = () => `接上常驻会话${cur.tab ? `（${cur.tab}）` : ''}`; // 带上是哪个标签：几个标签同时问时分得清
+    // 带上是哪个标签 (几个标签同时问时分得清) 和主机上守护程序的版本
+    const pickTitle = () => `接上常驻会话${cur.tab ? `（${cur.tab}）` : ''}${cur.ver ? ` · sshwebd v${cur.ver}` : ''}`;
     const listHtml = () => {
       const list = cur.sessions || [];
       const rows = list.map((x) => `<div class="as-row dp-row${x.busy ? ' dp-busy' : ''}" data-id="${esc(x.id)}">

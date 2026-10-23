@@ -53,6 +53,7 @@
     ta.style.paddingBottom = '';
     $('#copyPanel').dataset.tab = s.id; // 手机上同性能监控 (见 tabPanels)
     $('#copyPanel').classList.remove('hidden');
+    tabPanels(); // 同历史面板：在别的标签上打开过会带着 tab-away
     if (n && line >= 0) scrollToLine(ta, Math.min(line, n - 1), at?.y);
     else { ta._place = null; ta.scrollTop = ta.scrollHeight; } // 定位到最新内容
   }
