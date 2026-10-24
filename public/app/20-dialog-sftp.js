@@ -93,15 +93,15 @@
     // 每一行怎么认出是哪个会话：命过名的「主机名-名字」，没有就会话名称 / 路径 / 会话号
     const idText = (x) => x.tab || x.name || x.title || x.cwd || `会话 ${x.id}`;
     // 每行四行字：会话名称 (Agent 的对话名) → 最后发送的消息 (终端标题报的在做什么) → 项目工作路径 → 工作时间；
-    // 文字右边、「接上」按钮左边显示命过名的「主机名-名字」
+    // 命过名的「主机名-名字」跟在会话名称旁边 (淡色胶囊，见 style.css 的 .dp-name)
     const listHtml = () => {
       const list = cur.sessions || [];
       const rows = list.map((x) => `<div class="as-row dp-row${x.busy ? ' dp-busy' : ''}" data-id="${esc(x.id)}">
-        <div class="as-main"><div class="as-title">${esc(x.name || x.title || x.cwd || `会话 ${x.id}`)}</div>
+        <div class="as-main"><div class="as-title">${esc(x.name || x.title || x.cwd || `会话 ${x.id}`)}${x.tab ? `<span class="dp-name" title="${esc(x.tab)}">${esc(x.tab)}</span>` : ''}</div>
           ${x.name && x.title ? `<div class="as-prompt">${esc(x.title)}</div>` : ''}
           ${(x.name || x.title) && x.cwd ? `<div class="as-prompt">${esc(x.cwd)}</div>` : ''}<div class="as-meta">${esc(x.when)}</div>
           ${x.busy ? `<div class="dp-used">正在${esc(x.busy)}里使用中</div>` : ''}</div>
-        <div class="as-btns">${x.tab ? `<span class="dp-tab" title="${esc(x.tab)}">${esc(x.tab)}</span>` : ''}<button type="button" data-a="pick" class="primary">接上</button><button type="button" data-a="kill">删除</button></div></div>`).join('');
+        <div class="as-btns"><button type="button" data-a="pick" class="primary">接上</button><button type="button" data-a="kill">删除</button></div></div>`).join('');
       return (cur.note ? `<p class="dp-note">${esc(cur.note)}</p>` : '')
         + (rows ? '<p class="muted">这台主机上有还在运行的常驻会话,点一个接上,或者新建一个:</p>'
           : '<p class="muted">这台主机上没有别的常驻会话了:点「新建会话」开一个,或者「退出」关掉这个标签。</p>')
