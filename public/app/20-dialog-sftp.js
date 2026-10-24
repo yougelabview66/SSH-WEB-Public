@@ -93,7 +93,8 @@
     const listHtml = () => {
       const list = cur.sessions || [];
       const rows = list.map((x) => `<div class="as-row dp-row${x.busy ? ' dp-busy' : ''}" data-id="${esc(x.id)}">
-        <div class="as-main"><div class="as-title">${esc(x.cwd || `会话 ${x.id}`)}</div>
+        <div class="as-main"><div class="as-title">${esc(x.tab || x.cwd || `会话 ${x.id}`)}</div>
+          ${x.tab && x.cwd ? `<div class="as-prompt">${esc(x.cwd)}</div>` : ''}
           ${x.name || x.title ? `<div class="as-prompt">${esc(x.name || x.title)}</div>` : ''}<div class="as-meta">${esc(x.when)}</div>
           ${x.busy ? `<div class="dp-used">正在${esc(x.busy)}里使用中</div>` : ''}</div>
         <div class="as-btns"><button type="button" data-a="pick" class="primary">接上</button><button type="button" data-a="kill">删除</button></div></div>`).join('');
@@ -114,7 +115,7 @@
       const other = sessions.find((y) => !y.closed && y.remoteId && x.tags?.includes(y.remoteId));
       confirming = { x, other };
       $('#dialogTitle').textContent = '这个会话还有别的连接';
-      body.innerHTML = `<p><b>${esc(x.cwd || `会话 ${x.id}`)}</b> 还有连接：正在${esc(x.busy)}里使用中。要强制连接吗？</p>
+      body.innerHTML = `<p><b>${esc(x.tab || x.cwd || `会话 ${x.id}`)}</b> 还有连接：正在${esc(x.busy)}里使用中。要强制连接吗？</p>
         <p class="muted">强制连接后两边显示同一个终端，在哪边打字都一样；断电、断网前留下的旧连接已经没人在用，连上没有影响。</p>
         <div class="actions dp-confirm"><button type="button" data-c="back">否</button>${other ? '<button type="button" data-c="go">切到那个标签</button>' : ''}<button type="button" data-c="share" class="primary">是，强制连接</button></div>`;
       acts().classList.add('hidden');
@@ -124,7 +125,7 @@
     const showKillConfirm = (x) => {
       confirming = { x, kill: true };
       $('#dialogTitle').textContent = '这个会话还有连接';
-      body.innerHTML = `<p><b>${esc(x.cwd || `会话 ${x.id}`)}</b> 还有连接：正在${esc(x.busy)}里使用中。要强制删除吗？</p>
+      body.innerHTML = `<p><b>${esc(x.tab || x.cwd || `会话 ${x.id}`)}</b> 还有连接：正在${esc(x.busy)}里使用中。要强制删除吗？</p>
         <p class="muted">删除会结束这个会话，里面运行的程序 (比如 Claude Code) 会关掉，接着它的标签也会一起关掉。</p>
         <div class="actions dp-confirm"><button type="button" data-c="back">否</button><button type="button" data-c="kill" class="danger">是，强制删除</button></div>`;
       acts().classList.add('hidden');

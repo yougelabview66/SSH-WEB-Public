@@ -173,7 +173,7 @@
         done();
         focusTerm(s);
         const name = `${(AS_AGENTS.find(([id]) => id === ag) || [, 'Claude'])[1]}：${title}`; // 常驻会话的选择框里显示
-        api('POST', '/api/agent-sessions/resume', { sid: s.sid, cmd: x.cmd, name, cwd: x.cwd || '' }).catch((err) => alert(err.message));
+        api('POST', '/api/agent-sessions/resume', { sid: s.sid, cmd: x.cmd, name, cwd: x.cwd || '', id: x.id }).catch((err) => alert(err.message));
       }
     });
     load();

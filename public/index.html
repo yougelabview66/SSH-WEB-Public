@@ -90,7 +90,7 @@
         <button id="btnInput" class="tbtn hidden" title="底部输入框：打字先在本地编辑，回车才发送，没有卡顿">✏️<span class="lbl"> 输入框</span></button>
         <button id="btnHistory" class="tbtn hidden" title="历史命令">🕘<span class="lbl"> 历史</span></button>
         <button id="btnSftp" class="tbtn hidden" title="SFTP 文件管理">📁<span class="lbl"> 文件</span></button>
-        <button id="btnMore" class="tbtn hidden" title="更多：状态卡片、性能监控、端口预览、搜索历史、会话历史、钩子通知">⋯<span class="lbl"> 更多</span></button>
+        <button id="btnMore" class="tbtn hidden" title="更多：重命名标签、状态卡片、性能监控、端口预览、搜索历史、会话历史、钩子通知">⋯<span class="lbl"> 更多</span></button>
       </div>
       <div id="terms">
         <div id="empty">
@@ -178,6 +178,7 @@
   <div id="tabListPop" class="hidden"></div>
   <!-- 顶栏「⋯ 更多」的菜单 (见 70-tabs-shortcuts.js) -->
   <div id="morePop" class="hidden">
+    <button id="btnRename" class="mitem" title="给当前标签改个显示名（只改标签，不影响主机设置；刷新、重新打开、别的设备上都用新名字）">✏️ 重命名标签</button>
     <button id="btnFloatM" class="mitem hidden" title="主机状态卡片：开 / 关 (每个标签的状态和 Agent 在做什么)">🖥️ 状态卡片</button>
     <button id="btnMon" class="mitem" title="性能监控">📊 性能监控</button>
     <button id="btnFwd" class="mitem" title="在浏览器里打开目标主机上的开发服务 (如 localhost:5173)">🌐 端口预览</button>
