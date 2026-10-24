@@ -94,8 +94,8 @@
     if (!info) return;
     const cur = sessions.find((x) => x.remoteId === info.id);
     if (cur) {
-      // 标签已经开着：名字可能在别的设备上改过 (这边连接 / 事件断着没收到)，对账时跟过来
-      if (info.title && info.title !== cur.baseTitle && cur.pendingTitle == null) applyTabTitle(cur, info.title);
+      // 标签已经开着：可能在别的设备上命过名 (这边连接 / 事件断着没收到)，对账时跟过来
+      if ((info.suffix || '') !== cur.suffix && cur.pendingSuffix == null) applyTabSuffix(cur, info.suffix || '');
       return;
     }
     const s = openSession(info.params || {}, info.title, info.connType, info);
@@ -161,33 +161,33 @@
 
   function setTabNumber(s, n) {
     s.n = n;
-    s.title = `${s.baseTitle}-${n}`;
+    s.title = `${s.baseTitle}-${s.suffix || n}`;
     $('.title', s.tab).textContent = s.title;
     s.tab.title = s.title;
     if (active === s) document.title = `${s.title} - SSH-WEB`;
   }
 
-  // 给标签改名 (入口见 70-tabs-shortcuts.js 的「重命名标签」，服务端 session/index.js 的 rename)：
-  // 只改显示名，主机设置、历史命令按主机的过滤都不受影响；序号照旧挂在后面 (如「新名-2」)
-  function applyTabTitle(s, base) {
-    base = String(base || '').replace(/\s+/g, ' ').trim().slice(0, 100);
-    if (!base || s.baseTitle === base) return;
-    s.baseTitle = base;
-    s.title = `${base}-${s.n}`;
+  // 给标签命名 (入口见 70-tabs-shortcuts.js 的「命名标签」，服务端 session/index.js 的 rename)：
+  // 主机名称保留，只改「主机名-」后面显示的部分；空 = 恢复按序号显示。主机设置、历史命令按主机的过滤都不受影响
+  function applyTabSuffix(s, suffix) {
+    suffix = String(suffix || '').replace(/\s+/g, ' ').trim().slice(0, 100);
+    if (s.suffix === suffix) return;
+    s.suffix = suffix;
+    s.title = `${s.baseTitle}-${suffix || s.n}`;
     $('.title', s.tab).textContent = s.title;
     s.tab.title = s.srvState ? (s.srvState.detail ? `${s.title}\n${s.srvState.label}：${s.srvState.detail}` : s.title) : s.title;
     if (active === s) document.title = `${s.title} - SSH-WEB`;
     renderDeskTabs(); // 状态卡片上的标签名跟着变
   }
 
-  // 用户改了名：本地先改，再告诉服务端 (所有设备上的这个标签、刷新后的恢复、常驻会话都记新名字)。
+  // 用户命了名：本地先改，再告诉服务端 (所有设备上的这个标签、刷新后的恢复、常驻会话都记新名字)。
   // ws 断着时走 HTTP；还没有会话 id (正在连) 就只改本地，连上时 connect 消息自己会带上
-  function renameTab(s, name) {
-    applyTabTitle(s, name);
+  function renameTab(s, suffix) {
+    applyTabSuffix(s, suffix);
     if (!s.remoteId) return;
-    s.pendingTitle = name; // 改名时断线没送到的话，重新连上 (attached) 时补发
-    if (s.ws && s.ws.readyState === WebSocket.OPEN) send(s, { type: 'rename', title: name });
-    else api('POST', `/api/sessions/${s.remoteId}/rename`, { title: name }).then(() => { s.pendingTitle = null; }).catch(() => {});
+    s.pendingSuffix = suffix; // 命名时断线没送到的话，重新连上 (attached) 时补发
+    if (s.ws && s.ws.readyState === WebSocket.OPEN) send(s, { type: 'rename', suffix });
+    else api('POST', `/api/sessions/${s.remoteId}/rename`, { suffix }).then(() => { s.pendingSuffix = null; }).catch(() => {});
   }
 
   // 属于某个标签的弹层 (文件预览、端口预览、会话历史、钩子通知、历史命令、复制文本，带 .tab-panel 和 data-tab)：

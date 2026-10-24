@@ -192,19 +192,19 @@
     if (e.key === 'Escape' && !morePop.classList.contains('hidden')) { closeMore(); e.stopPropagation(); e.preventDefault(); }
   }, true);
 
-  // 「✏️ 重命名标签」：改当前标签的显示名。只改标签，主机设置不动；刷新、重新打开、别的设备、接着的常驻会话都用新名字
-  // (改名怎么传到服务端和别的设备见 15-sync-webgl.js 的 renameTab)。没连上也能改：先改本地，连上时会带上
+  // 「✏️ 命名标签」：给当前标签的「主机名-」后面换一个名字，主机名称保留。刷新、重新打开、别的设备、接着的常驻会话
+  // 都用新名字 (怎么传到服务端和别的设备见 15-sync-webgl.js 的 renameTab)。没连上也能改：先改本地，连上时会带上。
+  // 输入框 16px：手机上聚焦小字输入框会把整个页面放大 (同终端搜索框、手机输入栏的做法)
   $('#btnRename').addEventListener('click', () => {
     const s = active;
     if (!s) return;
-    dialog('重命名标签', `<label>标签名称<input name="name" type="text" maxlength="100" value="${esc(s.baseTitle)}" autocomplete="off" spellcheck="false"></label>
-      <p class="muted">只改这个标签的显示名，主机设置不变，序号照旧挂在后面。</p>`, [
+    dialog('命名标签', `<label>「${esc(s.baseTitle)}-」后面显示的内容<input name="name" type="text" maxlength="100" style="font-size:16px" value="${esc(String(s.suffix || s.n))}" autocomplete="off" spellcheck="false"></label>
+      <p class="muted">主机名称保留，只改它后面的部分；清空恢复按序号显示。</p>`, [
       { label: '取消', value: null, cancel: true },
       { label: '保存', value: true, cls: 'primary', submit: true },
     ], 'rename-' + s.id).then((r) => {
       if (!r.value || s.closed) return;
-      const name = r.form.elements.name.value.replace(/\s+/g, ' ').trim().slice(0, 100);
-      if (name && name !== s.baseTitle) renameTab(s, name);
+      renameTab(s, r.form.elements.name.value);
     });
   });
 

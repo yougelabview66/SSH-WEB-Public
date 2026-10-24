@@ -170,7 +170,9 @@
       s.baseTitle = title;
       s.n = max + 1;
     }
-    s.title = title = `${s.baseTitle}-${s.n}`;
+    // 命过名的标签：「主机名-」后面显示自定义的部分 (服务端记着，刷新后带回来)
+    s.suffix = restore && typeof restore.suffix === 'string' ? restore.suffix.replace(/\s+/g, ' ').trim().slice(0, 100) : '';
+    s.title = title = `${s.baseTitle}-${s.suffix || s.n}`;
     $('.title', s.tab).textContent = title;
     s.tab.title = title;
     s.tab.addEventListener('click', (e) => {
@@ -263,7 +265,7 @@
         // offset: 已收到的输出字节数，断线重连时服务端只补发缺的部分
         ws.send(JSON.stringify({ type: 'attach', id: s.remoteId, offset: s.offset, pageId, deviceId, lite: s.lite, ...size }));
       } else {
-        ws.send(JSON.stringify({ type: 'connect', ...s.params, title: s.baseTitle, n: s.n, histHost: s.histHost, pageId, deviceId, ...size }));
+        ws.send(JSON.stringify({ type: 'connect', ...s.params, title: s.baseTitle, n: s.n, ...(s.suffix && { suffix: s.suffix }), histHost: s.histHost, pageId, deviceId, ...size }));
       }
       // 应用层心跳，避免 Cloudflare / 反向代理 100 秒空闲断开；服务端每次都回 pong。
       // 不在这里判断「多久没收到东西就断开重连」：ping/pong 往返慢一个周期 (隧道卡、主机忙) 就会把好连接误杀，
@@ -296,16 +298,18 @@
         s.remoteId = m.session.id;
         s.params = m.session.params || s.params;
         if (m.session.n && m.session.n !== s.n) setTabNumber(s, m.session.n); // 其他设备可能已用了这个序号
-        if (m.session.title && m.session.title !== s.baseTitle) {
-          if (s.pendingTitle != null) send(s, { type: 'rename', title: s.pendingTitle }); // 改名时断线没送到：连上补发
-          else applyTabTitle(s, m.session.title); // 别的设备上改过名 / 服务端记着改过的名字
-        } else if (s.pendingTitle === s.baseTitle) s.pendingTitle = null;
+        if ((m.session.suffix || '') !== s.suffix) {
+          if (s.pendingSuffix != null) { // 命名时断线没送到：连上补发
+            send(s, { type: 'rename', suffix: s.pendingSuffix });
+            s.pendingSuffix = null;
+          } else applyTabSuffix(s, m.session.suffix || ''); // 别的设备上命过名 / 服务端还原的
+        } else s.pendingSuffix = null;
         if (isNew) saveTabOrder();
         if (active === s) saveActive();
         reportWatching();
-      } else if (m.type === 'renamed') { // 这个标签改了名 (本机 / 别的设备 / 服务端还原上次的名字)
-        applyTabTitle(s, m.title);
-        s.pendingTitle = null;
+      } else if (m.type === 'renamed') { // 这个标签命了名 (本机 / 别的设备 / 服务端还原上次的名字)
+        applyTabSuffix(s, m.suffix);
+        s.pendingSuffix = null;
       } else if (m.type === 'params') { // 接上了常驻会话 (见 lib/session/daemon.js)：记下是哪个，服务重启后照原样接回去
         s.params = m.params || s.params;
       } else if (m.type === 'snapshot') {
