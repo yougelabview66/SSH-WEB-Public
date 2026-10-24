@@ -296,9 +296,16 @@
         s.remoteId = m.session.id;
         s.params = m.session.params || s.params;
         if (m.session.n && m.session.n !== s.n) setTabNumber(s, m.session.n); // 其他设备可能已用了这个序号
+        if (m.session.title && m.session.title !== s.baseTitle) {
+          if (s.pendingTitle != null) send(s, { type: 'rename', title: s.pendingTitle }); // 改名时断线没送到：连上补发
+          else applyTabTitle(s, m.session.title); // 别的设备上改过名 / 服务端记着改过的名字
+        } else if (s.pendingTitle === s.baseTitle) s.pendingTitle = null;
         if (isNew) saveTabOrder();
         if (active === s) saveActive();
         reportWatching();
+      } else if (m.type === 'renamed') { // 这个标签改了名 (本机 / 别的设备 / 服务端还原上次的名字)
+        applyTabTitle(s, m.title);
+        s.pendingTitle = null;
       } else if (m.type === 'params') { // 接上了常驻会话 (见 lib/session/daemon.js)：记下是哪个，服务重启后照原样接回去
         s.params = m.params || s.params;
       } else if (m.type === 'snapshot') {
