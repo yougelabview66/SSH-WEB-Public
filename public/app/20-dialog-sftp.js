@@ -90,17 +90,21 @@
     const acts = () => $('#dialogActions');
     // 带上是哪个标签 (几个标签同时问时分得清) 和主机上守护程序的版本
     const pickTitle = () => `接上常驻会话${cur.tab ? `（${cur.tab}）` : ''}${cur.ver ? ` · sshwebd v${cur.ver}` : ''}`;
+    // 每一行怎么认出是哪个会话：命过名的「主机名-名字」，没有就会话名称 / 路径 / 会话号
+    const idText = (x) => x.tab || x.name || x.title || x.cwd || `会话 ${x.id}`;
+    // 每行四行字：会话名称 (Agent 的对话名) → 最后发送的消息 (终端标题报的在做什么) → 项目工作路径 → 工作时间；
+    // 文字右边、「接上」按钮左边显示命过名的「主机名-名字」
     const listHtml = () => {
       const list = cur.sessions || [];
       const rows = list.map((x) => `<div class="as-row dp-row${x.busy ? ' dp-busy' : ''}" data-id="${esc(x.id)}">
-        <div class="as-main"><div class="as-title">${esc(x.tab || x.cwd || `会话 ${x.id}`)}</div>
-          ${x.tab && x.cwd ? `<div class="as-prompt">${esc(x.cwd)}</div>` : ''}
-          ${x.name || x.title ? `<div class="as-prompt">${esc(x.name || x.title)}</div>` : ''}<div class="as-meta">${esc(x.when)}</div>
+        <div class="as-main"><div class="as-title">${esc(x.name || x.title || x.cwd || `会话 ${x.id}`)}</div>
+          ${x.name && x.title ? `<div class="as-prompt">${esc(x.title)}</div>` : ''}
+          ${(x.name || x.title) && x.cwd ? `<div class="as-prompt">${esc(x.cwd)}</div>` : ''}<div class="as-meta">${esc(x.when)}</div>
           ${x.busy ? `<div class="dp-used">正在${esc(x.busy)}里使用中</div>` : ''}</div>
-        <div class="as-btns"><button type="button" data-a="pick" class="primary">接上</button><button type="button" data-a="kill">删除</button></div></div>`).join('');
+        <div class="as-btns">${x.tab ? `<span class="dp-tab" title="${esc(x.tab)}">${esc(x.tab)}</span>` : ''}<button type="button" data-a="pick" class="primary">接上</button><button type="button" data-a="kill">删除</button></div></div>`).join('');
       return (cur.note ? `<p class="dp-note">${esc(cur.note)}</p>` : '')
-        + (rows ? '<p class="muted">这台主机上有还在运行的常驻会话，点一个接上，或者新建一个：</p>'
-          : '<p class="muted">这台主机上没有别的常驻会话了：点「新建会话」开一个，或者「退出」关掉这个标签。</p>')
+        + (rows ? '<p class="muted">这台主机上有还在运行的常驻会话,点一个接上,或者新建一个:</p>'
+          : '<p class="muted">这台主机上没有别的常驻会话了:点「新建会话」开一个,或者「退出」关掉这个标签。</p>')
         + `<div class="as-list dp-list">${rows}</div>`;
     };
     const showList = () => {
@@ -115,7 +119,7 @@
       const other = sessions.find((y) => !y.closed && y.remoteId && x.tags?.includes(y.remoteId));
       confirming = { x, other };
       $('#dialogTitle').textContent = '这个会话还有别的连接';
-      body.innerHTML = `<p><b>${esc(x.tab || x.cwd || `会话 ${x.id}`)}</b> 还有连接：正在${esc(x.busy)}里使用中。要强制连接吗？</p>
+      body.innerHTML = `<p><b>${esc(idText(x))}</b> 还有连接：正在${esc(x.busy)}里使用中。要强制连接吗？</p>
         <p class="muted">强制连接后两边显示同一个终端，在哪边打字都一样；断电、断网前留下的旧连接已经没人在用，连上没有影响。</p>
         <div class="actions dp-confirm"><button type="button" data-c="back">否</button>${other ? '<button type="button" data-c="go">切到那个标签</button>' : ''}<button type="button" data-c="share" class="primary">是，强制连接</button></div>`;
       acts().classList.add('hidden');
@@ -125,7 +129,7 @@
     const showKillConfirm = (x) => {
       confirming = { x, kill: true };
       $('#dialogTitle').textContent = '这个会话还有连接';
-      body.innerHTML = `<p><b>${esc(x.tab || x.cwd || `会话 ${x.id}`)}</b> 还有连接：正在${esc(x.busy)}里使用中。要强制删除吗？</p>
+      body.innerHTML = `<p><b>${esc(idText(x))}</b> 还有连接：正在${esc(x.busy)}里使用中。要强制删除吗？</p>
         <p class="muted">删除会结束这个会话，里面运行的程序 (比如 Claude Code) 会关掉，接着它的标签也会一起关掉。</p>
         <div class="actions dp-confirm"><button type="button" data-c="back">否</button><button type="button" data-c="kill" class="danger">是，强制删除</button></div>`;
       acts().classList.add('hidden');
