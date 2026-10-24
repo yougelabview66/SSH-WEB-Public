@@ -149,6 +149,7 @@
       cancelAnimationFrame(frame);
       frame = 0;
       pendingPx = 0;
+      wheelQueue = 0; clearTimeout(wheelTimer); wheelTimer = 0; // 手指按住 = 停止滚动，排队没发完的滚轮也不再发
       if (e.touches.length !== 1) { lastY = null; return; }
       measure();
       lastY = e.touches[0].clientY;
