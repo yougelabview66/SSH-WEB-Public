@@ -14,15 +14,6 @@
   // (这个会话的 tmux pane 里是全屏程序 → busy / 没开 tmux → 终端记录自己在备用屏幕上取不了 → busy)，滚轮照旧交给程序
   const daemonHistory = (s) => !!s.params?.daemonId;
 
-  // 临时定位用：页面地址带上 ?wheeldebug (http://…/?wheeldebug)，每次往上滚弹出滚轮被什么挡住 —— 查「有的标签滚轮进不了历史画面」
-  const WHEEL_DBG = location.search.includes('wheeldebug');
-  const wheelDbg = (s, why) => {
-    if (!WHEEL_DBG || Date.now() - (s.wdbgAt || 0) < 2500) return;
-    s.wdbgAt = Date.now();
-    fontToast(s, `滚轮⇧ ${why} · daemon:${!!s.params?.daemonId} 跟踪:${s.term.modes.mouseTrackingMode === 'none' ? '无' : '开'} `
-      + `缓冲:${s.term.buffer.active.type === 'normal' ? '普通' : '备用'} 上次失败:${s.lastFail || '无'}`, 3500);
-  };
-
   function localScrollWheel(s, e) {
     if (s.bypassWheel) return true;
     if (s.scrollView) { scrollViewWheel(s, e.deltaY); return false; }
@@ -31,12 +22,9 @@
     if (s.scrollLoading) { s.heldWheel += e.deltaY < 0 ? 1 : -1; return false; } // 等结果期间的滚动先记下 (往上为正)
     // 程序开了鼠标 (tmux) 才试 (不是 tmux 的话服务端很快回 no-tmux，一段时间内不再试)；常驻会话 (Windows)一直试。
     // Windows 没开常驻会话：不取历史 (不用 psmux 了)，滚轮按终端默认的方式处理
-    if (e.deltaY >= 0 || !s.sid || (s.term.modes.mouseTrackingMode === 'none' && !daemonHistory(s))) {
-      if (e.deltaY < 0) wheelDbg(s, e.deltaY < 0 && !s.sid ? '会话没连上' : '没当常驻会话 (不是 daemon / 程序开着鼠标)');
-      return true;
-    }
+    if (e.deltaY >= 0 || !s.sid || (s.term.modes.mouseTrackingMode === 'none' && !daemonHistory(s))) return true;
     if (s.winHost && !daemonHistory(s)) return true;
-    if (s.noTmuxUntil > Date.now()) { wheelDbg(s, `静默期 (上次取历史失败，${Math.ceil((s.noTmuxUntil - Date.now()) / 1000)} 秒后重试)`); return true; }
+    if (s.noTmuxUntil > Date.now()) return true;
     s.scrollLoading = true;
     s.heldWheel = 1;
     send(s, { type: 'tmux-history', lines: LS_LINES });
@@ -67,22 +55,15 @@
     s.scrollLoading = false;
     clearTimeout(s.lsTimer);
     if (m.ok && s.heldWheel <= 0) return; // 等结果期间又滚回来了 (最后是往下的)，不打开
-    if (m.ok && historyMatchesScreen(s, m.data)) { s.lastFail = ''; return openLocalScroll(s, m.data, Math.max(1, s.heldWheel)); }
+    if (m.ok && historyMatchesScreen(s, m.data)) return openLocalScroll(s, m.data, Math.max(1, s.heldWheel));
     // 用不了：一段时间内不再尝试，把刚才拦下的滚轮补发给程序 (会进入 tmux 自己的复制模式，不弹提示)
     const reason = m.ok ? 'mismatch' : m.reason;
-    s.lastFail = reason;
     s.noTmuxUntil = Date.now() + ({ 'no-tmux': 300000, busy: 5000, 'in-mode': 3000 }[reason] || 30000);
     if (m.win) s.winHost = true;
-    // 提示原因 (每个静默期弹一次，定位问题用；之后这段时间内滚轮直接放行、不重复弹)。
-    // Windows 主机没开常驻会话本来就没有历史，不提示；mismatch 在 tmux 会话里是交给 tmux 自己滚 (看得见)，也不提示；
-    // busy (全屏程序 / 复制模式) 只在常驻会话里提示 —— 那里滚轮交给程序没有可见效果，不提示的话像「没反应」
-    const whyText = { timeout: '取历史超时（主机响应慢）', failed: '取历史没成功', mismatch: '抓到的历史和当前画面对不上',
-      busy: '正在全屏程序里，滚轮交给它自己', 'in-mode': 'tmux 在复制模式里，滚轮交给它自己' }[reason];
-    const daemon = !!s.params?.daemonId;
-    if (whyText && !s.winHost && (daemon || (reason !== 'mismatch' && reason !== 'busy' && reason !== 'in-mode'))
-      && Date.now() - (s.winToastAt || 0) > 35000) {
-      s.winToastAt = Date.now();
-      fontToast(s, whyText + (reason === 'busy' || reason === 'in-mode' ? '' : '，这次滚轮交给终端自己'), 4000);
+    // 超时：提示一次原因 (真机上没法看，方便找问题)；Windows 主机没开常驻会话本来就没有历史，不提示
+    if (reason === 'timeout' && !s.winHost && !s.winToastDone) {
+      s.winToastDone = true;
+      fontToast(s, 'tmux 的历史取不到（超时），这次滚轮交给它自己处理', 4000);
     }
     const target = s.term.element.querySelector('.xterm-screen') || s.term.element;
     // 常驻会话、程序没开鼠标：没有程序接滚轮 (tmux 复制模式那套不适用)，重发只会把 xterm 自己的记录滚上去，
