@@ -30,14 +30,16 @@
     return false;
   }
 
-  // 抓到的历史末尾应该就是现在的画面：拿当前屏幕的文字行去对，对上 6 成以上才算同一个 pane
+  // 抓到的历史末尾应该就是现在的画面：拿当前屏幕的文字行去对，对上 6 成以上才算同一个 pane。
+  // 比对用缓冲区的最后一屏 (baseY)，不看 xterm 视口滚到哪 —— 以前失败处理重发过滚轮的会话，xterm 自己的记录被滚上去过，
+  // 视口停在上面，之后抓到的历史永远和视口对不上，一直失败 (打一个字 xterm 回到底部才又好一次)
   function historyMatchesScreen(s, data) {
     let i = data.length; // 只看最后几屏 (整段几千行去颜色要十几毫秒)
     for (let k = 0; k < s.term.rows * 3 && i > 0; k++) i = data.lastIndexOf('\n', i - 1);
     const plain = data.slice(Math.max(0, i)).replace(ANSI_RE, '');
     const b = s.term.buffer.active;
     let total = 0, hit = 0;
-    for (let y = b.viewportY; y < b.viewportY + s.term.rows - 1; y++) { // 最后一行多半是 tmux 状态栏
+    for (let y = b.baseY; y < b.baseY + s.term.rows - 1; y++) { // 最后一行多半是 tmux 状态栏
       const t = b.getLine(y)?.translateToString(true).trim();
       if (!t || t.length < 4) continue;
       total++;
@@ -64,6 +66,9 @@
       fontToast(s, whyText + '，这次滚轮交给终端自己', 4000);
     }
     const target = s.term.element.querySelector('.xterm-screen') || s.term.element;
+    // 常驻会话、程序没开鼠标：没有程序接滚轮 (tmux 复制模式那套不适用)，重发只会把 xterm 自己的记录滚上去，
+    // 视口停在半路，之后抓到的历史和画面永远对不上、一直失败 —— 直接吞掉，等静默期过了再试
+    if (s.params?.daemonId && s.term.modes.mouseTrackingMode === 'none') return;
     const r = target.getBoundingClientRect();
     s.bypassWheel = true;
     for (let i = 0; i < Math.min(Math.abs(s.heldWheel), 8); i++) {
