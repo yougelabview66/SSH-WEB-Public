@@ -376,7 +376,7 @@ const WHEEL_UP = '\x1b[<64;';
   // 以前是按按键栏按钮的高度设 (约 32px)，手指够不准；现在固定 56px 的整条通栏按钮
   ok(closeH >= 44, `手机：「回到实时画面」够大 (${closeH}px，最小点击区 44px，按键栏按键 ${keyH}px)`);
   // 位置还是右下角 (没占满宽度)，但按钮本身要够大
-  ok(closeW.bw >= 100 && closeW.bw < closeW.vw * 0.6 && closeW.br < 30, `手机：「回到实时画面」在右下角、够大但不过大 (${closeW.bw}×${closeH}px，离右边 ${closeW.br}px，终端宽 ${closeW.vw}px)`);
+  ok(closeW.bw >= 100 && closeW.bw < closeW.vw * 0.6 && closeW.br >= 20 && closeW.br < 40, `手机：「回到实时画面」够大、离右边有一点距离但不过分 (${closeW.bw}×${closeH}px，离右边 ${closeW.br}px，终端宽 ${closeW.vw}px)`);
   ok(!(await mFocused()), '手机：点「回到实时画面」不聚焦输入框 (不弹输入法)');
   // tmux 自己的复制模式 (抓到的不是这个画面，滑动交给 tmux) 的「回到实时画面」也一样
   await m.locator('.tab', { hasText: 'OTHER' }).first().tap(); await wait(1500); await claim();
