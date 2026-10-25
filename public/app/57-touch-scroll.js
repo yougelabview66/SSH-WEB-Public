@@ -117,33 +117,10 @@
     s.box.addEventListener('touchend', cancelPress, { passive: true });
     s.box.addEventListener('touchcancel', cancelPress, { passive: true });
 
-    // 双指捏合调整字体大小
-    let pinch = null;
-    const dist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
-    s.box.addEventListener('touchstart', (e) => {
-      if (e.touches.length === 2) pinch = { d0: dist(e.touches) || 1, base: fontSize, raf: 0, size: fontSize };
-    }, { passive: true });
-    s.box.addEventListener('touchmove', (e) => {
-      if (!pinch || e.touches.length !== 2) return;
-      e.preventDefault();
-      pinch.size = pinch.base * dist(e.touches) / pinch.d0;
-      if (!pinch.raf) {
-        pinch.raf = requestAnimationFrame(() => {
-          if (!pinch) return;
-          pinch.raf = 0;
-          setFontSize(pinch.size, false);
-          fontToast(s, `字体 ${fontSize}`);
-        });
-      }
-    }, { passive: false });
-    const endPinch = (e) => {
-      if (!pinch || e.touches.length >= 2) return;
-      cancelAnimationFrame(pinch.raf);
-      setFontSize(pinch.size, true);
-      pinch = null;
-    };
-    s.box.addEventListener('touchend', endPinch, { passive: true });
-    s.box.addEventListener('touchcancel', endPinch, { passive: true });
+    // 双指捏合交给浏览器自己缩放页面 (同看网页的习惯)。以前这里是拦下双指、改成调终端字号，
+    // 每捏一下都会改 fontSize → 重新 fit → 终端行列变化 → 给服务端发 resize，远端 (tmux / Claude Code) 整屏重画，
+    // 手感很卡，而且和「双指放大界面」的预期不一样。调字号用侧边栏的 A- / A+ (见 45-keybar-font.js)。
+    // 注意：别再给 .term-box 加 touch-action: none，那会把浏览器原生的双指缩放也一起关掉
 
     s.box.addEventListener('touchstart', (e) => {
       cancelAnimationFrame(frame);
