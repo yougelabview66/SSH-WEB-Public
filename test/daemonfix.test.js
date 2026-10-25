@@ -56,6 +56,10 @@ function server(port) {
         const ch = a();
         cmds.push(info.command);
         if (info.command === 'uname -sm') { ch.write('Linux x86_64\n'); ch.exit(0); ch.end(); return; }
+        if (/^pkill/.test(info.command)) { // 修复的杀进程慢一点：让测试「正在干活」的打字稳稳赶在修复完成前 (不然有时序竞态)
+          setTimeout(() => { try { ch.exit(0); ch.end(); } catch {} }, 1500);
+          return;
+        }
         const cmd = info.command.split(VHOME).join(homeFwd); // 假的 home 路径换成真的，sh 里执行得了
         const pr = spawn('sh', ['-c', cmd], { cwd: home, env: ENV });
         ch.on('data', (d) => { try { pr.stdin.write(d); } catch {} });
