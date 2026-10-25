@@ -1,6 +1,6 @@
 'use strict';
-// 常驻会话选择框里会话名称和「最后发送的一条消息」的读取 (agent-sessions.js 的 claudePeek)：
-// 按 Agent 钩子报的对话 id 从 ~/.claude/projects 里读对话的标题 (优先 /rename 的、再自动起的) 和
+// 常驻会话选择框里会话名称和「最后发送的一条消息」的读取 (agent-sessions.js 的 claudePeek / claudePeekByCwd)：
+// 按对话 id (或没报过 id 时按工作目录) 从 ~/.claude/projects 里读对话的标题 (优先 /rename 的、再自动起的) 和
 // 你最后发送的一条消息 (跳过 caveat / 命令那些不是真说话的行) —— 同会话历史的读法。
 // 不连真的 SSH：rawExec 就在本机临时目录里跑 sh (Git Bash 的 sh 也行，脚本同款)
 const fs = require('fs');
@@ -8,11 +8,16 @@ const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const { ok, run } = require('./helpers');
-const { claudePeek } = require('../lib/agent-sessions');
+const { claudePeek, claudePeekByCwd } = require('../lib/agent-sessions');
 
 const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sshweb-dn-')));
 const J = (o) => JSON.stringify(o);
-const put = (f, text) => { const p = path.join(home, f); fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, text); };
+const put = (f, text, ageMin) => {
+  const p = path.join(home, f);
+  fs.mkdirSync(path.dirname(p), { recursive: true });
+  fs.writeFileSync(p, text);
+  if (ageMin != null) { const t = Date.now() / 1000 - ageMin * 60; fs.utimesSync(p, t, t); }
+};
 
 // 1111：先有一条 caveat (isMeta)、一条 /clear 命令，再是真正说的话；两个自动标题 (取最后一个)
 put('.claude/projects/-srv-my-proj/11111111-1111-1111-1111-111111111111.jsonl', [
@@ -65,5 +70,27 @@ run(async () => {
   ok(peek.size === 3, '不正常的 id 被挡掉，没跑进脚本');
   const empty = await claudePeek({ daemonOs: 'windows', ssh: {}, rawExec: fakeSess.rawExec }, ['11111111-1111-1111-1111-111111111111']);
   ok(empty.size === 0, '不是 Linux 主机 (读不了 sh)：返回空，退回钩子报的');
+
+  // ---- claudePeekByCwd：没报过对话 id 的 (钩子装之前开的会话)，按工作目录找
+  // /srv/a 里两个对话：新的 (1 分钟前刚写过 = 正在聊的会话在用)，旧的 (3 小时前 = 闲置的那个会话最后用的)
+  put('.claude/projects/-srv-a/aaaaaaaa-0000-0000-0000-000000000001.jsonl', [
+    J({ type: 'user', message: { role: 'user', content: '新对话的问题' }, cwd: '/srv/a' }),
+    J({ type: 'ai-title', aiTitle: '新对话' }),
+  ].join('\n') + '\n', 1);
+  put('.claude/projects/-srv-a/aaaaaaaa-0000-0000-0000-000000000002.jsonl', [
+    J({ type: 'user', message: { role: 'user', content: '旧对话最后发的一条' }, cwd: '/srv/a' }),
+    J({ type: 'ai-title', aiTitle: 'linux-persistent-session-tmux' }),
+  ].join('\n') + '\n', 180);
+  put('.claude/projects/-srv-b/bbbbbbbb-0000-0000-0000-000000000003.jsonl', J({ type: 'user', message: { role: 'user', content: '别的目录' }, cwd: '/srv/b' }) + '\n', 1);
+  const now = Date.now();
+  const byCwd = await claudePeekByCwd(fakeSess, [
+    { id: 'S-just', cwd: '/srv/a', to: now }, // 一直有输出的：要最新的
+    { id: 'S-idle', cwd: '/srv/a', to: now - 120 * 60000 }, // 2 小时前就没输出了：要当时在用的那个 (最新的太新，不算)
+    { id: 'S-none', cwd: '/no/such/dir', to: now }, // 目录里没有对话
+    { id: 'bad id; rm', cwd: '/srv/a', to: now }, // 不正常的会话号：挡掉
+  ]);
+  ok(byCwd.get('S-just')?.title === '新对话' && byCwd.get('S-just')?.last === '新对话的问题', `一直有输出的会话拿最新的: ${JSON.stringify(byCwd.get('S-just'))}`);
+  ok(byCwd.get('S-idle')?.title === 'linux-persistent-session-tmux' && byCwd.get('S-idle')?.last === '旧对话最后发的一条', `闲置的会话拿它最后用的那个 (同目录最新的不算): ${JSON.stringify(byCwd.get('S-idle'))}`);
+  ok(!byCwd.has('S-none') && byCwd.size === 2 && !byCwd.has('bad id; rm'), '没有对话的目录、不正常的会话号：都不占条目');
   try { fs.rmSync(home, { recursive: true, force: true }); } catch {}
 });
