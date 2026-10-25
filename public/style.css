@@ -391,8 +391,7 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
   touch-action: manipulation; user-select: none; -webkit-user-select: none; }
 .mkeys button.on { background: var(--accent2); border-color: var(--accent2); color: #fff; }
 .mline { display: flex; align-items: flex-end; gap: 6px; padding: 0 6px 6px; }
-/* 16px 以上避免 iOS 聚焦时自动放大页面 */
-/* 手机输入框是可编辑的 div (见 30-mobile-input.js)，样子同 textarea */
+/* 手机输入框是可编辑的 div (见 30-mobile-input.js)，样子同 textarea。为什么是 16px 见文件末尾的统一规则 */
 #mInput { position: relative; flex: 1; min-width: 0; width: 100%; margin: 0; padding: 8px 10px;
   background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px;
   font: inherit; font-size: 16px; line-height: 22px; overflow-y: hidden; max-height: 30vh; cursor: text;
@@ -899,4 +898,14 @@ svg.ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-wid
   .overlay.tab-panel > .card, #history.tab-panel > .card, #copyPanel.tab-panel > .card { width: 100%; max-width: none; height: 100%; max-height: none;
     border: none; border-radius: 0; box-shadow: none; margin: 0; padding-bottom: 16px; overflow: auto; }
   .tab-panel.tab-away { display: none !important; }
+}
+
+/* 手机上所有输入框都用 16px 以上：iOS Safari 聚焦 font-size < 16px 的输入框时会把整个页面放大，
+   而且失焦也不会自动缩回去，只能手动捏回来 —— 看起来就是「点一下输入框页面就大了、回不来」。
+   以前只有手机输入栏 (#mInput) 和终端搜索框做了，其余 (主机表单、历史 / 收藏搜索、文件路径、项目搜索、
+   端口预览、自定义按键…) 还是 12~15px，点了就放大。
+   放在样式表最后 + 列出那几个 ID 选择器：它们在前面用 #id 写过 font-size，优先级比 input 高，不列出来盖不住 */
+@media (max-width: 760px) {
+  #dInput, #keyFile, #copyText,
+  input:not([type=checkbox]):not([type=radio]), textarea, select { font-size: 16px; }
 }

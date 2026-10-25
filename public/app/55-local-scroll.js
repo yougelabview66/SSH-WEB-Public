@@ -139,7 +139,13 @@
     // 输入框藏起来了，焦点放这里：PageUp / PageDown / Home / 方向键直接滚历史。
     // 是搜索打开的 (光标在搜索框里) 就不抢：手机上输入法会弹出来又收起
     if (!document.activeElement?.closest?.('.tsearch')) pre.focus({ preventScroll: true });
-    v.querySelector('.ls-close').addEventListener('click', () => closeLocalScroll(s));
+    // 回到实时画面：click 给电脑；手机上再加一个 touchend —— 两指同时碰到屏幕时浏览器会把按钮的 click 取消掉
+    // (以前就是「偶尔点了没反应」)，touchend 照样会来。preventDefault 掉免得再合成一次 click，两边都触发
+    // 按钮用 closeLocalScroll，不用 closeByWheel：点按钮是有意的，没有残留滚轮要挡，
+    // 设了静默期反而会让「点完马上往上滚」在 400ms 内没反应
+    const closeBtn = v.querySelector('.ls-close');
+    closeBtn.addEventListener('click', () => closeLocalScroll(s));
+    closeBtn.addEventListener('touchend', (e) => { e.preventDefault(); closeLocalScroll(s); }, { passive: false });
     // 电脑：在最底下还往下滚 = 回到实时画面
     pre.addEventListener('wheel', (e) => {
       if (e.deltaY > 0 && atBottom(pre)) { e.preventDefault(); closeByWheel(s); }
@@ -159,12 +165,14 @@
         fontToast(s, ok ? `已复制 ${text.length} 个字符` : '复制失败，请按 Ctrl+C 复制', 1200, v);
       });
     });
-    // 手机：已经在最底下时再往上推 = 回到实时画面
-    let startY = 0, startBottom = false;
-    pre.addEventListener('touchstart', (e) => { startY = e.touches[0].clientY; startBottom = atBottom(pre); }, { passive: true });
+    // 手机：已经在最底下时再往上推 = 回到实时画面。
+    // 判据用「松手时还在最底下」，不看按下那一刻 —— 以前按下时只要差几像素（惯性还在滚、前面的历史刚补上来）
+    // 就不认，推得再多也关不掉，看着就是「偶尔点了/推了没反应」
+    let startY = 0;
+    pre.addEventListener('touchstart', (e) => { startY = e.touches[0].clientY; }, { passive: true });
     pre.addEventListener('touchend', (e) => {
       const dy = (e.changedTouches[0]?.clientY ?? startY) - startY;
-      if (startBottom && dy < -40) closeLocalScroll(s);
+      if (dy < -40 && atBottom(pre)) closeByWheel(s);
     });
   }
 
