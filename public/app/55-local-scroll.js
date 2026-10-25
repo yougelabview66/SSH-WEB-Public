@@ -56,11 +56,11 @@
     const reason = m.ok ? 'mismatch' : m.reason;
     s.noTmuxUntil = Date.now() + ({ 'no-tmux': 300000, busy: 5000, 'in-mode': 3000 }[reason] || 30000);
     if (m.win) s.winHost = true;
-    // 提示一次原因 (之后 30 秒内滚轮直接放行，不提示；真机上没法看控制台，弹出来才找得到问题)。
+    // 提示原因 (每个静默期弹一次，定位问题用；之后这段时间内滚轮直接放行、不重复弹)。
     // Windows 主机没开常驻会话本来就没有历史，不提示；mismatch 在 tmux 会话里是交给 tmux 自己滚 (看得见)，也不提示
     const whyText = { timeout: '取历史超时（主机响应慢）', failed: '取历史没成功', mismatch: '抓到的历史和当前画面对不上' }[reason];
-    if (whyText && !s.winHost && !s.winToastDone && (reason !== 'mismatch' || s.params?.daemonId)) {
-      s.winToastDone = true;
+    if (whyText && !s.winHost && (reason !== 'mismatch' || s.params?.daemonId) && Date.now() - (s.winToastAt || 0) > 35000) {
+      s.winToastAt = Date.now();
       fontToast(s, whyText + '，这次滚轮交给终端自己', 4000);
     }
     const target = s.term.element.querySelector('.xterm-screen') || s.term.element;
