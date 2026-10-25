@@ -719,13 +719,13 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 /* 历史视图里的「已复制」提示：右下角，「回到实时画面」上面 */
 .lscroll > .font-toast { top: auto; left: auto; transform: none; right: 18px; bottom: 52px; font-size: 13px; padding: 6px 14px; border-radius: 16px; }
 /* 手机上「回到实时画面」放大：位置还是原来的右下角，但按钮和字都放大 (原来 12px 字、高约 32px，手指够不准)。
-   高 52px (超过 44px 的最小点击区)，字 16px，四周留够内边距，点起来宽松些。
+   高 44px (刚好是最小点击区的标准值，再大就碍事了)，字 14px，宽度随文字、最小 112px。
    历史视图里和 tmux 复制模式下的按钮用同一套 */
 @media (pointer: coarse) {
-  .ls-close { bottom: max(14px, env(safe-area-inset-bottom)); right: 14px; min-width: 140px; height: 52px !important;
-    font-size: 16px; padding: 0 20px; opacity: 1; border-radius: 12px; box-shadow: 0 2px 16px var(--shadow); }
-  /* 「已复制」提示挪到大按钮上面，别被盖住 */
-  .lscroll > .font-toast { right: 14px; bottom: calc(max(14px, env(safe-area-inset-bottom)) + 60px); }
+  .ls-close { bottom: max(12px, env(safe-area-inset-bottom)); right: 14px; min-width: 112px; height: 44px !important;
+    font-size: 14px; padding: 0 14px; opacity: 1; border-radius: 10px; box-shadow: 0 2px 12px var(--shadow); }
+  /* 「已复制」提示挪到按钮上面，别被盖住 */
+  .lscroll > .font-toast { right: 14px; bottom: calc(max(12px, env(safe-area-inset-bottom)) + 52px); }
 }
 .font-toast { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); z-index: 6; pointer-events: none;
   background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 10px;
