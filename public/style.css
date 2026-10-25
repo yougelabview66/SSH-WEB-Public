@@ -319,10 +319,13 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 .dp-row .as-title { white-space: normal; word-break: break-all; }
 .dp-note { margin: 0 0 6px; color: var(--accent); font-size: 13px; }
 .dp-used { margin-top: 3px; font-size: 12px; color: var(--accent); }
-/* 命过名的「主机名-名字」胶囊 (常驻会话选择框里跟在会话名称旁边)：淡色主题绿,同侧边栏「常驻」标记的做法。
+/* 命过名的「主机名-名字」胶囊 (常驻会话选择框里跟在工作时间后面)：淡色主题绿,同侧边栏「常驻」标记的做法。
+   .dp-when 让这行变成横向弹性布局,胶囊和文字垂直居中；窄屏时先截「多久前有输出」那截文字,胶囊整个留着。
    类名别用 .dp-tab —— 那是全部标签下拉 / 状态卡片里标签行的类名 */
-.dp-name { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 500;
-  vertical-align: 1px; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+.dp-when { display: flex; align-items: center; gap: 8px; }
+.dp-when-t { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.dp-name { flex-shrink: 0; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 500;
+  max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent); }
 .dp-killing { opacity: .6; pointer-events: none; }
