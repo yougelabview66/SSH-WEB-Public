@@ -183,6 +183,13 @@ const WHEEL_UP = '\x1b[<64;';
   await overTerm(); await p.mouse.wheel(0, -100); await wait(20); await p.mouse.wheel(0, 100); await p.mouse.wheel(0, 100); await wait(1000);
   replyDelay = 0;
   ok(!(await view()) && execs.length === ex1 + 3, '往上滚一下又马上往下滚回来 → 历史抓回来也不打开');
+  // 慢主机：常驻 sh 通道 4.5 秒才回 (以前常驻通道内部写死 3 秒超时，调用处传的 10 秒被忽略 → 报 timeout、静默 30 秒)
+  replyDelay = 4500;
+  await overTerm(); const exSlow = execs.length;
+  await p.mouse.wheel(0, -100); await wait(6000);
+  replyDelay = 0;
+  ok(!!(await view()) && execs.length === exSlow + 1, '常驻通道 4.5 秒才回 → 照样打开历史视图 (超时放宽到 10 秒生效了)');
+  await p.click('.term.active .ls-close'); await wait(500);
   // 打字 → 返回
   await overTerm(); await p.mouse.wheel(0, -100); await wait(1000);
   got = ''; await p.keyboard.type('ls'); await p.keyboard.press('Enter'); await wait(400);
