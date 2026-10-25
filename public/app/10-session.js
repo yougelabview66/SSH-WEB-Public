@@ -210,7 +210,10 @@
   function send(s, obj) {
     if (!s.ws || s.ws.readyState !== WebSocket.OPEN) return;
     if (obj.type === 'data' && !obj.auto && inputLocked(s)) return; // 别的设备在用：先点「在本机继续」(见 42-owner.js)
-    if (obj.type === 'data' && s.scrollView) closeLocalScroll(s); // 打字 / 按键 = 回到实时画面
+    // 打字 / 按键 = 回到实时画面。程序询问的自动应答 (auto，如焦点进出 \x1b[O / \x1b[I) 不算：
+    // 打开历史视图时焦点从终端挪到历史视图上，开了焦点上报 (?1004) 的程序会让 xterm 立刻发一个「焦点离开」，
+    // 以前这一下就把刚打开的历史视图关掉了 —— 不启用输入框 (焦点在终端) 时滚轮进不了历史画面就是这个原因
+    if (obj.type === 'data' && !obj.auto && s.scrollView) closeLocalScroll(s);
     // tmux 复制模式里 Ctrl+End 没有用 (不认这个键，按了没反应)：换成 q 退出复制模式，同「回到实时画面」
     if (obj.type === 'data' && obj.data === '\x1b[1;5F' && tmuxInCopyMode(s)) obj = { ...obj, data: 'q', tmux: true };
     // tmux：给 tmux 的按键 (退出复制模式的 q)，不是打进程序输入框的字 —— 不预测回显、不算进终端输入框的内容
