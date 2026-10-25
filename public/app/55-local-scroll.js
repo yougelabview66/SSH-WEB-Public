@@ -8,9 +8,11 @@
   const LS_CHUNK = 100; // 历史视图按块放进页面，每块这么多行
 
 
-  // 常驻会话 (Windows) (sshwebd，没有 tmux)：程序没开鼠标 (比如 Claude Code) 也走历史视图，同 tmux 里的用法
-  // (历史取自服务器上这个终端的记录)；全屏程序 (备用屏幕) 照旧交给程序
-  const daemonHistory = (s) => !!s.params?.daemonId && s.term.buffer.active.type !== 'alternate';
+  // 常驻会话 (sshwebd)：程序没开鼠标 (比如 Claude Code) 也走历史视图，同 tmux 里的用法
+  // (历史取自服务器上这个终端的记录；里面开着 tmux 时走 tmux capture-pane，取 tmux 的历史)。
+  // 备用屏幕也照试：里面开着 tmux 时备用屏幕是 tmux 的，抓 tmux 的历史没问题；真正的全屏程序由服务端再查
+  // (这个会话的 tmux pane 里是全屏程序 → busy / 没开 tmux → 终端记录自己在备用屏幕上取不了 → busy)，滚轮照旧交给程序
+  const daemonHistory = (s) => !!s.params?.daemonId;
 
   function localScrollWheel(s, e) {
     if (s.bypassWheel) return true;
@@ -59,11 +61,15 @@
     s.noTmuxUntil = Date.now() + ({ 'no-tmux': 300000, busy: 5000, 'in-mode': 3000 }[reason] || 30000);
     if (m.win) s.winHost = true;
     // 提示原因 (每个静默期弹一次，定位问题用；之后这段时间内滚轮直接放行、不重复弹)。
-    // Windows 主机没开常驻会话本来就没有历史，不提示；mismatch 在 tmux 会话里是交给 tmux 自己滚 (看得见)，也不提示
-    const whyText = { timeout: '取历史超时（主机响应慢）', failed: '取历史没成功', mismatch: '抓到的历史和当前画面对不上' }[reason];
-    if (whyText && !s.winHost && (reason !== 'mismatch' || s.params?.daemonId) && Date.now() - (s.winToastAt || 0) > 35000) {
+    // Windows 主机没开常驻会话本来就没有历史，不提示；mismatch 在 tmux 会话里是交给 tmux 自己滚 (看得见)，也不提示；
+    // busy (全屏程序 / 复制模式) 只在常驻会话里提示 —— 那里滚轮交给程序没有可见效果，不提示的话像「没反应」
+    const whyText = { timeout: '取历史超时（主机响应慢）', failed: '取历史没成功', mismatch: '抓到的历史和当前画面对不上',
+      busy: '正在全屏程序里，滚轮交给它自己', 'in-mode': 'tmux 在复制模式里，滚轮交给它自己' }[reason];
+    const daemon = !!s.params?.daemonId;
+    if (whyText && !s.winHost && (daemon || (reason !== 'mismatch' && reason !== 'busy' && reason !== 'in-mode'))
+      && Date.now() - (s.winToastAt || 0) > 35000) {
       s.winToastAt = Date.now();
-      fontToast(s, whyText + '，这次滚轮交给终端自己', 4000);
+      fontToast(s, whyText + (reason === 'busy' || reason === 'in-mode' ? '' : '，这次滚轮交给终端自己'), 4000);
     }
     const target = s.term.element.querySelector('.xterm-screen') || s.term.element;
     // 常驻会话、程序没开鼠标：没有程序接滚轮 (tmux 复制模式那套不适用)，重发只会把 xterm 自己的记录滚上去，
