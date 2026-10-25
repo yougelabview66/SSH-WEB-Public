@@ -722,10 +722,11 @@ body.no-select { user-select: none; -webkit-user-select: none; }
    高 44px (刚好是最小点击区的标准值，再大就碍事了)，字 14px，宽度随文字、最小 112px。
    历史视图里和 tmux 复制模式下的按钮用同一套 */
 @media (pointer: coarse) {
-  .ls-close { bottom: max(12px, env(safe-area-inset-bottom)); right: 14px; min-width: 112px; height: 44px !important;
+  /* 离右下角远一点 (往左 28px、往上 24px)：原来贴着边，拇指在屏幕右侧往回收的时候容易蹭到屏幕边缘 */
+  .ls-close { bottom: max(24px, calc(env(safe-area-inset-bottom) + 12px)); right: 28px; min-width: 112px; height: 44px !important;
     font-size: 14px; padding: 0 14px; opacity: 1; border-radius: 10px; box-shadow: 0 2px 12px var(--shadow); }
   /* 「已复制」提示挪到按钮上面，别被盖住 */
-  .lscroll > .font-toast { right: 14px; bottom: calc(max(12px, env(safe-area-inset-bottom)) + 52px); }
+  .lscroll > .font-toast { right: 28px; bottom: calc(max(24px, calc(env(safe-area-inset-bottom) + 12px)) + 52px); }
 }
 .font-toast { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); z-index: 6; pointer-events: none;
   background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 10px;
