@@ -367,11 +367,16 @@ const WHEEL_UP = '\x1b[<64;';
   await claim();
   ok(!!(await m.$('.term.active .lscroll')) && !(await m.$('.term.active .owner-notice')), '手机：接管后历史视图还开着');
   const hOf = (sel) => m.evaluate((sel) => document.querySelector(sel).getBoundingClientRect().height, sel);
+  // 按钮尺寸要在点掉之前量 (点了之后历史视图和按钮都没了)
   const closeH = await hOf('.term.active .ls-close');
+  const closeW = await m.evaluate(() => { const b = document.querySelector('.term.active .ls-close').getBoundingClientRect(); const v = document.querySelector('.term.active .lscroll').getBoundingClientRect(); return { bw: Math.round(b.width), vw: Math.round(v.width), br: Math.round(v.right - b.right) }; });
   await m.locator('.term.active .ls-close').tap(); await wait(400);
   ok(!(await m.$('.term.active .lscroll')) && await m.isVisible('#mobileBar'), '手机：点「回到实时画面」后输入栏回来');
   const keyH = await hOf('#mobileBar .mkeys button');
-  ok(keyH > 20 && Math.abs(closeH - keyH) < 0.5, `手机：「回到实时画面」和按键栏的按键一样高 (${closeH} / ${keyH}px)`);
+  // 以前是按按键栏按钮的高度设 (约 32px)，手指够不准；现在固定 56px 的整条通栏按钮
+  ok(closeH >= 44, `手机：「回到实时画面」够大 (${closeH}px，最小点击区 44px，按键栏按键 ${keyH}px)`);
+  // 位置还是右下角 (没占满宽度)，但按钮本身要够大
+  ok(closeW.bw >= 120 && closeW.bw < closeW.vw * 0.8 && closeW.br < 30, `手机：「回到实时画面」在右下角、够大 (${closeW.bw}×${closeH}px，离右边 ${closeW.br}px，终端宽 ${closeW.vw}px)`);
   ok(!(await mFocused()), '手机：点「回到实时画面」不聚焦输入框 (不弹输入法)');
   // tmux 自己的复制模式 (抓到的不是这个画面，滑动交给 tmux) 的「回到实时画面」也一样
   await m.locator('.tab', { hasText: 'OTHER' }).first().tap(); await wait(1500); await claim();
@@ -384,7 +389,7 @@ const WHEEL_UP = '\x1b[<64;';
   if (await m.isHidden('.term.active .tmux-exit')) await swipeDown(); // 第一下用来发现抓不到，之后的滑动才交给 tmux
   ok(await m.isVisible('.term.active .tmux-exit'), '手机：tmux 复制模式也显示「回到实时画面」');
   const exH = await hOf('.term.active .tmux-exit');
-  ok(Math.abs(exH - keyH) < 0.5, `手机：tmux 复制模式的「回到实时画面」也和按键一样高 (${exH} / ${keyH}px)`);
+  ok(exH >= 44, `手机：tmux 复制模式的「回到实时画面」也够大 (${exH}px，按键栏按键 ${keyH}px)`);
   got = ''; await m.locator('.term.active .tmux-exit').tap(); await wait(700);
   // (按钮消失由上面电脑的测试管：模拟的 tmux 把位置标记画在第 60 列，手机终端没这么宽，清不干净)
   ok(got === 'q' && !(await mFocused()), '手机：点它发 q 退出复制模式，不聚焦输入框 (不弹输入法): ' + JSON.stringify(got));
