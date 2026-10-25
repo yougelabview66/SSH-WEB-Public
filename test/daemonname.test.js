@@ -92,5 +92,24 @@ run(async () => {
   ok(byCwd.get('S-just')?.title === '新对话' && byCwd.get('S-just')?.last === '新对话的问题', `一直有输出的会话拿最新的: ${JSON.stringify(byCwd.get('S-just'))}`);
   ok(byCwd.get('S-idle')?.title === 'linux-persistent-session-tmux' && byCwd.get('S-idle')?.last === '旧对话最后发的一条', `闲置的会话拿它最后用的那个 (同目录最新的不算): ${JSON.stringify(byCwd.get('S-idle'))}`);
   ok(!byCwd.has('S-none') && byCwd.size === 2 && !byCwd.has('bad id; rm'), '没有对话的目录、不正常的会话号：都不占条目');
+  // 同一目录两个会话、时间都接近：一个文件只能给一个会话，不能两个都显示成同一个名字
+  const two = await claudePeekByCwd(fakeSess, [
+    { id: 'S-a', cwd: '/srv/a', to: now },
+    { id: 'S-b', cwd: '/srv/a', to: now },
+  ]);
+  ok(two.size === 2 && two.get('S-a').file !== two.get('S-b').file, `同一目录的两个会话分到不同的对话文件: ${JSON.stringify([...two].map(([k, v]) => [k, v.title]))}`);
+  // 按对话 id 已经认出来的文件，不再按目录分给别人
+  // 扫描输出里的路径是相对 ~/.claude/projects 的 (见 claudePeekByCwd 的 ls -t)
+  // 同目录还有一个没被认出的文件，所以这个会话仍能拿到结果，但不能是那个已被认出的文件
+  const skip = await claudePeekByCwd(fakeSess, [{ id: 'S-just', cwd: '/srv/a', to: now }], { knownFiles: new Set(['-srv-a/aaaaaaaa-0000-0000-0000-000000000001.jsonl']) });
+  ok(skip.get('S-just')?.file !== '-srv-a/aaaaaaaa-0000-0000-0000-000000000001.jsonl', `已按对话 id 认出的文件不再分给别人 (拿到的是 ${JSON.stringify(skip.get('S-just')?.title)}): ${JSON.stringify(skip.get('S-just')?.file)}`);
+  // 文件第一行很长 (SessionStart 的钩子附件) 也要读到 cwd —— 以前整行截 2048 字节，cwd 在第 3500 字节就读不到
+  const longLine = J({ type: 'attachment', attachment: { type: 'hook_success', pad: 'x'.repeat(3400) }, cwd: '/srv/long', sessionId: 'cccccccc-0000-0000-0000-000000000004' });
+  put('.claude/projects/-srv-long/cccccccc-0000-0000-0000-000000000004.jsonl', [
+    longLine,
+    J({ type: 'ai-title', aiTitle: '长行会话' }),
+  ].join('\n') + '\n', 1);
+  const longOne = await claudePeekByCwd(fakeSess, [{ id: 'S-long', cwd: '/srv/long', to: now }]);
+  ok(longOne.get('S-long')?.title === '长行会话', `cwd 在很长的第一行里也读得到 (以前截断读不到): ${JSON.stringify(longOne.get('S-long')?.title)}`);
   try { fs.rmSync(home, { recursive: true, force: true }); } catch {}
 });
