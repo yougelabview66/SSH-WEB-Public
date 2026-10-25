@@ -26,7 +26,7 @@
     s.scrollLoading = true;
     s.heldWheel = 1;
     send(s, { type: 'tmux-history', lines: LS_LINES });
-    s.lsTimer = setTimeout(() => onTmuxHistory(s, { ok: false, reason: 'timeout' }), 6000); // Windows 的 SSH 开通道慢，多等一会儿
+    s.lsTimer = setTimeout(() => onTmuxHistory(s, { ok: false, reason: 'timeout' }), 12000); // 慢的主机 (NAS 第一次开通道、扫进程要好几秒) 多等一会儿，服务端那边同样放宽到 10 秒
     return false;
   }
 
@@ -56,10 +56,12 @@
     const reason = m.ok ? 'mismatch' : m.reason;
     s.noTmuxUntil = Date.now() + ({ 'no-tmux': 300000, busy: 5000, 'in-mode': 3000 }[reason] || 30000);
     if (m.win) s.winHost = true;
-    // 超时：提示一次原因 (真机上没法看，方便找问题)；Windows 主机没开常驻会话本来就没有历史，不提示
-    if (reason === 'timeout' && !s.winHost && !s.winToastDone) {
+    // 提示一次原因 (之后 30 秒内滚轮直接放行，不提示；真机上没法看控制台，弹出来才找得到问题)。
+    // Windows 主机没开常驻会话本来就没有历史，不提示；mismatch 在 tmux 会话里是交给 tmux 自己滚 (看得见)，也不提示
+    const whyText = { timeout: '取历史超时（主机响应慢）', failed: '取历史没成功', mismatch: '抓到的历史和当前画面对不上' }[reason];
+    if (whyText && !s.winHost && !s.winToastDone && (reason !== 'mismatch' || s.params?.daemonId)) {
       s.winToastDone = true;
-      fontToast(s, 'tmux 的历史取不到（超时），这次滚轮交给它自己处理', 4000);
+      fontToast(s, whyText + '，这次滚轮交给终端自己', 4000);
     }
     const target = s.term.element.querySelector('.xterm-screen') || s.term.element;
     const r = target.getBoundingClientRect();
