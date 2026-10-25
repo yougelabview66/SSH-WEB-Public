@@ -47,11 +47,12 @@
       return true;
     });
     enableTouchScroll(s);
-    // tmux 里往上滚：拦下来改成本地快速滚动 (见 openLocalScroll)；手机滑动也会变成滚轮事件走到这里
-    s.term.attachCustomWheelEventHandler((e) => localScrollWheel(s, e));
-    // 程序没开鼠标时 xterm 自己滚动，不经过上面的处理：常驻会话 (Windows)要在它之前拦下来，走历史视图 (见 daemonHistory)
+    // 滚轮进历史视图 (见 openLocalScroll)：统一在 box 的捕获阶段最先走一遍 localScrollWheel，不再依赖
+    // xterm 的内部分发 —— 程序开了鼠标 (tmux) 时它把滚轮报给程序、没开时自己滚滚动区，两条路里
+    // attachCustomWheelEventHandler 不一定被调到 (有反馈说输入框关着、焦点在终端上时触发不了)。
+    // 返回 false (要进 / 已在历史视图) 就拦下不再给 xterm；返回 true 照旧交给它处理 (报给程序 / 自己滚)
     s.box.addEventListener('wheel', (e) => {
-      if (s.bypassWheel || s.term.modes.mouseTrackingMode !== 'none' || !daemonHistory(s) || e.target.closest('.lscroll')) return;
+      if (s.bypassWheel || e.target.closest('.lscroll')) return;
       if (localScrollWheel(s, e) === false) { e.preventDefault(); e.stopPropagation(); }
     }, { capture: true, passive: false });
     if (isTouch) {
