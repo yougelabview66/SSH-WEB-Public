@@ -230,7 +230,15 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 #btnSftp.on { background: var(--bg); color: var(--accent); }
 
 /* 会话布局：终端 + 右侧 SFTP 面板 */
-.term-box { flex: 1; min-width: 0; position: relative; padding: 4px 0 0 6px; }
+.term-box { flex: 1; min-width: 0; position: relative; padding: 4px 0 0 6px; overflow: hidden; }
+/* overflow: hidden 的原因：终端是固定尺寸的视口，里面的东西超出就该裁掉。
+   xterm 的隐藏输入框 (textarea.xterm-helper-textarea) 是绝对定位、跟着光标走的，
+   xterm 会把它设成 left/top/width/height = 列号/行号 × 字符尺寸 —— 光标在最后一行或最后一列时
+   它会顶到 .term-box 边界外。而 .term-box 和 .xterm 原来都是 overflow: visible，
+   一路溢出到 <html>，整页就出现上下 / 左右滚动条、画面还跟着跳。
+   Windows 主机 (conpty，见 session/index.js 的 detectWinPty) 上光标位置更容易和渲染不同步，打几个字就触发。
+   .term-box.mirror 本来就是 overflow: hidden (见下面)，这里统一 */
+
 /* 下方输入框开着、光标却在终端里 (连按两下 Alt 进来的、点终端留在终端的)：描个边 ——
    Claude Code 等程序把终端光标藏起来了，不然看不出光标在哪，像是切换失败、点了没反应 */
 #app:has(#deskBar:not(.hidden)) .term-box:has(.xterm-helper-textarea:focus)::after { content: ''; position: absolute; inset: 0; border: 1px solid var(--accent); opacity: .7; pointer-events: none; z-index: 5; }
