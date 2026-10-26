@@ -3,10 +3,21 @@ const { BASE, ok, wait, shot, launch, post, addHost, devices, hostKey, waitFor }
 const { Server, utils } = require('ssh2');
 
 // 模拟 tmux 的历史：3000 行，每 10 行一行红色
+// 从 v1.83.40 起每行都夹好几段颜色 (像 Claude Code / 常驻会话的 localHistory)：ANSI 在终端里不占格，
+// 切行时必须跳过。以前只有每 10 行一处红色，转义太少、偏差小到测不出来 —— 而转义被算成格数后，
+// 显示行数比原文行数多出一截，复制面板按显示行号去原文里找行就会越界落到最后一行。
+// 可见文字和以前一字不差 (只是拆成几段上色)，下面那些「和整段历史一字不差」的断言才照旧成立
+const COLOR = (t, c) => `\x1b[${c}m${t}\x1b[0m`;
 const HIST = [];
-for (let i = 1; i <= 3000; i++) HIST.push(i % 10 === 0 ? `\x1b[31mERROR line ${i}\x1b[39m 出错了` : i % 7 === 0 ? `line ${i} 长行 ` + "很长的一行 Claude 输出 ".repeat(i % 3 + 2) : `line ${i} 普通输出 abc`); // 有中文、有手机上会折行的长行
-HIST[2899] += '\x1b[34m'; // 第 2900 行末尾开始蓝色、到第 2901 行才结束：正好跨过历史视图分块的边界 (块从最后往前每 100 行一块)
-HIST[2900] += '\x1b[39m';
+for (let i = 1; i <= 3000; i++) {
+  HIST.push(i % 10 === 0 ? `${COLOR('ERROR', 31)} line ${COLOR(String(i), 33)} 出错了`
+    : i % 7 === 0 ? `${COLOR('line', 36)} ${COLOR(String(i), 33)} ${COLOR('长行', 32)} ` + COLOR("很长的一行 Claude 输出 ".repeat(i % 3 + 2), 90)
+    : `${COLOR('line', 36)} ${COLOR(String(i), 33)} ${COLOR('普通输出', 32)} ${COLOR('abc', 90)}`); // 有中文、有手机上会折行的长行
+}
+// 第 2900 行末尾开始蓝色、到第 2901 行才结束：正好跨过历史视图分块的边界 (块从最后往前每 100 行一块)。
+// 这两行不加自己的颜色，蓝色才能一路带到下一块
+HIST[2899] = 'line 2900 普通输出 abc\x1b[34m';
+HIST[2900] = 'line 2901 普通输出 abc\x1b[39m';
 const hist = HIST.join('\n') + '\n';
 const PLAIN_HIST = HIST.join('\n').replace(/\x1b\[[0-9;]*m/g, '');
 const OTHER = Array.from({ length: 200 }, (_, i) => `完全不相干的另一个 pane ${i}`).join('\n') + '\n';

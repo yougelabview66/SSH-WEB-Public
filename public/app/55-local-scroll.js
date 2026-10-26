@@ -108,9 +108,28 @@
       chunks.push({ t, g: { ...g } }); // 这块开头的颜色 (接着上一块)
       sgrScan(t, g, pal);
     }
-    // 每块按 cols 格硬切成若干显示行，再逐行转 HTML：这样长行（表格那种拼回来的）正好在 cols 格处断开，
-    // 和实时画面一致。ANSI 颜色状态跨段接着算 (ansiToHtml 会把状态写进传进去的 g)
-    const cols = s.term.cols || 80;
+    // 每块硬切成若干显示行，再逐行转 HTML：这样长行（表格那种拼回来的）正好在边界处断开，
+    // 浏览器不会再自己折一次。ANSI 颜色状态跨段接着算 (ansiToHtml 会把状态写进传进去的 g)。
+    //
+    // 切多少格要看「历史视图实际能放下几格」，不是 s.term.cols —— 历史视图的可用宽度和终端不一样
+    // (手机上终端 58 格 × 8px = 464px，而 pre 只有 412px)，按 58 格切完还是超宽，浏览器又折一次，
+    // DOM 行数变成两倍，行号全对不上 (复制面板长按定位跑到末尾就是这个原因)。
+    // 切多少格要看「历史视图实际能放下几格」。不能拿 cw (终端一格宽) 去除 pre 宽度 ——
+    // gridFit 的 letter-spacing 只是把 ASCII 近似压到 cw，历史视图里字符的真实宽度并不等于 cw，
+    // 按它算出来的格数还是会超宽，浏览器再折一次，DOM 行数翻倍、行号全对不上。
+    // 直接在 pre 里量一个 ASCII 字符的真实宽度（此时 letter-spacing 已经由 gridFit 设好）
+    const cols = (() => {
+      const probe = document.createElement('span');
+      probe.style.cssText = 'position:absolute;visibility:hidden;white-space:pre';
+      probe.textContent = '0'.repeat(20);
+      pre.appendChild(probe);
+      const w20 = probe.getBoundingClientRect().width;
+      probe.remove();
+      const cs = getComputedStyle(pre);
+      const availW = pre.clientWidth - parseFloat(cs.paddingLeft || 0) - parseFloat(cs.paddingRight || 0);
+      if (!(w20 > 0) || !(availW > 0)) return s.term.cols || 80;
+      return Math.max(1, Math.floor(availW / (w20 / 20)) - 1); // -1 留一点余量，防取整误差把行挤到折行
+    })();
     const block = (c) => {
       const d = document.createElement('div');
       const g = { ...c.g };
@@ -154,6 +173,7 @@
     // 复制面板要的是「原始历史文本」：显示时为了让长行正好在 cols 格断开 (splitByCells) 会插入换行，
     // 直接读 textContent 会多出一堆本不存在的换行。这里把去掉 ANSI 的原文存一份，复制时优先用它
     v.lsText = text.replace(ANSI_RE, '');
+    v.lsCols = cols; // 显示时按几格切的行 (复制面板换算行号要用同一个值，见 60-copy-push.js 的 domLineToTextLine)
     syncLsBars();
     pre.scrollTop = pre.scrollHeight - pre.clientHeight - up * 3 * lh; // 和滚轮一样往回看几行
     // 输入框藏起来了，焦点放这里：PageUp / PageDown / Home / 方向键直接滚历史。
@@ -293,15 +313,33 @@
   // 必须正好在 cols 格处切开才和实时画面一致。以前交给浏览器 pre-wrap 自己折行 —— 它按容器像素宽度折，
   // 和「cols × 每格宽」差一点点，表格的竖线就对不上（右边一列跑到下一行行首）。
   // 返回 [{ text, cell }]，cell = 这段开头在第几格 (用来给续行补缩进)
+  //
+  // ANSI 颜色序列 (\x1b[36m 之类) 在终端里不占格，这里也不能算格数：以前逐字符算，一段 \x1b[36m 算 5 格，
+  // 而 Claude Code / 常驻会话的历史几乎每个词都换色 (见 remote.js 的 lineToAnsi)，一行能多算好几十格 ——
+  // 长行被提前切开 (可见 75 格的行切成了 40 + 35)，显示行数比原文行数多出一截。
+  // 复制面板按「显示行号」去原文里找行 (见 60-copy-push.js 的 domLineToTextLine)，两边切法必须一致，
+  // 不然行号系统性偏大，短会话直接越界落到最后一行 (看着像「直接出现最新记录」)，长会话指到别的行。
+  // 顺带：以前正好切在转义序列中间会把 \x1b[36m 劈成两半，后半截 [36m 当普通文字画出来 (画面里多出 0m / 36m)
   function splitByCells(text, cols) {
     const out = [];
     let cur = '', cells = 0, start = 0;
-    for (const ch of text) {
-      const w = cellWidth(ch);
-      if (w && cells + w > cols) { out.push({ text: cur, cell: start }); cur = ''; cells = 0; start = 0; }
-      cur += ch;
-      cells += w;
+    // 普通文字逐字算格数；ANSI 序列整段原样带上、不算格数，也不会被切开
+    const put = (s) => {
+      for (const ch of s) {
+        const w = cellWidth(ch);
+        if (w && cells + w > cols) { out.push({ text: cur, cell: start }); cur = ''; cells = 0; start = 0; }
+        cur += ch;
+        cells += w;
+      }
+    };
+    let at = 0;
+    ANSI_RE.lastIndex = 0; // ANSI_RE 是 /g 的，matchAll 会从 lastIndex 开始
+    for (const m of text.matchAll(ANSI_RE)) {
+      put(text.slice(at, m.index));
+      cur += m[0];
+      at = m.index + m[0].length;
     }
+    put(text.slice(at));
     out.push({ text: cur, cell: start });
     return out;
   }
