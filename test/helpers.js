@@ -54,4 +54,17 @@ function killUnder(dir) {
   });
 }
 
-module.exports = { BASE, ok, wait, shot, launch, post, addHost, run, hostKey, waitFor, chromium, devices, killUnder };
+// 假的 Agent 程序：dir/claude，指向 node 的符号链接 (服务端按命令行第一个词是不是 claude 认 Agent)。
+// 用 FAKE_AGENT_ARGS (或在 shell 里用 FAKE_AGENT_SH) 跑着、不退出，直到被杀掉。
+// 不能拷一份 /bin/sleep 改名：Ubuntu 26 起 sleep 是 Rust 版 coreutils 的多合一程序，按程序名决定当哪个命令，
+// 改名成 claude 就不认识、马上退出 (GitHub 的 ubuntu-latest 换成 26.04 后 daemonlinux / rightbar 因此失败)
+function fakeAgent(dir) {
+  const f = path.join(dir, 'claude');
+  try { fs.unlinkSync(f); } catch {}
+  fs.symlinkSync(process.execPath, f);
+  return f;
+}
+const FAKE_AGENT_ARGS = ['-e', 'setTimeout(() => {}, 300000)'];
+const FAKE_AGENT_SH = `-e "setTimeout(() => {}, 300000)"`;
+
+module.exports = { BASE, ok, wait, shot, launch, post, addHost, run, hostKey, waitFor, chromium, devices, killUnder, fakeAgent, FAKE_AGENT_ARGS, FAKE_AGENT_SH };
