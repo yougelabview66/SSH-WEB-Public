@@ -665,7 +665,10 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 /* 复制终端内容 */
 .copyp { display: flex; flex-direction: column; height: min(640px, 100%); position: relative; }
 .copyp .note { color: var(--muted); font-size: 12px; }
-#copyText { flex: 1; min-height: 160px; margin: 0 0 12px; resize: none; white-space: pre; overflow: auto;
+/* 只纵向滚：white-space: pre 时长行 (终端里最长 700+ 格) 横向能溢出几千像素，手机上按住左右一拖
+   就跑到很远的地方、看着像文字不见了。overflow-x: hidden 直接禁止横向滚，长行右边裁掉 (复制不受影响，
+   复制拿的是完整文本) */
+#copyText { flex: 1; min-height: 160px; margin: 0 0 12px; resize: none; white-space: pre; overflow-y: auto; overflow-x: hidden;
   font: 12px/1.45 ui-monospace, Menlo, Consolas, monospace; background: var(--term-bg); color: var(--term-fg);
   -webkit-user-select: text; user-select: text; }
 .copyp .actions .spacer { flex: 1; }
@@ -926,8 +929,10 @@ svg.ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-wid
    而且失焦也不会自动缩回去，只能手动捏回来 —— 看起来就是「点一下输入框页面就大了、回不来」。
    以前只有手机输入栏 (#mInput) 和终端搜索框做了，其余 (主机表单、历史 / 收藏搜索、文件路径、项目搜索、
    端口预览、自定义按键…) 还是 12~15px，点了就放大。
-   放在样式表最后 + 列出那几个 ID 选择器：它们在前面用 #id 写过 font-size，优先级比 input 高，不列出来盖不住 */
+   放在样式表最后 + 列出那几个 ID 选择器：它们在前面用 #id 写过 font-size，优先级比 input 高，不列出来盖不住。
+   例外：#copyText 是复制面板里显示终端历史的只读 textarea (readonly)，用户不会在里面打字、不会触发
+   iOS 放大，放大字号反而把等宽排版挤乱、行高也跟着 1.45 的倍率变大 —— 它保持原来的 12px */
 @media (max-width: 760px) {
-  #dInput, #keyFile, #copyText,
-  input:not([type=checkbox]):not([type=radio]), textarea, select { font-size: 16px; }
+  #dInput, #keyFile,
+  input:not([type=checkbox]):not([type=radio]), textarea:not(#copyText), select { font-size: 16px; }
 }

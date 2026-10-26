@@ -59,6 +59,11 @@
     else { ta._place = null; ta.scrollTop = ta.scrollHeight; } // 定位到最新内容
   }
 
+  // 只允许纵向滚：终端历史里的长行 (最长 700+ 格) 横向能溢出几千像素，手机上按住左右一拖就跑到很远，
+  // 看着像文字不见了。overflow-x: hidden 只是不显示滚动条，程序 / 手势照样能改 scrollLeft，所以这里锁回 0。
+  // 只影响显示，复制拿的仍是完整文本 (见 copyAll / copySel)
+  $('#copyText').addEventListener('scroll', (e) => { const ta = e.target; if (ta.scrollLeft) ta.scrollLeft = 0; });
+
   // 复制面板滚到第 k 行，有 anchorY (手指的位置) 就让这一行停在手指那个高度，否则停在最上面。
   // 中文 / emoji 用的后备字体让这些行比别的行高，不能按「平均行高 × 行号」算，
   // 量前 k 行实际有多高。字体刚加载完行高还会变，所以过一会儿再对一次 (用户自己滑过就不动了)
