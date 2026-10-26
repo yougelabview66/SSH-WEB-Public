@@ -230,8 +230,13 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 #btnSftp.on { background: var(--bg); color: var(--accent); }
 
 /* 会话布局：终端 + 右侧 SFTP 面板 */
-.term-box { flex: 1; min-width: 0; position: relative; padding: 4px 0 0 6px; overflow: hidden; }
-/* overflow: hidden 的原因：终端是固定尺寸的视口，里面的东西超出就该裁掉。
+/* overflow 用 clip 而不是 hidden：hidden 会把这个盒子变成「可编程滚动容器」，
+   xterm 把隐藏输入框定位到边界外之后，浏览器为了露出焦点元素会调 scrollIntoView，
+   把 .term-box 自己滚一下（scrollTop 变成几十像素）—— 画面就偏移，键完又恢复。
+   clip 只裁剪、不产生滚动容器，scrollIntoView 拿它没办法。
+   先写 hidden 给不认 clip 的老浏览器兜底，认识的用下一行覆盖 */
+.term-box { flex: 1; min-width: 0; position: relative; padding: 4px 0 0 6px; overflow: hidden; overflow: clip; }
+/* 为什么要裁：终端是固定尺寸的视口，里面的东西超出就该裁掉。
    xterm 的隐藏输入框 (textarea.xterm-helper-textarea) 是绝对定位、跟着光标走的，
    xterm 会把它设成 left/top/width/height = 列号/行号 × 字符尺寸 —— 光标在最后一行或最后一列时
    它会顶到 .term-box 边界外。而 .term-box 和 .xterm 原来都是 overflow: visible，
@@ -645,7 +650,7 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 .owner-title { font-size: 15px; font-weight: 600; }
 .owner-notice.nudge { animation: owner-nudge .4s; } /* 锁住时打字 / 发送：晃一下 */
 @keyframes owner-nudge { 20%, 60% { transform: translate(calc(-50% - 6px), -50%); } 40%, 80% { transform: translate(calc(-50% + 6px), -50%); } }
-.term-box.mirror { overflow: hidden; }
+.term-box.mirror { overflow: hidden; overflow: clip; } /* 同 .term-box：clip 才不会变成可滚容器 (见上) */
 .term-box.mirror .xterm { transform-origin: top left; }
 .restoring { position: absolute; inset: 0; z-index: 4; display: flex; flex-direction: column; align-items: center;
   justify-content: center; background: var(--term-bg); color: var(--muted); font-size: 14px; }
