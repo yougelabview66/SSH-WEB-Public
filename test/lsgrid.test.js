@@ -1,5 +1,5 @@
 'use strict';
-const { BASE, ok, wait, shot, launch, post, devices, hostKey } = require('./helpers');
+const { BASE, ok, wait, shot, launch, post, devices, hostKey, chromium } = require('./helpers');
 const { Server } = require('ssh2');
 
 // tmux 历史视图里的表格 (Claude Code 画的框线表格，夹着中文和 emoji)：每一行的右边框要对齐，
@@ -19,10 +19,12 @@ const TABLE = [
 ];
 
 let cols = 80;
+// 比任何终端都宽的一行：历史视图里会被切成几行显示，复制出来必须还是一整行
+const LONG = `LONG-${'abcdefghij'.repeat(30)}-END`;
 const history = () => {
   const lines = [];
   for (let i = 1; i <= 200; i++) lines.push(`line ${i} 普通输出 abc`);
-  lines.push(...TABLE, '─'.repeat(cols), '> 输入框', '─'.repeat(cols));
+  lines.push(...TABLE, '─'.repeat(cols), '> 输入框', '─'.repeat(cols), LONG);
   for (let i = 201; i <= 230; i++) lines.push(`line ${i} 普通输出 abc`);
   return lines;
 };
@@ -74,7 +76,8 @@ const measure = () => {
     start += line.length + 1;
   }
   const sr = screen.getBoundingClientRect();
-  return { out, screenLeft: sr.left, screenWidth: sr.width, preLeft: pre.getBoundingClientRect().left + parseFloat(getComputedStyle(pre).paddingLeft) };
+  const pr = pre.getBoundingClientRect();
+  return { bar: pre.offsetWidth - pre.clientWidth, visRight: pr.left + pre.clientLeft + pre.clientWidth, out, screenLeft: sr.left, screenWidth: sr.width, preLeft: pre.getBoundingClientRect().left + parseFloat(getComputedStyle(pre).paddingLeft) };
 };
 
 async function check(p, label) {
@@ -84,6 +87,9 @@ async function check(p, label) {
   const spread = Math.max(...rights) - Math.min(...rights);
   ok(tableRows.length === TABLE.length && spread < 1, `${label}：表格每一行的右边框对齐 (相差 ${spread.toFixed(1)}px，各行 ${rights.map((x) => x.toFixed(1)).join(' ')})`);
   const full = r.out.filter((x) => x.line.startsWith('─'));
+  if (label.includes('滚动条')) ok(r.bar > 0, `${label}：历史视图有滚动条 (${r.bar}px)`);
+  const far = Math.max(...r.out.map((x) => x.right));
+  ok(far <= r.visRight + 0.5, `${label}：最右边的字没被裁掉 / 没被滚动条盖住 (最右 ${far.toFixed(1)}px，可见到 ${r.visRight.toFixed(1)}px)`);
   ok(full.length >= 2 && full.every((x) => x.rows === 1), `${label}：占满整行的分隔线不折行 (${full.map((x) => x.len + ' 字 ' + x.rows + ' 行').join('，')})`);
   return r;
 }
@@ -91,13 +97,15 @@ async function check(p, label) {
 (async () => {
   await post('/api/hosts', { name: 'GRID', host: '127.0.0.1', port: 2250, username: 'u', password: 'x' });
   const browser = await launch();
+  // 真实电脑上滚动条占 15px 左右：无头浏览器默认 --hide-scrollbars 测不出「滚动条吃掉宽度、满宽的分隔线被折行 / 右边被裁」
+  const withBars = await chromium.launch({ executablePath: process.env.CHROME_PATH || undefined, args: ['--no-sandbox'], ignoreDefaultArgs: ['--hide-scrollbars'] });
   const errors = [];
 
-  for (const [label, opts] of [['电脑', { viewport: { width: 1280, height: 800 } }], ['平板横屏', { ...devices['iPad Pro 11 landscape'] }]]) {
-    const ctx = await browser.newContext(opts);
+  for (const [label, opts, b] of [['电脑', { viewport: { width: 1280, height: 800 } }], ['电脑 (显示滚动条)', { viewport: { width: 1280, height: 800 } }, withBars], ['平板横屏', { ...devices['iPad Pro 11 landscape'] }]]) {
+    const ctx = await (b || browser).newContext(opts);
     const p = await ctx.newPage(); p.on('pageerror', (e) => errors.push(e.message));
     await p.goto(BASE + '/'); await p.waitForSelector('#app:not(.hidden)');
-    if (label === '电脑') {
+    if (label.startsWith('电脑')) {
       await p.locator('.host', { hasText: ':2250' }).first().click(); await wait(2000);
       const b = await p.locator('.term.active .term-box').boundingBox(); await p.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
       await p.mouse.wheel(0, -100); await wait(1500);
@@ -115,9 +123,24 @@ async function check(p, label) {
     ok(!!(await p.$('.term.active .lscroll')), `${label}：打开了历史视图 (终端 ${cols} 列)`);
     await p.evaluate(() => { const pre = document.querySelector('.term.active .ls-body'); pre.scrollTop = pre.scrollHeight; });
     await check(p, label);
+    if (label.startsWith('电脑')) { // 选中切成几行显示的长行，松开鼠标自动复制：剪贴板里是原来的一整行
+      await ctx.grantPermissions(['clipboard-read', 'clipboard-write']);
+      const cp = await p.evaluate(async () => {
+        const pre = document.querySelector('.term.active .ls-body'), w = document.createTreeWalker(pre, NodeFilter.SHOW_TEXT);
+        let a, b, n;
+        while ((n = w.nextNode())) { const i = n.data.indexOf('LONG-'); if (i >= 0 && !a) a = [n, i]; const j = n.data.indexOf('-END'); if (j >= 0) b = [n, j + 4]; }
+        const r = document.createRange(); r.setStart(...a); r.setEnd(...b);
+        const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+        const shown = sel.toString();
+        pre.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0 }));
+        await new Promise((ok) => setTimeout(ok, 600));
+        return { rows: shown.split('\n').length, clip: await navigator.clipboard.readText() };
+      });
+      ok(cp.rows > 1 && cp.clip === LONG, `${label}：选中切成 ${cp.rows} 行显示的长行，复制出来还是一整行 (${cp.clip.length} 字，${cp.clip.split('\n').length} 行)`);
+    }
     await p.screenshot({ path: shot(`lsgrid-${label}.png`) });
     await ctx.close();
   }
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
-  await browser.close(); process.exit();
+  await browser.close(); await withBars.close(); process.exit();
 })().catch((e) => { console.error(e); process.exit(1); });

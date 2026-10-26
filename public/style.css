@@ -732,6 +732,7 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 .lscroll { position: absolute; inset: 0; z-index: 20; display: flex; }
 #app.ls-open #deskBar, #app.ls-open #mobileBar { display: none; } /* 历史视图打开时输入栏让出地方 */
 .ls-body { flex: 1; margin: 0; padding: 4px 0 0 6px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;
+  scrollbar-gutter: stable; /* 内容放进去之前就留出滚动条的位置：打开时按这个宽度算每行放几格 (见 55-local-scroll.js) */
   overscroll-behavior: contain; -webkit-overflow-scrolling: touch; user-select: text; -webkit-user-select: text; outline: none; }
 .ls-close { position: absolute; bottom: 12px; right: 18px; /* 右上角是主机状态悬浮窗的默认位置 */ z-index: 1; font-size: 12px; padding: 4px 10px; opacity: .92;
   box-shadow: 0 2px 10px var(--shadow); box-sizing: border-box; /* 手机上高度按按键栏的按键设 (见 fitExitBtn) */ }
