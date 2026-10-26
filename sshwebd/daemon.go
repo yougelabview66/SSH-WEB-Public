@@ -60,6 +60,7 @@ type session struct {
 
 type client struct {
 	tag     string // 客户端的标记 (见 Request.Tag)
+	sizes   bool   // 要终端大小的变化 (见 Request.Sizes)
 	conn    net.Conn
 	out     chan []byte
 	pending atomic.Int64 // 排着队还没发出去的字节
@@ -292,6 +293,7 @@ func (d *daemon) getOrCreate(req Request) (*session, bool, error) {
 	}
 	s := &session{d: d, id: id, shell: shell, cwd: cwd, created: now, p: p, ring: newRing(d.bufSize),
 		clients: map[*client]struct{}{}, cols: cols, rows: rows}
+	s.ring.mark(cols, rows) // 一开始的大小 (补发从头开始时按它重放)
 	d.sessions[id] = s
 	log.Printf("新建会话 %s：%s (pid %d，%dx%d)", id, shell, p.Pid(), cols, rows)
 	go s.run()
@@ -305,7 +307,7 @@ func (d *daemon) attach(c net.Conn, req Request) {
 		c.Close()
 		return
 	}
-	cl := &client{tag: req.Tag, conn: c, out: make(chan []byte, clientQueue)}
+	cl := &client{tag: req.Tag, sizes: req.Sizes, conn: c, out: make(chan []byte, clientQueue)}
 	go cl.writeLoop()
 	s.mu.Lock()
 	if s.exited {
@@ -327,16 +329,33 @@ func (d *daemon) attach(c net.Conn, req Request) {
 	m := d.hello("attached")
 	m.ID, m.Created, m.At, m.Start, m.End = s.id, created, s.created.UnixMilli(), start, s.ring.total
 	cl.out <- jsonFrame(fMsg, m)
-	for len(data) > 0 {
+	// 要大小的客户端：在每次大小变化的位置插一个 Z，补完发 replayed (它据此把自己的终端改回自己的大小)
+	var marks []sizeMark
+	if cl.sizes {
+		marks = s.ring.marksFrom(start)
+	}
+	pos := start
+	for len(data) > 0 || len(marks) > 0 {
+		if len(marks) > 0 && marks[0].at <= pos {
+			cl.out <- sizeFrame(marks[0].cols, marks[0].rows)
+			marks = marks[1:]
+			continue
+		}
 		n := min(len(data), replayChunk)
+		if len(marks) > 0 {
+			n = min(n, int(marks[0].at-pos))
+		}
 		cl.out <- frame(fOutput, data[:n])
-		data = data[n:]
+		data, pos = data[n:], pos+int64(n)
+	}
+	if cl.sizes {
+		cl.out <- jsonFrame(fMsg, Msg{Type: "replayed", ID: s.id})
 	}
 	s.clients[cl] = struct{}{}
 	resize := req.Cols > 0 && req.Rows > 0 && (req.Cols != s.cols || req.Rows != s.rows)
 	s.mu.Unlock()
 	if resize {
-		s.resize(req.Cols, req.Rows)
+		s.resize(req.Cols, req.Rows, cl)
 	}
 	for {
 		t, p, err := readFrame(c)
@@ -348,7 +367,7 @@ func (d *daemon) attach(c net.Conn, req Request) {
 			s.write(p)
 		case fResize:
 			if cols, rows, ok := parseResize(p); ok && cols > 0 && rows > 0 {
-				s.resize(cols, rows)
+				s.resize(cols, rows, cl)
 			}
 		}
 	}
@@ -412,13 +431,21 @@ func (s *session) write(p []byte) {
 	s.p.Write(p)
 }
 
-func (s *session) resize(cols, rows int) {
+// resize：from 改了终端大小。记在输出的当前位置 (补发时照着重放)，告诉别的要大小的客户端 (from 自己已经改过了)
+func (s *session) resize(cols, rows int, from *client) {
 	s.mu.Lock()
 	if cols == s.cols && rows == s.rows {
 		s.mu.Unlock()
 		return
 	}
 	s.cols, s.rows = cols, rows
+	s.ring.mark(cols, rows)
+	f := sizeFrame(cols, rows)
+	for cl := range s.clients {
+		if cl != from && cl.sizes {
+			s.send(cl, f)
+		}
+	}
 	s.mu.Unlock()
 	s.p.Resize(cols, rows)
 }

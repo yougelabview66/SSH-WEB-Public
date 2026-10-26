@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -47,6 +48,8 @@ type bridge struct {
 	ready string
 	buf   []byte
 	done  chan struct{}
+	// 按收到的顺序记下每一帧：输出 (O:文字)、大小变化 (Z:列x行)、消息 (M:类型)
+	events []string
 }
 
 func env(home string) []string {
@@ -86,10 +89,15 @@ func startBridge(t *testing.T, home string) *bridge {
 				typ, p := b.buf[0], b.buf[5:5+n]
 				if typ == fOutput {
 					b.out.Write(p)
+					b.events = append(b.events, "O:"+string(p))
 				} else if typ == fMsg {
 					var m Msg
 					json.Unmarshal(p, &m)
 					b.msgs = append(b.msgs, m)
+					b.events = append(b.events, "M:"+m.Type)
+				} else if typ == fSize {
+					cols, rows, _ := parseResize(p)
+					b.events = append(b.events, "Z:"+strconv.Itoa(cols)+"x"+strconv.Itoa(rows))
 				}
 				b.buf = b.buf[5+n:]
 			}
@@ -276,6 +284,88 @@ func TestRing(t *testing.T) {
 	if s, out := r.since(&at); s != 115 || len(out) != 0 {
 		t.Fatal(s, len(out))
 	}
+}
+
+// 大小变化跟着输出的位置记：补发从哪开始，就从那一刻的大小开始，缓冲丢掉前面以后也留着开头那一刻的大小
+func TestRingMarks(t *testing.T) {
+	r := newRing(100)
+	r.mark(80, 24)
+	r.write([]byte(strings.Repeat("a", 40) + "\n")) // 0..41
+	r.mark(60, 20)
+	r.mark(50, 20)                                  // 中间没有输出：只算最后一次
+	r.write([]byte(strings.Repeat("b", 40) + "\n")) // 41..82
+	if got := r.marksFrom(0); len(got) != 2 || got[0] != (sizeMark{0, 80, 24}) || got[1] != (sizeMark{41, 50, 20}) {
+		t.Fatalf("从头补发：%+v", got)
+	}
+	if got := r.marksFrom(60); len(got) != 1 || got[0] != (sizeMark{60, 50, 20}) {
+		t.Fatalf("从中间补发：应该只有那一刻的大小 %+v", got)
+	}
+	r.write([]byte(strings.Repeat("c", 40) + "\n")) // 超过 100，丢掉前面 (从 b 那行之后开始)
+	if r.start() != 82 {
+		t.Fatalf("start=%d", r.start())
+	}
+	if len(r.marks) != 1 || r.marks[0] != (sizeMark{41, 50, 20}) {
+		t.Fatalf("缓冲丢掉前面以后：只留开头那一刻的大小 %+v", r.marks)
+	}
+	if got := r.marksFrom(r.start()); len(got) != 1 || got[0] != (sizeMark{82, 50, 20}) {
+		t.Fatalf("从缓冲开头补发：%+v", got)
+	}
+	for i := 0; i < maxMarks+10; i++ {
+		r.write([]byte("x"))
+		r.mark(100+i%7, 30)
+	}
+	if len(r.marks) > maxMarks {
+		t.Fatalf("大小变化没封顶：%d", len(r.marks))
+	}
+}
+
+// 要了 sizes 的客户端：补发里在改大小的位置夹着 Z，补完有 replayed；别的客户端改了大小也告诉它。没要的收不到 Z
+func TestSizesReplay(t *testing.T) {
+	home := t.TempDir()
+	a := startBridge(t, home)
+	defer a.close()
+	a.req(Request{Op: "attach", Shell: "/bin/sh", Cols: 100, Rows: 30, Sizes: true})
+	waitFor(t, "a 接上", func() bool { return a.lastMsg("replayed") != nil })
+	a.typ("echo BEFORE-$((1+1))\r")
+	waitFor(t, "改大小前的输出", func() bool { return strings.Contains(a.text(), "BEFORE-2") })
+	old := startBridge(t, home) // 旧的客户端 (没要 sizes)
+	defer old.close()
+	old.req(Request{Op: "attach", ID: "1", NoCreate: true, Cols: 100, Rows: 30})
+	waitFor(t, "old 接上", func() bool { return old.lastMsg("attached") != nil })
+	a.send(resizeFrame(60, 20))
+	time.Sleep(300 * time.Millisecond)
+	a.typ("echo AFTER-$((2+1))\r")
+	waitFor(t, "改大小后的输出", func() bool { return strings.Contains(a.text(), "AFTER-3") })
+	a.mu.Lock()
+	if strings.Contains(strings.Join(a.events, "\n"), "Z:60x20") { // 补发里那个 Z:100x30 是一开始的大小，不算
+		t.Errorf("自己改的大小不用再告诉自己：%q", a.events)
+	}
+	a.mu.Unlock()
+	// 新接上、从头补发：开头是一开始的大小，BEFORE 在 Z:60x20 前面、AFTER 在后面，最后是 replayed
+	c := startBridge(t, home)
+	defer c.close()
+	c.req(Request{Op: "attach", ID: "1", NoCreate: true, Cols: 100, Rows: 30, Sizes: true})
+	waitFor(t, "c 补发完", func() bool { return c.lastMsg("replayed") != nil })
+	c.mu.Lock()
+	ev := strings.Join(c.events, "\n")
+	c.mu.Unlock()
+	iz0, iz, ib, ia, ir := strings.Index(ev, "Z:100x30"), strings.Index(ev, "Z:60x20"), strings.LastIndex(ev, "BEFORE-2"), strings.LastIndex(ev, "AFTER-3"), strings.Index(ev, "M:replayed")
+	if !(iz0 >= 0 && iz0 < ib && ib < iz && iz < ia && ia < ir) {
+		t.Fatalf("补发的顺序不对 (应该 Z:100x30 … BEFORE-2 … Z:60x20 … AFTER-3 … M:replayed)：%q", ev)
+	}
+	// c 接上时把大小改回 100x30：要大小的 a 收到 Z:100x30，旧的客户端什么也收不到
+	waitFor(t, "a 收到别人改的大小", func() bool {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		return strings.Contains(strings.Join(a.events, "\n"), "Z:100x30")
+	})
+	old.mu.Lock()
+	for _, e := range old.events {
+		if strings.HasPrefix(e, "Z:") || e == "M:replayed" {
+			t.Errorf("没要 sizes 的客户端不该收到 %q", e)
+		}
+	}
+	old.mu.Unlock()
 }
 
 func dialEnv(home string) (io.Closer, error) {
