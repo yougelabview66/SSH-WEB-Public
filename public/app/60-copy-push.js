@@ -39,7 +39,8 @@
     let line = -1;
     if (hist) {
       s.scrollView.lsRest(); // 前面的历史还在后台往上补：先补完
-      ta.value = hist.textContent.replace(/\n+$/, '');
+      // 优先用原始文本：显示时长行会在 cols 格处被切开 (splitByCells)、插入换行，textContent 不是原文
+      ta.value = (s.scrollView.lsText ?? hist.textContent).replace(/\n+$/, '');
       line = at ? lineAt(hist, at.x, at.y) : firstVisibleLine(hist);
     } else {
       const t = terminalText(s, at ? terminalRowAt(s, at.y) : -1);
