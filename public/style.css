@@ -509,8 +509,7 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 /* 历史面板：右上角只有关闭的 ×，同别的面板 (会话历史、钩子通知…)；「全部主机」放在搜索框右边 (标题栏留给三个选项卡，手机上不折行) */
 .hist-head .htabs { min-width: 0; flex-wrap: wrap; }
 #histClose { padding: 2px 10px; flex-shrink: 0; margin-left: 8px; align-self: flex-start; }
-.hist-search { display: flex; align-items: center; gap: 10px; }
-.hist-search { margin-bottom: 8px; }
+.hist-search { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 .hist-search #histSearch { flex: 1; min-width: 0; margin: 0; }
 .hist-search label.check { margin: 0; font-size: 13px; white-space: nowrap; flex-shrink: 0; }
 .hist-search:has(> #histSearch.hidden) { display: none; }

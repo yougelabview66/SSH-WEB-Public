@@ -104,8 +104,8 @@
           ${x.busy ? `<div class="dp-used">正在${esc(x.busy)}里使用中</div>` : ''}</div>
         <div class="as-btns"><button type="button" data-a="pick" class="primary">接上</button><button type="button" data-a="kill">删除</button></div></div>`).join('');
       return (cur.note ? `<p class="dp-note">${esc(cur.note)}</p>` : '')
-        + (rows ? '<p class="muted">这台主机上有还在运行的常驻会话,点一个接上,或者新建一个:</p>'
-          : '<p class="muted">这台主机上没有别的常驻会话了:点「新建会话」开一个,或者「退出」关掉这个标签。</p>')
+        + (rows ? '<p class="muted">这台主机上有还在运行的常驻会话，点一个接上，或者新建一个：</p>'
+          : '<p class="muted">这台主机上没有别的常驻会话了：点「新建会话」开一个，或者「退出」关掉这个标签。</p>')
         + `<div class="as-list dp-list">${rows}</div>`;
     };
     const showList = () => {
