@@ -96,6 +96,10 @@
     const text = data.replace(/\n+$/, '');
     const cw = screen && screen.clientWidth / s.term.cols; // 实时画面一格多宽
     const fit = cw ? gridFit(pre, text, cw) : null, pal = palette256(theme);
+    // 不再让浏览器折行：抓历史时折行已经拼回一整条 (-J / isWrapped)，必须正好在 cols 格处切开才和实时画面一致。
+    // 浏览器按像素宽折行，和 cols × 每格宽 差一点点，表格竖线就对不上（右边一列跑到下一行行首）
+    pre.style.whiteSpace = 'pre'; // 我们自己切，别让浏览器再折一次
+    pre.style.overflowX = 'hidden';
     // 几千行一次全塞进页面要卡一两秒：分成块，先放最后几块马上显示，前面的在后台一块块补到上面。
     // 块从最后往前切 (最前面那块不满)；块末尾的换行留着，textContent 和整段文字一样 (复制面板按它数行)
     const lines = text.split('\n'), chunks = [], g = sgrInit();
@@ -104,9 +108,21 @@
       chunks.push({ t, g: { ...g } }); // 这块开头的颜色 (接着上一块)
       sgrScan(t, g, pal);
     }
+    // 每块按 cols 格硬切成若干显示行，再逐行转 HTML：这样长行（表格那种拼回来的）正好在 cols 格处断开，
+    // 和实时画面一致。ANSI 颜色状态跨段接着算 (ansiToHtml 会把状态写进传进去的 g)
+    const cols = s.term.cols || 80;
     const block = (c) => {
       const d = document.createElement('div');
-      d.innerHTML = ansiToHtml(c.t, theme, fit, pal, { ...c.g });
+      const g = { ...c.g };
+      let html = '';
+      for (const raw of c.t.split('\n')) {
+        const segs = cols > 0 ? splitByCells(raw, cols) : [{ text: raw }];
+        for (const seg of segs) {
+          // ansiToHtml 自己会把 ANSI 状态写进传进去的 g，不用再 sgrScan 一遍
+          html += ansiToHtml(seg.text, theme, fit, pal, g) + '\n';
+        }
+      }
+      d.innerHTML = html.replace(/\n$/, ''); // 块末尾那个换行由下一块接着
       return d;
     };
     let next = chunks.length - 1;
@@ -266,6 +282,23 @@
     // base 一起返回：ASCII 每格固定用 base 的间距。以前 fitHtml 让 ASCII 沿用「上一个字符的间距」，
     // 中文后面的英文就继承了中文的 +2px，整行被拉宽 / 压窄（历史视图里中英混排的行看起来错位）
     return { fix, base: base.toFixed(3) };
+  }
+
+  // 按格数把一行硬切成几段：抓历史用的是 tmux capture-pane -J / 本机记录的折行合并，长行是拼回一整条的，
+  // 必须正好在 cols 格处切开才和实时画面一致。以前交给浏览器 pre-wrap 自己折行 —— 它按容器像素宽度折，
+  // 和「cols × 每格宽」差一点点，表格的竖线就对不上（右边一列跑到下一行行首）。
+  // 返回 [{ text, cell }]，cell = 这段开头在第几格 (用来给续行补缩进)
+  function splitByCells(text, cols) {
+    const out = [];
+    let cur = '', cells = 0, start = 0;
+    for (const ch of text) {
+      const w = cellWidth(ch);
+      if (w && cells + w > cols) { out.push({ text: cur, cell: start }); cur = ''; cells = 0; start = 0; }
+      cur += ch;
+      cells += w;
+    }
+    out.push({ text: cur, cell: start });
+    return out;
   }
 
   // 一个字在终端里占几格 (同 tmux：中日韩文字、全角符号、emoji 两格，组合用的附加符号不占格)
