@@ -149,6 +149,9 @@
     requestAnimationFrame(() => setTimeout(fill)); // 先让最后几块画出来
     s.scrollView = v;
     s.lsLine = lh;
+    // 复制面板要的是「原始历史文本」：显示时为了让长行正好在 cols 格断开 (splitByCells) 会插入换行，
+    // 直接读 textContent 会多出一堆本不存在的换行。这里把去掉 ANSI 的原文存一份，复制时优先用它
+    v.lsText = text.replace(ANSI_RE, '');
     syncLsBars();
     pre.scrollTop = pre.scrollHeight - pre.clientHeight - up * 3 * lh; // 和滚轮一样往回看几行
     // 输入框藏起来了，焦点放这里：PageUp / PageDown / Home / 方向键直接滚历史。
