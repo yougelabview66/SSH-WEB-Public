@@ -155,8 +155,10 @@ const WHEEL_UP = '\x1b[<64;';
   // Ctrl+End → 直接回到实时画面 (以前只滚到历史视图底部，还要再往下滚一下)，不发给终端
   await overTerm(); await p.mouse.wheel(0, -100); await wait(1000);
   ok(!!(await view()) && await p.evaluate(() => document.activeElement.classList.contains('ls-body')), '打开历史视图时焦点在历史视图上');
+  // 比「离底部多远」不比 scrollTop：前面的历史还在后台往上补，scrollTop 会被整体推大
   v = await view(); await p.keyboard.press('PageUp'); await wait(200);
-  ok((await view()).top < v.top, 'PageUp 直接滚历史视图');
+  const v2 = await view();
+  ok(v2.max - v2.top > v.max - v.top, `PageUp 直接滚历史视图 (离底部 ${v.max - v.top} → ${v2.max - v2.top}px)`);
   got = ''; await p.keyboard.press('Control+End'); await wait(300);
   ok(!(await view()) && got === '' && await p.evaluate(() => document.activeElement.id) === 'dInput', 'Ctrl+End → 回到实时画面，焦点回到输入框，没有发给终端: ' + JSON.stringify(got));
   await overTerm(); await p.mouse.wheel(0, -100); await wait(1000);

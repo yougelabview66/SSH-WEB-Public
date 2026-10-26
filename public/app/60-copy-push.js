@@ -42,8 +42,9 @@
       // 优先用原始文本：显示时长行会在 cols 格处被切开 (splitByCells)、插入换行，textContent 不是原文
       ta.value = (s.scrollView.lsText ?? hist.textContent).replace(/\n+$/, '');
       const domLine = at ? lineAt(hist, at.x, at.y) : firstVisibleLine(hist);
-      // 换回原始文本的行号 (见 domLineToTextLine 的说明)
-      line = domLineToTextLine(ta.value.split('\n'), s.term?.cols || 80, domLine);
+      // 换回原始文本的行号 (见 domLineToTextLine 的说明)。必须用历史视图切行时的格数 (lsCols)：
+      // 它是按历史视图实际宽度量的，比终端列数小 (手机上小好几格)，拿 term.cols 换算会少数显示行、定位偏到后面
+      line = domLineToTextLine(ta.value.split('\n'), s.scrollView.lsCols || s.term?.cols || 80, domLine);
     } else {
       const t = terminalText(s, at ? terminalRowAt(s, at.y) : -1);
       ta.value = t.text;
