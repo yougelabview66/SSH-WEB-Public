@@ -41,7 +41,9 @@
       s.scrollView.lsRest(); // 前面的历史还在后台往上补：先补完
       // 优先用原始文本：显示时长行会在 cols 格处被切开 (splitByCells)、插入换行，textContent 不是原文
       ta.value = (s.scrollView.lsText ?? hist.textContent).replace(/\n+$/, '');
-      line = at ? lineAt(hist, at.x, at.y) : firstVisibleLine(hist);
+      const domLine = at ? lineAt(hist, at.x, at.y) : firstVisibleLine(hist);
+      // 换回原始文本的行号 (见 domLineToTextLine 的说明)
+      line = domLineToTextLine(ta.value.split('\n'), s.term?.cols || 80, domLine);
     } else {
       const t = terminalText(s, at ? terminalRowAt(s, at.y) : -1);
       ta.value = t.text;
@@ -63,6 +65,21 @@
   // 看着像文字不见了。overflow-x: hidden 只是不显示滚动条，程序 / 手势照样能改 scrollLeft，所以这里锁回 0。
   // 只影响显示，复制拿的仍是完整文本 (见 copyAll / copySel)
   $('#copyText').addEventListener('scroll', (e) => { const ta = e.target; if (ta.scrollLeft) ta.scrollLeft = 0; });
+
+  // 把 DOM 里的行号换算成原始文本的行号：显示时长行会被 splitByCells 切成几行，
+  // 所以 DOM 行号 ≥ 原始行号。按显示时的切法重数一遍，数到第 k 个显示行时它在原始的第几行。
+  // 不换算的话 (v1.83.34 之后) 复制面板会定位到错误的位置 —— 按 DOM 行号去原始文本里找，
+  // 短会话直接越界到末尾 (看着像「直接出现最新记录」)，长会话指到别的地方 (按的字和显示的对不上)
+  function domLineToTextLine(rawLines, cols, k) {
+    if (!(cols > 0)) return k;
+    let shown = 0;
+    for (let i = 0; i < rawLines.length; i++) {
+      const n = Math.max(1, splitByCells(rawLines[i], cols).length);
+      if (shown + n > k) return i;
+      shown += n;
+    }
+    return Math.max(0, rawLines.length - 1);
+  }
 
   // 复制面板滚到第 k 行，有 anchorY (手指的位置) 就让这一行停在手指那个高度，否则停在最上面。
   // 中文 / emoji 用的后备字体让这些行比别的行高，不能按「平均行高 × 行号」算，
