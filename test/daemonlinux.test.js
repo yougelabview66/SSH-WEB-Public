@@ -99,7 +99,7 @@ server(2341, false);
 server(2342, true);
 
 // 一个标签 (直接用 WebSocket，和网页一样的消息)
-function tab(hostId) {
+function tab(hostId, cols = 100, rows = 30) {
   const ws = new WebSocket(BASE.replace('http', 'ws') + '/ws');
   const t = { ws, out: '', msgs: [], picks: [] };
   ws.on('message', (d, bin) => {
@@ -108,7 +108,7 @@ function tab(hostId) {
     t.msgs.push(m);
     if (m.type === 'daemon-pick') t.picks.push(m);
   });
-  ws.on('open', () => ws.send(JSON.stringify({ type: 'connect', hostId, title: 'DL', cols: 100, rows: 30 })));
+  ws.on('open', () => ws.send(JSON.stringify({ type: 'connect', hostId, title: 'DL', cols, rows })));
   t.send = (o) => ws.send(JSON.stringify(o));
   t.type = (s) => t.send({ type: 'data', data: s });
   t.last = (type) => [...t.msgs].reverse().find((m) => m.type === type);
@@ -365,6 +365,52 @@ run(async () => {
   for (const t of [r1, r2]) { t.type('exit\r'); }
   await wait(1500);
   r1.ws.close(); r2.ws.close();
+
+  // ---- 5d. 改过大小的会话：换个标签接上 (同服务重启后，整段从头补发) 照当时的大小重放，历史和一直接着的标签一字不差。
+  // 以前一律按新标签自己的大小重放，按别的宽度画的 Claude Code 界面在历史里全乱了 (光标上移、擦行擦错了行)
+  // Claude Code 式的重画：按宽度 w 画「一行刚好占满的分隔线 + 一段 1.5 倍宽的长行 (占两行) + 状态行」，
+  // 光标上移 4 行、擦到底再画下一帧。宽度对的话最后只剩一帧；按别的宽度重放，长行占的行数不同，就擦错行
+  {
+    fs.writeFileSync(path.join(home, 'draw.sh'), String.raw`w=$1; t=$2
+  line=$(printf "%"$w"s" "" | tr " " "-"); long=$(printf "%$((w + w / 2))s" "" | tr " " "$t")
+  i=0; while [ $i -lt 5 ]; do printf "%s
+  %s
+  [%s] step %d
+  " "$line" "$long" "$t" "$i"; printf "[4A[J"; i=$((i + 1)); done
+  printf "%s
+  %s
+  [%s] done
+  " "$line" "$long" "$t"
+  `);
+    const plain = (h) => String(h?.data || '').replace(/\x1b\[[0-9;]*m/g, '').split('\n').map((l) => l.replace(/\s+$/, ''));
+    // 从第一次画开始比 (前面是各自「正在连接 / 接上常驻会话」的提示，本来就不一样)
+    const fromDraw = (h) => { const l = plain(h); const i = l.findIndex((x) => x.includes('draw.sh" 100 A')); return i < 0 ? [] : l.slice(i); };
+    const rg = tab(host.id);
+    await until(() => rg.picks.length || /新建常驻会话 \d/.test(rg.out), 15000);
+    if (rg.picks.length) rg.send({ type: 'daemon-pick-response', id: '' });
+    await until(() => /新建常驻会话 \d/.test(rg.out) && rg.last('status')?.status === 'connected', 15000);
+    const gid = /新建常驻会话 (\d+)/.exec(rg.out)[1];
+    rg.type('sh "$HOME/draw.sh" 100 A\r'); await until(() => rg.out.includes('[A] done'), 8000);
+    rg.send({ type: 'resize', cols: 60, rows: 30 }); await wait(600);
+    rg.type('sh "$HOME/draw.sh" 60 B\r'); await until(() => rg.out.includes('[B] done'), 8000); await wait(500);
+    const hg = fromDraw(await rg.hist());
+    const rh = tab(host.id, 60, 30); // 新标签，同样 60 列 (补完改回自己的大小时不会再重排一次)
+    await until(() => rh.picks.length, 15000);
+    rh.send({ type: 'daemon-pick-response', id: gid, share: true }); // 另一个标签还接着：同网页上点「强制连接」
+    await until(() => rh.out.includes(`接上常驻会话 ${gid}`) && rh.last('status')?.status === 'connected', 15000); await wait(1500);
+    const hh = fromDraw(await rh.hist());
+    const diff = (a, b) => { const i = a.findIndex((x, k) => x !== b[k]); return i < 0 && a.length === b.length ? '' : JSON.stringify({ at: i, keep: a.slice(Math.max(0, i - 1), i + 3), replay: b.slice(Math.max(0, i - 1), i + 3) }); };
+    ok(hg.length > 5 && hg.some((x) => x.includes('[A] done')) && hg.some((x) => x.includes('[B] done')) && !diff(hg, hh),
+      `改过大小 (100 → 60 列) 的会话换个标签从头补发：历史和一直接着的标签一字不差 (${hg.length} 行) ` + diff(hg, hh));
+    // 两个标签一起接着、h 改了大小：g 的终端记录跟着改 (守护进程告诉它)，之后按新宽度画的也不乱
+    rh.send({ type: 'resize', cols: 80, rows: 30 }); await wait(600);
+    rh.type('sh "$HOME/draw.sh" 80 C\r'); await until(() => rg.out.includes('[C] done') && rh.out.includes('[C] done'), 8000); await wait(500);
+    const g2 = fromDraw(await rg.hist()), h2 = fromDraw(await rh.hist());
+    ok(g2.some((x) => x.includes('[C] done')) && !diff(g2, h2), '两个标签一起接着、另一个改了大小：这边的历史跟着按新大小记，两边一字不差 ' + diff(g2, h2));
+    for (const t of [rg, rh]) t.type('exit\r');
+    await wait(1000);
+    rg.ws.close(); rh.ws.close();
+  }
 
   // ---- 6. 不是 Linux (macOS 等)：照常开普通终端，不提示
   const mac = await addHost('MAC', 2342, { winDaemon: true });
