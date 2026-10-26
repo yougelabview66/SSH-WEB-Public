@@ -324,7 +324,7 @@
     });
     // base 一起返回：ASCII 每格固定用 base 的间距。以前 fitHtml 让 ASCII 沿用「上一个字符的间距」，
     // 中文后面的英文就继承了中文的 +2px，整行被拉宽 / 压窄（历史视图里中英混排的行看起来错位）
-    return { fix, base: base.toFixed(3) };
+    return { fix, base: base.toFixed(3), cell: cw };
   }
 
   // 历史视图里切长行插进去的换行 (显示用，原文里没有)
@@ -351,12 +351,15 @@
     const out = [];
     let cur = '', cells = 0, start = 0;
     // 普通文字逐字算格数；ANSI 序列整段原样带上、不算格数，也不会被切开
+    let prev = 0; // 上一个字占几格 (后面跟 FE0F 时它变成两格，见 vs16Width)
     const put = (s) => {
       for (const ch of s) {
-        const w = cellWidth(ch);
-        if (w && cells + w > cols) { out.push({ text: cur, cell: start }); cur = ''; cells = 0; start = 0; }
+        const w = ch === VS16 ? vs16Width(prev) : cellWidth(ch);
+        // FE0F 不和前面的字分开 (宁可这一行多出一格)
+        if (w && ch !== VS16 && cells + w > cols) { out.push({ text: cur, cell: start }); cur = ''; cells = 0; start = 0; }
         cur += ch;
         cells += w;
+        if (w) prev = ch === VS16 ? 2 : w;
       }
     };
     let at = 0;
@@ -370,6 +373,13 @@
     out.push({ text: cur, cell: start });
     return out;
   }
+
+  // FE0F (要求显示成彩色表情)：跟在一格宽的字后面 (⚠ ✔ ℹ 这类) 让它变成两格 —— Claude Code 等程序 (string-width) 这样算，
+  // 表格就是按这个补的空格；跟在本来就两格的字后面不再加
+  const VS16 = '\ufe0f';
+  const vs16Width = (prev) => (prev === 1 ? 1 : 0);
+  // 表情和符号 (不是中日韩文字)：历史视图里装进固定宽度的小格子 (见 fitHtml)
+  const isEmoji = (cp) => cp < 0x2e80 || (cp >= 0x1f000 && cp < 0x20000);
 
   // 一个字在终端里占几格 (同 tmux：中日韩文字、全角符号、emoji 两格，组合用的附加符号不占格)
   const WIDE = [[0x1100, 0x115f], [0x231a, 0x231b], [0x2329, 0x232a], [0x23e9, 0x23ec], [0x23f0, 0x23f0], [0x23f3, 0x23f3],
@@ -400,7 +410,10 @@
   // 按 gridFit 量出来的结果，把要单独补宽度的字包起来；不占格的附加符号跟着前一个字。
   // ASCII (和 fix 里没有的字符) 一律用 base 的间距，不再沿用上一个字符的 —— 否则中文字符后面的英文
   // 会继承中文的间距，一行里越往右偏得越多
-  function fitHtml(t, fit, base) {
+  //
+  // 表情 (✅ 🔥 这类两格的，和后面跟着 FE0F 的 ⚠️ 等) 不靠量字宽补间距：装进 cell 宽 × 格数的小格子 (.ls-c)。
+  // 表情的实际宽度各个浏览器、字体都不一样，iPhone 上量出来的和画出来的对不上，表格里带表情的行右边框就偏出去一格
+  function fitHtml(t, fit, base, cell) {
     const bs = base === undefined ? undefined : String(base);
     if (!fit?.size && bs === undefined) return esc(t);
     let out = '', run = '', ls;
@@ -408,9 +421,21 @@
       if (run) out += ls === undefined ? esc(run) : `<span style="letter-spacing:${ls}px">${esc(run)}</span>`;
       run = '';
     };
-    for (const c of t) {
-      const w = cellWidth(c);
-      // 不占格的附加符号 (组合音标、emoji 肤色等) 跟着前一个字符走，不单独换间距
+    const cs = [...t];
+    for (let i = 0; i < cs.length; i++) {
+      const c = cs[i], w = cellWidth(c);
+      if (cell && w) {
+        let j = i + 1; // 跟在后面不占格的 (FE0F、肤色、零宽连接符…)：和它装在一起
+        while (j < cs.length && !cellWidth(cs[j])) j++;
+        const tail = cs.slice(i + 1, j).join(''), vs = tail.includes(VS16);
+        if (vs || (w === 2 && isEmoji(c.codePointAt(0)))) {
+          flush();
+          out += `<span class="ls-c" style="width:${((vs ? 2 : w) * cell).toFixed(3)}px">${esc(c + tail)}</span>`;
+          i = j - 1;
+          continue;
+        }
+      }
+      // 不占格的附加符号 (组合音标等) 跟着前一个字符走，不单独换间距
       const v = w ? (fit?.get(c) ?? bs) : ls;
       if (v !== ls) { flush(); ls = v; }
       run += c;
@@ -480,7 +505,7 @@
     const put = (t) => {
       if (!t) return;
       const c = css();
-      const h = fitHtml(t, fit?.fix, fit?.base);
+      const h = fitHtml(t, fit?.fix, fit?.base, fit?.cell);
       out += c ? `<span style="${c}">${h}</span>` : h;
     };
     ANSI_RE.lastIndex = 0;

@@ -17,6 +17,15 @@ const TABLE = [
   '  │ 服务验证 │ 本地 8080 ✅ / CF 隧道 my-ai.example.com ✅，已登录账号 8 个全部可用                            │',
   '  └──────────┴─────────────────────────────────────────────────────────────────────────────────────────────────┘',
 ];
+// 带表情的行：按 Claude Code 的算法 (string-width) 补空格 —— 表情两格，⚠ 这类一格的字后面跟着 FE0F (显示成彩色表情) 也算两格。
+// 历史视图里表情装进固定宽的小格子，右边框和别的行对齐 (以前 ⚠️ 只算一格，右边框偏出去；iPhone 上 ✅ 也偏一格)
+const cw = (t) => { let n = 0, prev = 0; for (const c of t.replace(/\x1b\[[0-9;]*m/g, '')) { const cp = c.codePointAt(0); const w = c === '\ufe0f' ? (prev === 1 ? 1 : 0) : cp >= 0x1f300 || cp === 0x2705 || (cp >= 0x2e80 && cp <= 0xffe6) ? 2 : 1; n += w; if (w) prev = c === '\ufe0f' ? 2 : w; } return n; };
+const row = (a, b) => `  │${a}${' '.repeat(10 - cw(a))}│${b}${' '.repeat(97 - cw(b))}│`;
+TABLE.splice(TABLE.length - 1, 0,
+  '  ├──────────┼─────────────────────────────────────────────────────────────────────────────────────────────────┤',
+  row(' 磁盘     ', ' \x1b[1m243G/298G，82%\x1b[22m ⚠\ufe0f 偏满，建议留意'),
+  '  ├──────────┼─────────────────────────────────────────────────────────────────────────────────────────────────┤',
+  row(' 温度     ', ' CPU 53°C ✅ / 硬盘 41°C ✅ / 风扇 🔥 全速 ✔\ufe0f'));
 
 let cols = 80;
 // 比任何终端都宽的一行：历史视图里会被切成几行显示，复制出来必须还是一整行
@@ -86,6 +95,14 @@ async function check(p, label) {
   const rights = tableRows.map((x) => x.right);
   const spread = Math.max(...rights) - Math.min(...rights);
   ok(tableRows.length === TABLE.length && spread < 1, `${label}：表格每一行的右边框对齐 (相差 ${spread.toFixed(1)}px，各行 ${rights.map((x) => x.toFixed(1)).join(' ')})`);
+  // 表情装在固定两格宽的小格子里 (不靠量字宽补间距：iPhone 上表情量出来的宽度不准，以前带 ✅ 的行右边框偏出去一格)
+  const em = await p.evaluate((cols) => {
+    const cell = document.querySelector('.term.active .xterm-screen').getBoundingClientRect().width / cols;
+    return [...document.querySelectorAll('.term.active .ls-body .ls-c')].map((x) => ({ t: x.textContent, cells: x.getBoundingClientRect().width / cell }));
+  }, cols).catch(() => null);
+  const want = ['⚠\ufe0f', '✅', '🔥', '✔\ufe0f'];
+  ok(em && want.every((t) => em.some((x) => x.t === t)) && em.every((x) => Math.abs(x.cells - 2) < 0.02),
+    `${label}：表格里的表情 (含 ⚠️ ✔️ 这种带 FE0F 的) 都装在正好两格宽的小格子里: ` + JSON.stringify(em && [...new Map(em.map((x) => [x.t, +x.cells.toFixed(3)]))]));
   const full = r.out.filter((x) => x.line.startsWith('─'));
   if (label.includes('滚动条')) ok(r.bar > 0, `${label}：历史视图有滚动条 (${r.bar}px)`);
   const far = Math.max(...r.out.map((x) => x.right));
