@@ -1,7 +1,7 @@
 'use strict';
 // @env SSHWEBD_DIR=/tmp/sshweb-da-bin
 // 常驻会话断了自动重连：SSH 断开、或者没响应 (网络断过，心跳还没发现) 时会话还在主机上，自动重新连上接回去；
-// 网页刚挂上来时探测一下 SSH 通不通。选择框带上是哪个标签；连接断了还没回答的选择框关掉。
+// 网页刚挂上来时探测一下 SSH 通不通。选择框标题带主机名 (不带序号)；连接断了还没回答的选择框关掉。
 // 模拟主机同 daemonlinux.test.js。下面是那边的说明 —— 常驻会话 (sshwebd) 在 Linux 主机上：连上时认出是 Linux、什么架构，把 Linux 版传到 ~/.ssh-web/sshwebd-<哈希> (加执行权限)，
 // 开一个不要终端的通道跑 bridge，终端在守护进程里。用不用 tmux 都行：
 // - 不用 tmux：往上滚取的是服务器上这个终端的记录；项目目录按会话的 SSHWEBD_SESSION 在 /proc 里找
@@ -161,10 +161,10 @@ run(async () => {
   await until(() => a.out.includes('three-6'), 5000);
   ok(a.out.includes('three-6'), '探测出来重连以后照常');
 
-  // ---- 3. 选择框带上是哪个标签；连接断了，还没回答的选择框关掉 (prompt-done)
+  // ---- 3. 选择框标题带主机名 (不带「-序号」，按用户要求)；连接断了，还没回答的选择框关掉 (prompt-done)
   const c = tab(host.id);
   await until(() => c.picks.length, 15000);
-  ok(/^DL-\d+$/.test(c.picks[0].tab || ''), '选择框带上是哪个标签: ' + JSON.stringify(c.picks[0].tab));
+  ok(c.picks[0].tab === 'DL', '选择框标题只带主机名、不带序号: ' + JSON.stringify(c.picks[0].tab));
   for (const x of conns) x.end();
   await until(() => c.msgs.some((m) => m.type === 'prompt-done'), 5000);
   ok(c.msgs.some((m) => m.type === 'prompt-done'), '连接断了：还没回答的选择框关掉 (不然回答了也没人收)');

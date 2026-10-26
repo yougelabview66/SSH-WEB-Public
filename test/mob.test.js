@@ -117,6 +117,12 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   ok(await txt() === '', '新标签输入框为空');
   await m.locator('.tab').first().tap(); await wait(400);
   ok(await txt() === 'draft', '切回原标签草稿还在');
+  // 点 × 照样是关闭 (标签文字挂了 click 跟 × 比触摸校正之后，× 本身不受影响)：先问一句，取消就不关
+  let asked = '';
+  m.once('dialog', (d) => { asked = d.message(); d.dismiss(); });
+  const nTabs = await m.locator('.tab').count();
+  await m.locator('.tab').nth(1).locator('.x').tap(); await wait(400);
+  ok(asked.startsWith('关闭「') && await m.locator('.tab').count() === nTabs, '手机：点 × 问要不要关闭，取消就不关: ' + JSON.stringify(asked.split('\n')[0]));
   // 安卓上按返回键 / 输入法的收起键：键盘收起来了焦点却还在输入框里，之后点 ↵ (选 CLI 的选项) 浏览器会把键盘再弹出来。
   // 模拟：聚焦输入框后页面变矮 (键盘弹出)，再恢复原高 (键盘收起)
   const vp = m.viewportSize();

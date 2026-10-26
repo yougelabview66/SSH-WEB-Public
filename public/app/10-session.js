@@ -180,6 +180,9 @@
       if (e.target.classList.contains('x')) askClose(s); // 别的设备在用时先确认 (见 42-owner.js)
       else activate(s);
     });
+    // 手机 Chrome 的触摸校正会把点在标签文字上的手指吸到旁边能点的元素上 —— 只认自己挂了 click 的，标签是 × 的祖先、不算，
+    // 候选只剩 ×：× 加宽后标签又窄时，点标签就成了点关闭。文字也挂一个 (冒泡给上面的标签处理)，按住哪个算哪个
+    $('.title', s.tab).addEventListener('click', () => {});
     s.tab.addEventListener('auxclick', (e) => { if (e.button === 1) askClose(s); });
     $('#tabs').appendChild(s.tab);
 
