@@ -275,9 +275,12 @@ const WHEEL_UP = '\x1b[<64;';
   await overTerm(); await p.mouse.wheel(0, -100); await wait(900);
   ok(await p.isVisible('.term.active .tmux-exit'), '再往上滚又进了复制模式');
   await p.focus('#dInput'); await p.keyboard.type('继续'); got = '';
-  await p.keyboard.press('Enter'); await wait(700);
+  // 回车要等程序把文字显示出来才写 (模拟的主机不回显：最多等 0.4 ~ 1.5 秒，见 lib/session/input.js 的 echoCap)，
+  // 等到回车到了再比，不按固定时间 —— 机器慢一点 (GitHub 的测试机) 就会在回车到之前比、误报失败
+  const enterArrived = async () => { for (const end = Date.now() + 3000; !got.endsWith('\r') && Date.now() < end;) await wait(50); };
+  await p.keyboard.press('Enter'); await enterArrived(); await wait(200);
   ok(got === 'q继续\r' && await p.isHidden('.term.active .tmux-exit'), '复制模式里从输入框发送 → 先发 q 退出复制模式，消息照常发出: ' + JSON.stringify(got));
-  got = ''; await p.keyboard.type('再来'); await p.keyboard.press('Enter'); await wait(500);
+  got = ''; await p.keyboard.type('再来'); await p.keyboard.press('Enter'); await enterArrived(); await wait(200);
   ok(got === '再来\r', '已经回到实时画面时照常发送，不多发 q: ' + JSON.stringify(got));
   // 复制模式里按 Ctrl+End (tmux 不认，以前按了没反应)：换成 q 退出
   await overTerm(); await p.mouse.wheel(0, -100); await wait(900);

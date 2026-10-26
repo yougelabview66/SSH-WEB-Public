@@ -387,8 +387,15 @@ run(async () => {
   await browser.close();
   b.ws.close();
   for (const x of await (await fetch(BASE + '/api/sessions')).json()) await fetch(BASE + '/api/sessions/' + x.id, { method: 'DELETE' });
-  await wait(4000); // 守护进程没事做了自己退出 (SSHWEBD_IDLE=3s)
-  ok(/没有会话了，退出/.test(fs.readFileSync(path.join(dhome, 'sshwebd.log'), 'utf8')), '守护进程没有会话后自己退出');
+  // 守护进程没有会话、也没有连接了 (空闲 SSHWEBD_IDLE=3s) 自己退出。关标签只断开连接、常驻会话还留在主机上，
+  // 所以先把剩下的会话都结束掉，再等日志里「这之后」新写的那一行 —— 以前固定等 4 秒、只看日志里有没有这行字：
+  // 测试中途守护进程空闲退出过的话日志里早就有一行旧的，靠它蒙过去；GitHub 的测试机跑得快、中途没空闲退出过，就失败了
+  const idleLog = () => { try { return fs.readFileSync(path.join(dhome, 'sshwebd.log'), 'utf8'); } catch { return ''; } };
+  for (const id of lsIds()) execFileSync(BIN, ['kill', id], { env: { ...process.env, SSHWEBD_HOME: dhome } });
+  const logAt = idleLog().length;
+  const exited = () => /没有会话了，退出/.test(idleLog().slice(logAt));
+  await until(exited, 15000);
+  ok(exited(), '守护进程没有会话后自己退出' + (exited() ? '' : ' (日志最后几行: ' + JSON.stringify(idleLog().trim().split('\n').slice(-6)) + ')'));
   fs.rmSync(home, { recursive: true, force: true });
   fs.rmSync(SRV_EXE, { force: true });
 });
