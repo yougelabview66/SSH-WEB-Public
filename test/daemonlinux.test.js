@@ -15,7 +15,7 @@ const path = require('path');
 const { spawn, execFileSync } = require('child_process');
 const { Server, utils: { sftp: { OPEN_MODE, STATUS_CODE } } } = require('ssh2');
 const WebSocket = require('ws');
-const { BASE, ok, wait, run, hostKey, addHost, killUnder } = require('./helpers');
+const { BASE, ok, wait, run, hostKey, addHost, killUnder, fakeAgent, FAKE_AGENT_ARGS, FAKE_AGENT_SH } = require('./helpers');
 
 const BIN_DIR = '/tmp/sshweb-dl-bin'; // 服务器上的 Linux 版 (见开头的 @env)
 const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sshweb-dl-')));
@@ -160,8 +160,8 @@ run(async () => {
   fs.mkdirSync(path.join(home, 'proj'));
   // 以前同号会话 (守护进程重启前的会话 1) 留下的后台进程：会话号一样、创建时间不一样，不能认成这个会话的
   fs.mkdirSync(path.join(home, 'stale-dir'));
-  fs.copyFileSync('/bin/sleep', path.join(home, 'claude')); fs.chmodSync(path.join(home, 'claude'), 0o755);
-  const stale = spawn(path.join(home, 'claude'), ['300'], { cwd: path.join(home, 'stale-dir'), env: { SSHWEBD_SESSION: '1', SSHWEBD_STARTED: '123', PATH: process.env.PATH }, stdio: 'ignore' });
+  fakeAgent(home);
+  const stale = spawn(path.join(home, 'claude'), FAKE_AGENT_ARGS, { cwd: path.join(home, 'stale-dir'), env: { SSHWEBD_SESSION: '1', SSHWEBD_STARTED: '123', PATH: process.env.PATH }, stdio: 'ignore' });
   a.type('cd proj\r'); await wait(800);
   const pi = await post('/api/project/info', { sid: a.sid(), dir: '' });
   ok(pi.source === 'terminal' && /\/proj$/.test(pi.root || pi.dir || ''), '项目目录：常驻会话里 cd 过去的目录 (按会话号 + 创建时间找进程，不认以前同号会话留下的): ' + JSON.stringify(pi));
@@ -174,11 +174,11 @@ run(async () => {
   await until(() => /整理代码/.test(a.last('state')?.detail || ''), 5000);
   ok(/在做：整理代码/.test(a.last('state')?.detail || ''), '钩子事件按 daemon (会话编号) 交给现在接着它的标签: ' + JSON.stringify(a.last('state')));
   // Agent 报了它干活的目录 → 项目目录用它；Agent 退出 (SessionEnd) / 被直接杀掉 → 不再停在它的目录，回到终端所在的目录。
-  // 每次读项目信息都在主机上看一眼 Agent 还在不在：在常驻会话里跑一个假的 claude (拷一份 sleep 改名)
+  // 每次读项目信息都在主机上看一眼 Agent 还在不在：在常驻会话里跑一个假的 claude (见 helpers.js 的 fakeAgent)
   const agentDir = path.join(home, 'agent-dir'); fs.mkdirSync(agentDir);
   const hookLine = (ev) => fs.appendFileSync(path.join(home, '.cache', 'ssh-web', 'hook.log'), JSON.stringify({ v: 2, t: Math.floor(Date.now() / 1000), agent: 'claude', tabs: 'old-tab', daemon: '1', pane: '', ...ev }) + '\n');
   const projInfo = () => post('/api/project/info', { sid: a.sid(), dir: '' });
-  a.type('"$HOME/claude" 300 &\r'); await wait(800);
+  a.type(`"$HOME/claude" ${FAKE_AGENT_SH} &\r`); await wait(800);
   hookLine({ hook_event_name: 'PreToolUse', tool_name: 'Bash', command: 'ls', cwd: agentDir });
   await until(() => a.msgs.some((m) => m.type === 'agent-cwd'), 5000);
   let pj = await projInfo();
@@ -190,7 +190,7 @@ run(async () => {
   pj = await projInfo();
   ok(pj.source === 'terminal' && /\/proj$/.test(pj.root || pj.dir || ''), 'Agent 退出 (SessionEnd)：项目目录回到终端所在的目录: ' + JSON.stringify(pj));
   // 被直接杀掉 (没报 SessionEnd)：打开 / 刷新右边栏时发现 Agent 不在了，不再用它的目录
-  a.type('"$HOME/claude" 300 &\r'); await wait(800);
+  a.type(`"$HOME/claude" ${FAKE_AGENT_SH} &\r`); await wait(800);
   hookLine({ hook_event_name: 'PreToolUse', tool_name: 'Bash', command: 'ls', cwd: agentDir }); await wait(1000);
   pj = await projInfo();
   const live = pj.source === 'agent' && /agent-dir$/.test(pj.root || pj.dir || '');
