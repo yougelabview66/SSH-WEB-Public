@@ -95,7 +95,16 @@
     s.box.appendChild(v); // 先放进页面才量得出字宽
     const text = data.replace(/\n+$/, '');
     const cw = screen && screen.clientWidth / s.term.cols; // 实时画面一格多宽
-    const fit = cw ? gridFit(pre, text, cw) : null, pal = palette256(theme);
+    const tc = s.term.cols || 80;
+    // 历史视图能放字的宽度。滚动条已经扣掉了 (.ls-body 的 scrollbar-gutter: stable)：以前在放内容之前量，
+    // 那时还没有滚动条，内容放进去后它占掉 15px 左右，最右边一两格被盖住
+    const pcs = getComputedStyle(pre);
+    const availW = pre.clientWidth - parseFloat(pcs.paddingLeft || 0) - parseFloat(pcs.paddingRight || 0);
+    // 差一点放不下终端的列数 (左边距、滚动条占掉几像素，电脑上常见)：每格收窄一点，照样按终端列数排 ——
+    // 不然占满整行的分隔线、表格边框会被折成两行 (下一行只剩一两个字)。留 2px：浏览器排字精度有限 (1/64px)，
+    // 一行一百多格累计下来会差一两像素。差得多 (手机上看电脑开的大终端) 才按放得下的格数切，见下面的 cols
+    const cell = cw && tc * cw > availW - 2 && availW / tc >= cw * 0.95 ? (availW - 2) / tc : cw;
+    const fit = cell ? gridFit(pre, text, cell) : null, pal = palette256(theme);
     // 不再让浏览器折行：抓历史时折行已经拼回一整条 (-J / isWrapped)，必须正好在 cols 格处切开才和实时画面一致。
     // 浏览器按像素宽折行，和 cols × 每格宽 差一点点，表格竖线就对不上（右边一列跑到下一行行首）
     pre.style.whiteSpace = 'pre'; // 我们自己切，别让浏览器再折一次
@@ -111,24 +120,20 @@
     // 每块硬切成若干显示行，再逐行转 HTML：这样长行（表格那种拼回来的）正好在边界处断开，
     // 浏览器不会再自己折一次。ANSI 颜色状态跨段接着算 (ansiToHtml 会把状态写进传进去的 g)。
     //
-    // 切多少格要看「历史视图实际能放下几格」，不是 s.term.cols —— 历史视图的可用宽度和终端不一样
-    // (手机上终端 58 格 × 8px = 464px，而 pre 只有 412px)，按 58 格切完还是超宽，浏览器又折一次，
-    // DOM 行数变成两倍，行号全对不上 (复制面板长按定位跑到末尾就是这个原因)。
-    // 切多少格要看「历史视图实际能放下几格」。不能拿 cw (终端一格宽) 去除 pre 宽度 ——
-    // gridFit 的 letter-spacing 只是把 ASCII 近似压到 cw，历史视图里字符的真实宽度并不等于 cw，
-    // 按它算出来的格数还是会超宽，浏览器再折一次，DOM 行数翻倍、行号全对不上。
-    // 直接在 pre 里量一个 ASCII 字符的真实宽度（此时 letter-spacing 已经由 gridFit 设好）
+    // 切多少格：放得下终端的列数就按终端列数切 (和实时画面一样，占满整行的分隔线不折行)；
+    // 放不下 (手机上看电脑开的大终端：终端 127 格，历史视图只放得下 58 格) 按实际放得下的格数切，不然右边被裁掉。
+    // 复制面板换算行号要用同一个值 (见下面的 lsCols)。
+    // 一格的真实宽度直接在 pre 里量 (此时 letter-spacing 已经由 gridFit 设好)：浏览器排字精度有限，
+    // 拿 cell 算出来的和实际排出来的能差好几像素
     const cols = (() => {
       const probe = document.createElement('span');
       probe.style.cssText = 'position:absolute;visibility:hidden;white-space:pre';
-      probe.textContent = '0'.repeat(20);
+      probe.textContent = '0'.repeat(100);
       pre.appendChild(probe);
-      const w20 = probe.getBoundingClientRect().width;
+      const w = probe.getBoundingClientRect().width / 100;
       probe.remove();
-      const cs = getComputedStyle(pre);
-      const availW = pre.clientWidth - parseFloat(cs.paddingLeft || 0) - parseFloat(cs.paddingRight || 0);
-      if (!(w20 > 0) || !(availW > 0)) return s.term.cols || 80;
-      return Math.max(1, Math.floor(availW / (w20 / 20)) - 1); // -1 留一点余量，防取整误差把行挤到折行
+      if (!(w > 0) || !(availW > 0)) return tc;
+      return tc * w <= availW + 0.5 ? tc : Math.max(1, Math.floor((availW + 0.5) / w));
     })();
     const block = (c) => {
       const d = document.createElement('div');
@@ -136,10 +141,9 @@
       let html = '';
       for (const raw of c.t.split('\n')) {
         const segs = cols > 0 ? splitByCells(raw, cols) : [{ text: raw }];
-        for (const seg of segs) {
-          // ansiToHtml 自己会把 ANSI 状态写进传进去的 g，不用再 sgrScan 一遍
-          html += ansiToHtml(seg.text, theme, fit, pal, g) + '\n';
-        }
+        // ansiToHtml 自己会把 ANSI 状态写进传进去的 g，不用再 sgrScan 一遍。
+        // 切开长行插进去的换行包在 .ls-wrap 里：选中复制时去掉 (见 plainSel)，复制出来还是原来的一整行
+        segs.forEach((seg, i) => { html += ansiToHtml(seg.text, theme, fit, pal, g) + (i < segs.length - 1 ? SOFT_BR : '\n'); });
       }
       // 末尾这个换行是「块和块之间的分隔」：chunks 里每块 t 以 \n 结尾 (最后一块除外)，
       // 这里去掉的是本块自己加的那个，不是切块留的 —— 两个都去会让相邻块粘在一起 (c + d → cd)
@@ -185,7 +189,14 @@
     // 设了静默期反而会让「点完马上往上滚」在 400ms 内没反应
     const closeBtn = v.querySelector('.ls-close');
     closeBtn.addEventListener('click', () => closeLocalScroll(s));
-    closeBtn.addEventListener('touchend', (e) => { e.preventDefault(); closeLocalScroll(s); }, { passive: false });
+    // 手指在按钮上按下后滑动 (顺手翻历史) 不算点：松手时离按下的地方超过 10px 就不关
+    let btnAt = null;
+    closeBtn.addEventListener('touchstart', (e) => { const t = e.touches[0]; btnAt = t && { x: t.clientX, y: t.clientY }; }, { passive: true });
+    closeBtn.addEventListener('touchend', (e) => {
+      const t = e.changedTouches[0];
+      if (btnAt && t && Math.hypot(t.clientX - btnAt.x, t.clientY - btnAt.y) > 10) return;
+      e.preventDefault(); closeLocalScroll(s);
+    }, { passive: false });
     // 电脑：在最底下还往下滚 = 回到实时画面
     pre.addEventListener('wheel', (e) => {
       if (e.deltaY > 0 && atBottom(pre)) { e.preventDefault(); closeByWheel(s); }
@@ -196,7 +207,7 @@
       setTimeout(async () => { // 等浏览器把选区定下来 (双击选词、三击选行)
         const sel = getSelection();
         if (!sel?.rangeCount || sel.isCollapsed || !pre.contains(sel.anchorNode) || !pre.contains(sel.focusNode)) return;
-        const text = sel.toString();
+        const text = plainSel(sel);
         if (!text.trim()) return;
         const range = sel.getRangeAt(0).cloneRange();
         const ok = await copyText(text);
@@ -204,6 +215,13 @@
         if (!sel.rangeCount || sel.isCollapsed) { sel.removeAllRanges(); sel.addRange(range); }
         fontToast(s, ok ? `已复制 ${text.length} 个字符` : '复制失败，请按 Ctrl+C 复制', 1200, v);
       });
+    });
+    // Ctrl+C / 右键复制：同上，去掉切长行插进去的换行
+    pre.addEventListener('copy', (e) => {
+      const sel = getSelection();
+      if (!sel?.rangeCount || sel.isCollapsed || !e.clipboardData) return;
+      e.clipboardData.setData('text/plain', plainSel(sel));
+      e.preventDefault();
     });
     // 手机：已经在最底下时再往上推 = 回到实时画面。
     // 判据用「松手时还在最底下」，不看按下那一刻 —— 以前按下时只要差几像素（惯性还在滚、前面的历史刚补上来）
@@ -307,6 +325,15 @@
     // base 一起返回：ASCII 每格固定用 base 的间距。以前 fitHtml 让 ASCII 沿用「上一个字符的间距」，
     // 中文后面的英文就继承了中文的 +2px，整行被拉宽 / 压窄（历史视图里中英混排的行看起来错位）
     return { fix, base: base.toFixed(3) };
+  }
+
+  // 历史视图里切长行插进去的换行 (显示用，原文里没有)
+  const SOFT_BR = '<span class="ls-wrap">\n</span>';
+  // 选中的文字去掉切长行插进去的换行 (直接 toString 会把一整行复制成好几行)
+  function plainSel(sel) {
+    const f = sel.getRangeAt(0).cloneContents();
+    f.querySelectorAll('.ls-wrap').forEach((x) => x.remove());
+    return f.textContent;
   }
 
   // 按格数把一行硬切成几段：抓历史用的是 tmux capture-pane -J / 本机记录的折行合并，长行是拼回一整条的，
