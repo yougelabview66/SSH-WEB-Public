@@ -95,7 +95,7 @@
     s.box.appendChild(v); // 先放进页面才量得出字宽
     const text = data.replace(/\n+$/, '');
     const cw = screen && screen.clientWidth / s.term.cols; // 实时画面一格多宽
-    const fix = cw ? gridFit(pre, text, cw) : null, pal = palette256(theme);
+    const fit = cw ? gridFit(pre, text, cw) : null, pal = palette256(theme);
     // 几千行一次全塞进页面要卡一两秒：分成块，先放最后几块马上显示，前面的在后台一块块补到上面。
     // 块从最后往前切 (最前面那块不满)；块末尾的换行留着，textContent 和整段文字一样 (复制面板按它数行)
     const lines = text.split('\n'), chunks = [], g = sgrInit();
@@ -106,7 +106,7 @@
     }
     const block = (c) => {
       const d = document.createElement('div');
-      d.innerHTML = ansiToHtml(c.t, theme, fix, pal, { ...c.g });
+      d.innerHTML = ansiToHtml(c.t, theme, fit, pal, { ...c.g });
       return d;
     };
     let next = chunks.length - 1;
@@ -263,7 +263,9 @@
       const d = cellWidth(c) * cw - w[i + 1];
       if (Math.abs(d - base) > 0.01) fix.set(c, d.toFixed(3));
     });
-    return fix;
+    // base 一起返回：ASCII 每格固定用 base 的间距。以前 fitHtml 让 ASCII 沿用「上一个字符的间距」，
+    // 中文后面的英文就继承了中文的 +2px，整行被拉宽 / 压窄（历史视图里中英混排的行看起来错位）
+    return { fix, base: base.toFixed(3) };
   }
 
   // 一个字在终端里占几格 (同 tmux：中日韩文字、全角符号、emoji 两格，组合用的附加符号不占格)
@@ -292,16 +294,21 @@
     return 1;
   }
 
-  // 按 gridFit 量出来的结果，把要单独补宽度的字包起来；不占格的附加符号跟着前一个字
-  function fitHtml(t, fix) {
-    if (!fix?.size) return esc(t);
+  // 按 gridFit 量出来的结果，把要单独补宽度的字包起来；不占格的附加符号跟着前一个字。
+  // ASCII (和 fix 里没有的字符) 一律用 base 的间距，不再沿用上一个字符的 —— 否则中文字符后面的英文
+  // 会继承中文的间距，一行里越往右偏得越多
+  function fitHtml(t, fit, base) {
+    const bs = base === undefined ? undefined : String(base);
+    if (!fit?.size && bs === undefined) return esc(t);
     let out = '', run = '', ls;
     const flush = () => {
       if (run) out += ls === undefined ? esc(run) : `<span style="letter-spacing:${ls}px">${esc(run)}</span>`;
       run = '';
     };
     for (const c of t) {
-      const v = cellWidth(c) ? fix.get(c) : ls;
+      const w = cellWidth(c);
+      // 不占格的附加符号 (组合音标、emoji 肤色等) 跟着前一个字符走，不单独换间距
+      const v = w ? (fit?.get(c) ?? bs) : ls;
       if (v !== ls) { flush(); ls = v; }
       run += c;
     }
@@ -351,7 +358,8 @@
     while ((m = ANSI_RE.exec(text))) applySgr(g, m[0], pal);
   }
 
-  function ansiToHtml(text, theme, fix, pal = palette256(theme), g = sgrInit()) {
+  // fit：gridFit 的返回值 { fix, base }，或者 null (量不出来就原样输出)
+  function ansiToHtml(text, theme, fit, pal = palette256(theme), g = sgrInit()) {
     let out = '', last = 0, m;
     const css = () => {
       let f = g.fg, b = g.bg;
@@ -369,7 +377,8 @@
     const put = (t) => {
       if (!t) return;
       const c = css();
-      out += c ? `<span style="${c}">${fitHtml(t, fix)}</span>` : fitHtml(t, fix);
+      const h = fitHtml(t, fit?.fix, fit?.base);
+      out += c ? `<span style="${c}">${h}</span>` : h;
     };
     ANSI_RE.lastIndex = 0;
     while ((m = ANSI_RE.exec(text))) {
