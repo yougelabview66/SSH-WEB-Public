@@ -122,7 +122,9 @@
           html += ansiToHtml(seg.text, theme, fit, pal, g) + '\n';
         }
       }
-      d.innerHTML = html.replace(/\n$/, ''); // 块末尾那个换行由下一块接着
+      // 末尾这个换行是「块和块之间的分隔」：chunks 里每块 t 以 \n 结尾 (最后一块除外)，
+      // 这里去掉的是本块自己加的那个，不是切块留的 —— 两个都去会让相邻块粘在一起 (c + d → cd)
+      d.innerHTML = html.replace(/\n$/, '');
       return d;
     };
     let next = chunks.length - 1;
