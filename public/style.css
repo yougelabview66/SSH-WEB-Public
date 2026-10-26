@@ -181,6 +181,9 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: r
 .tab .x:hover { color: var(--danger); }
 /* 手机 / 平板：× 加宽到手指点得准 (原来只有十几像素宽，点标签时容易点到) */
 @media (pointer: coarse) { .tab .x { padding: 0 10px; min-width: 32px; margin-right: -6px; } }
+/* 标签不超过标签栏本身的宽度 (手机上标签栏只剩 200px 左右，× 加宽后长名字的标签会比它还宽、怎么滚都露不全)：
+   放不下时标题省略号截短 */
+.tab { max-width: min(220px, 100%); }
 
 /* isolation：xterm 内部图层的 z-index 只在终端区域内生效，不会盖住输入栏上边缘的拖动条 */
 #terms { flex: 1; position: relative; background: var(--term-bg); min-height: 0; isolation: isolate; }

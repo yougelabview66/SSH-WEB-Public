@@ -65,7 +65,7 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   await m.tap('#mobileBar [data-a=kset]'); m.once('dialog', (d) => d.accept()); await m.tap('#keysReset'); await m.tap('#keysSave'); await wait(400);
   ok(JSON.stringify(await labels()) === JSON.stringify(DEF), '「恢复默认」回到原来的按键和顺序');
 
-  // 双指捏合调字体
+  // 双指捏合交给浏览器原生缩放页面 (v1.83.19)：不再改终端字号、不发 resize；调字号用侧边栏 A- / A+
   const cdp = await ctx.newCDPSession(m);
   const box = await m.locator('.term.active .term-box').boundingBox();
   const cx = box.x + box.width / 2, cy = box.y + 300;
@@ -74,18 +74,18 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
     for (let i = 1; i <= 10; i++) { const d = from + (to - from) * i / 10; await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: cx - d, y: cy, id: 1 }, { x: cx + d, y: cy, id: 2 }] }); await wait(20); }
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await wait(500);
   };
-  const fs0 = await m.evaluate(() => parseInt(localStorage.getItem('sshweb.fontSize') || '12', 10));
-  const cols0 = lastCols;
-  await pinch(60, 120);
-  const fs1 = await m.evaluate(() => parseInt(localStorage.getItem('sshweb.fontSize'), 10));
-  ok(fs1 > fs0 && lastCols < cols0, `双指张开 → 字体变大 ${fs0} → ${fs1}，终端每行 ${cols0} → ${lastCols} 列 (已通知服务器)`);
-  await pinch(120, 40);
-  const fs2 = await m.evaluate(() => parseInt(localStorage.getItem('sshweb.fontSize'), 10));
-  ok(fs2 < fs1 && lastCols > cols0 - 1, `双指捏合 → 字体变小 ${fs1} → ${fs2}，每行 ${lastCols} 列`);
-  await pinch(100, 5);
-  ok(await m.evaluate(() => parseInt(localStorage.getItem('sshweb.fontSize'), 10)) === 8, '最小限制 8');
+  const termFont = () => m.evaluate(() => document.getElementById('fontLabel').textContent);
+  const fs0 = await termFont(), cols0 = lastCols;
   got = '';
+  await pinch(60, 120);
+  await pinch(120, 40);
+  ok(await termFont() === fs0 && lastCols === cols0, `双指张开 / 捏合不改终端字号 (${fs0} → ${await termFont()})、不改列数 (${cols0} → ${lastCols})`);
   ok(got === '' && await m.isHidden('#copyPanel'), '捏合不会误触发长按复制 / 发送按键');
+  await m.tap('#btnToggle');
+  for (let i = 0; i < 6; i++) await m.tap('#fontDec');
+  await wait(300);
+  ok(await termFont() === '8' && lastCols > cols0, `侧边栏 A- 调小字体，最小限制 8 (终端每行 ${cols0} → ${lastCols} 列，已通知服务器)`);
+  await m.tap('#terms', { position: { x: 400, y: 300 } }); await wait(300); // 点右侧终端区域关闭侧边栏
   await m.reload(); await waitFor(m, () => document.querySelectorAll('.tab').length === 1); await wait(800);
   ok((await m.textContent('#fontLabel')) === '8', '刷新后保持字体大小');
   await m.tap('#btnToggle'); await m.tap('#fontInc'); await m.tap('#fontInc');

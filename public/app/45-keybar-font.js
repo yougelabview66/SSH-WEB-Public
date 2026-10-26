@@ -148,7 +148,7 @@
   });
   $('#keysPanel').addEventListener('mousedown', (e) => { if (e.target.id === 'keysPanel') $('#keysPanel').classList.add('hidden'); });
 
-  // ------------------------------------------------------------ 终端字体大小 (手机双指捏合 / 侧边栏 A- A+)
+  // ------------------------------------------------------------ 终端字体大小 (侧边栏 A- A+；手机双指捏合是浏览器原生缩放，见 57-touch-scroll.js)
   const FONT_MIN = 8;
   const FONT_MAX = 28;
   const defaultFont = () => (window.innerWidth < 760 ? 12 : 14);
