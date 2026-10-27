@@ -108,7 +108,7 @@
     // 不再让浏览器折行：抓历史时折行已经拼回一整条 (-J / isWrapped)，必须正好在 cols 格处切开才和实时画面一致。
     // 浏览器按像素宽折行，和 cols × 每格宽 差一点点，表格竖线就对不上（右边一列跑到下一行行首）
     pre.style.whiteSpace = 'pre'; // 我们自己切，别让浏览器再折一次
-    pre.style.overflowX = 'hidden';
+    pre.style.overflowX = 'auto'; // 带框线的超宽行 (表格) 不切，左右滑动看 (见 splitByCells)；别的行都切到放得下，不会横向滚
     // 几千行一次全塞进页面要卡一两秒：分成块，先放最后几块马上显示，前面的在后台一块块补到上面。
     // 块从最后往前切 (最前面那块不满)；块末尾的换行留着，textContent 和整段文字一样 (复制面板按它数行)
     const lines = text.split('\n'), chunks = [], g = sgrInit();
@@ -335,6 +335,7 @@
     return { fix: reg.fix, base: reg.base.toFixed(3), cell: cw, bold: { fix: bold.fix, base: bold.base.toFixed(3) } };
   }
 
+  const BOX_RE = /[\u2500-\u257f]/;
   // 历史视图里切长行插进去的换行 (显示用，原文里没有)
   const SOFT_BR = '<span class="ls-wrap">\n</span>';
   // 选中的文字去掉切长行插进去的换行 (直接 toString 会把一整行复制成好几行)
@@ -355,7 +356,11 @@
   // 复制面板按「显示行号」去原文里找行 (见 60-copy-push.js 的 domLineToTextLine)，两边切法必须一致，
   // 不然行号系统性偏大，短会话直接越界落到最后一行 (看着像「直接出现最新记录」)，长会话指到别的行。
   // 顺带：以前正好切在转义序列中间会把 \x1b[36m 劈成两半，后半截 [36m 当普通文字画出来 (画面里多出 0m / 36m)
+  //
+  // 带框线字符 (│ ┌ ├ └ ─ 这些) 的行不切：表格比历史视图宽 (电脑上画的表格拿到手机上看) 时，切开的每一行都折成两三行，
+  // 整张表错行看不出结构。保持一整行，历史视图左右滑动看 (见 openLocalScroll 的 overflowX)
   function splitByCells(text, cols) {
+    if (BOX_RE.test(text)) return [{ text, cell: 0 }];
     const out = [];
     let cur = '', cells = 0, start = 0;
     // 普通文字逐字算格数；ANSI 序列整段原样带上、不算格数，也不会被切开
