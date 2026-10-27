@@ -91,6 +91,13 @@ const measure = () => {
   return { sw: pre.scrollWidth, cw: pre.clientWidth, bar: pre.offsetWidth - pre.clientWidth, visRight: pr.left + pre.clientLeft + pre.clientWidth, out, screenLeft: sr.left, screenWidth: sr.width, preLeft: pre.getBoundingClientRect().left + parseFloat(getComputedStyle(pre).paddingLeft) };
 };
 
+// 手指从 (x, y) 滑 (dx, dy)：一步步发触摸事件，浏览器按真的手指滑动处理 (原生滚动)
+async function swipe(cdp, x, y, dx, dy) {
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+  for (let i = 1; i <= 10; i++) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x + dx * i / 10, y: y + dy * i / 10 }] }); await wait(20); }
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await wait(600);
+}
+
 async function check(p, label) {
   const r = await p.evaluate(measure);
   const tableRows = r.out.filter((x) => x.line.startsWith('  '));
@@ -152,6 +159,17 @@ async function check(p, label) {
     if (label === '电脑') ok(await p.evaluate(() => typeof CellWidth?.useCellWidth === 'function' && CellWidth.cellWidth('✅') === 2), '网页里加载了字宽规则 (public/cellwidth.js，终端里 ✅ 算两格)');
     await p.evaluate(() => { const pre = document.querySelector('.term.active .ls-body'); pre.scrollTop = pre.scrollHeight; });
     await check(p, label);
+    if (label === '手机') { // 真的用手指滑 (浏览器原生的触摸滚动)：以前触摸都被终端的滑动处理拦下，只换算成上下滚，左右滑不动
+      const g = await ctx.newCDPSession(p);
+      const pb = await p.locator('.term.active .ls-body').boundingBox();
+      const top0 = await p.evaluate(() => { const pre = document.querySelector('.term.active .ls-body'); pre.scrollLeft = 0; return pre.scrollTop; });
+      await swipe(g, pb.x + pb.width * 0.8, pb.y + pb.height / 2, -250, 0);
+      const sl = await p.evaluate(() => document.querySelector('.term.active .ls-body').scrollLeft);
+      ok(sl > 50, `${label}：在历史视图里手指往左滑，表格跟着往左移 (scrollLeft ${sl})`);
+      await swipe(g, pb.x + pb.width / 2, pb.y + pb.height / 3, 0, 250);
+      const top1 = await p.evaluate(() => document.querySelector('.term.active .ls-body').scrollTop);
+      ok(top1 < top0 - 50, `${label}：手指往下滑，历史往回滚 (scrollTop ${Math.round(top0)} → ${Math.round(top1)})`);
+    }
     if (label.startsWith('电脑')) { // 选中切成几行显示的长行，松开鼠标自动复制：剪贴板里是原来的一整行
       await ctx.grantPermissions(['clipboard-read', 'clipboard-write']);
       const cp = await p.evaluate(async () => {

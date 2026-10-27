@@ -55,17 +55,13 @@
       : s.term.buffer.active.type === 'alternate' ? `${n} 行 (全屏程序只有当前画面)` : `${n} 行`;
     mInput.blur();
     ta.style.paddingBottom = '';
+    ta.scrollLeft = 0; // 上次左右滑过：从行首开始看
     $('#copyPanel').dataset.tab = s.id; // 手机上同性能监控 (见 tabPanels)
     $('#copyPanel').classList.remove('hidden');
     tabPanels(); // 同历史面板：在别的标签上打开过会带着 tab-away
     if (n && line >= 0) scrollToLine(ta, Math.min(line, n - 1), at?.y);
     else { ta._place = null; ta.scrollTop = ta.scrollHeight; } // 定位到最新内容
   }
-
-  // 只允许纵向滚：终端历史里的长行 (最长 700+ 格) 横向能溢出几千像素，手机上按住左右一拖就跑到很远，
-  // 看着像文字不见了。现在长行折行显示 (见 style.css 的 #copyText)，正常不会横向溢出；
-  // 万一有 (不能折的超长内容)，程序 / 手势照样能改 scrollLeft，这里兜底锁回 0
-  $('#copyText').addEventListener('scroll', (e) => { const ta = e.target; if (ta.scrollLeft) ta.scrollLeft = 0; });
 
   // 把 DOM 里的行号换算成原始文本的行号：显示时长行会被 splitByCells 切成几行，
   // 所以 DOM 行号 ≥ 原始行号。按显示时的切法重数一遍，数到第 k 个显示行时它在原始的第几行。
