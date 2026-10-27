@@ -127,7 +127,9 @@
       frame = 0;
       pendingPx = 0;
       wheelQueue = 0; clearTimeout(wheelTimer); wheelTimer = 0; // 手指按住 = 停止滚动，排队没发完的滚轮也不再发
-      if (e.touches.length !== 1) { lastY = null; return; }
+      // 在历史视图里按下的：交给浏览器自己滚 (上下、左右都行，带惯性)。以前也被这里拦下、只换算成上下滚，
+      // 左右滑不动 —— 超宽的表格不折行，要左右滑着看 (见 55-local-scroll.js 的 splitByCells)
+      if (e.touches.length !== 1 || e.target.closest?.('.lscroll')) { lastY = null; return; }
       measure();
       lastY = e.touches[0].clientY;
       lastX = e.touches[0].clientX;

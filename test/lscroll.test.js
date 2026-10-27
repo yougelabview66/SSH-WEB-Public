@@ -375,7 +375,7 @@ const WHEEL_UP = '\x1b[<64;';
   ok(cp.shown && cp.hasOld && cp.hasNew && cp.n >= 3000 && cp.info.includes('tmux 历史'), `手机：在历史视图里长按 → 复制面板里是整段 tmux 历史 (${cp.n} 行，${cp.info})，不是终端当前那一屏`);
   const num = (t) => +(/line (\d+)/.exec(t || '') || [])[1];
   ok(num(pressed) > num(seen) && num(cp.top) === num(pressed), `按住的那一行在复制面板里就在手指底下 (按住「${pressed}」，面板里手指处「${cp.top}」)`);
-  // 长行折行显示、右边不裁掉：没有横向溢出，最长那行比一行能放下的格数长 (确实要折)
+  // 长行不折行 (电脑上画的宽表格折行后每行错开)，左右滑动看：有横向溢出，最长那行比一行能放下的格数长
   const wrap = await m.evaluate(() => {
     const ta = document.getElementById('copyText'), cs = getComputedStyle(ta);
     const longest = Math.max(...ta.value.split('\n').map((l) => l.length));
@@ -384,7 +384,9 @@ const WHEEL_UP = '\x1b[<64;';
     const fit = Math.floor((ta.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)) / (probe.getBoundingClientRect().width / 10)); probe.remove();
     return { ws: cs.whiteSpace, sw: ta.scrollWidth, cw: ta.clientWidth, longest, fit };
   });
-  ok(wrap.ws === 'pre-wrap' && wrap.sw <= wrap.cw && wrap.longest > wrap.fit, '手机：复制面板里长行折行显示，右边不裁掉 (没有横向溢出) ' + JSON.stringify(wrap));
+  ok(wrap.ws === 'pre' && wrap.sw > wrap.cw && wrap.longest > wrap.fit, '手机：复制面板里长行不折行，可以左右滑动看 (有横向溢出) ' + JSON.stringify(wrap));
+  const left = await m.evaluate(() => { const ta = document.getElementById('copyText'); ta.scrollLeft = 200; return ta.scrollLeft; });
+  ok(left > 0, `手机：复制面板能左右滚 (scrollLeft ${left})`);
   await m.screenshot({ path: shot('lscroll-copy.png') });
   await m.evaluate(() => document.getElementById('copyPanel').classList.add('hidden'));
   // 电脑上在用这个标签 (手机这边锁着，点终端本来就不聚焦输入框)：先在手机上接管，下面才测得出会不会弹输入法
