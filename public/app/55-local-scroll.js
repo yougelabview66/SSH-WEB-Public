@@ -351,12 +351,15 @@
     const out = [];
     let cur = '', cells = 0, start = 0;
     // 普通文字逐字算格数；ANSI 序列整段原样带上、不算格数，也不会被切开
+    let prev = 0; // 上一个字占几格 (后面跟 FE0F 时它变成两格，见 vs16Width)
     const put = (s) => {
       for (const ch of s) {
-        const w = cellWidth(ch);
-        if (w && cells + w > cols) { out.push({ text: cur, cell: start }); cur = ''; cells = 0; start = 0; }
+        const w = ch === VS16 ? vs16Width(prev) : cellWidth(ch);
+        // FE0F 不和前面的字分开 (宁可这一行多出一格)
+        if (w && ch !== VS16 && cells + w > cols) { out.push({ text: cur, cell: start }); cur = ''; cells = 0; start = 0; }
         cur += ch;
         cells += w;
+        if (w) prev = ch === VS16 ? 2 : w;
       }
     };
     let at = 0;
@@ -373,7 +376,10 @@
 
   // 表情和符号 (不是中日韩文字)：历史视图里装进固定宽度的小格子 (见 fitHtml)
   const isEmoji = (cp) => cp < 0x2e80 || (cp >= 0x1f000 && cp < 0x20000);
+  // FE0F (要求显示成彩色表情)：跟在一格宽的字后面 (⚠ ✔ ℹ 这类) 让它变成两格 —— 同实时画面的普通屏幕 (public/cellwidth.js)。
+  // tmux 抓的历史里 ⚠️ 后面补的空格子服务器上已经去掉了 (见 lib/session/remote.js 的 dropVs16Pad)
   const VS16 = '\ufe0f';
+  const vs16Width = (prev) => (prev === 1 ? 1 : 0);
   // 一个字在终端里占几格：和实时画面、服务器上的终端记录同一份规则 (public/cellwidth.js)
   const { cellWidth } = CellWidth;
 
@@ -382,8 +388,7 @@
   // 会继承中文的间距，一行里越往右偏得越多
   //
   // 表情 (✅ 🔥 这类两格的，和后面跟着 FE0F 的 ⚠️ 等) 不靠量字宽补间距：装进 cell 宽 × 格数的小格子 (.ls-c)。
-  // 表情的实际宽度各个浏览器、字体都不一样，iPhone 上量出来的和画出来的对不上，表格里带表情的行右边框就偏出去一格。
-  // ⚠️ 的格子只有一格 (同实时画面，见 public/cellwidth.js)，画出来的表情伸到后面那格 (tmux 在那里补了空格子)
+  // 表情的实际宽度各个浏览器、字体都不一样，iPhone 上量出来的和画出来的对不上，表格里带表情的行右边框就偏出去一格
   function fitHtml(t, fit, base, cell) {
     const bs = base === undefined ? undefined : String(base);
     if (!fit?.size && bs === undefined) return esc(t);
@@ -401,7 +406,7 @@
         const tail = cs.slice(i + 1, j).join(''), vs = tail.includes(VS16);
         if (vs || (w === 2 && isEmoji(c.codePointAt(0)))) {
           flush();
-          out += `<span class="ls-c" style="width:${(w * cell).toFixed(3)}px">${esc(c + tail)}</span>`;
+          out += `<span class="ls-c" style="width:${((vs ? 2 : w) * cell).toFixed(3)}px">${esc(c + tail)}</span>`;
           i = j - 1;
           continue;
         }
