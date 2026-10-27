@@ -120,10 +120,12 @@ async function check(p, label) {
   const withBars = await chromium.launch({ executablePath: process.env.CHROME_PATH || undefined, args: ['--no-sandbox'], ignoreDefaultArgs: ['--hide-scrollbars'] });
   const errors = [];
 
-  for (const [label, opts, b] of [['电脑', { viewport: { width: 1280, height: 800 } }], ['电脑 (显示滚动条)', { viewport: { width: 1280, height: 800 } }, withBars], ['平板横屏', { ...devices['iPad Pro 11 landscape'] }]]) {
+  for (const [label, opts, b] of [['电脑', { viewport: { width: 1280, height: 800 } }], ['电脑 (显示滚动条)', { viewport: { width: 1280, height: 800 } }, withBars], ['电脑 (粗体字更宽)', { viewport: { width: 1280, height: 800 } }], ['平板横屏', { ...devices['iPad Pro 11 landscape'] }]]) {
     const ctx = await (b || browser).newContext(opts);
     const p = await ctx.newPage(); p.on('pageerror', (e) => errors.push(e.message));
     await p.goto(BASE + '/'); await p.waitForSelector('#app:not(.hidden)');
+    // 模拟 Windows 上中文粗体是系统模拟加粗 (每个字宽出一点)：粗体字放大一点，表格里有粗体的那行右边框照样要对齐
+    if (label.includes('粗体')) await p.addStyleTag({ content: '.ls-body [style*="font-weight:bold"] { font-size: 1.12em; }' });
     if (label.startsWith('电脑')) {
       await p.locator('.host', { hasText: ':2250' }).first().click(); await wait(2000);
       const b = await p.locator('.term.active .term-box').boundingBox(); await p.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
