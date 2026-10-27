@@ -351,15 +351,12 @@
     const out = [];
     let cur = '', cells = 0, start = 0;
     // 普通文字逐字算格数；ANSI 序列整段原样带上、不算格数，也不会被切开
-    let prev = 0; // 上一个字占几格 (后面跟 FE0F 时它变成两格，见 vs16Width)
     const put = (s) => {
       for (const ch of s) {
-        const w = ch === VS16 ? vs16Width(prev) : cellWidth(ch);
-        // FE0F 不和前面的字分开 (宁可这一行多出一格)
-        if (w && ch !== VS16 && cells + w > cols) { out.push({ text: cur, cell: start }); cur = ''; cells = 0; start = 0; }
+        const w = cellWidth(ch);
+        if (w && cells + w > cols) { out.push({ text: cur, cell: start }); cur = ''; cells = 0; start = 0; }
         cur += ch;
         cells += w;
-        if (w) prev = ch === VS16 ? 2 : w;
       }
     };
     let at = 0;
@@ -374,45 +371,19 @@
     return out;
   }
 
-  // FE0F (要求显示成彩色表情)：跟在一格宽的字后面 (⚠ ✔ ℹ 这类) 让它变成两格 —— Claude Code 等程序 (string-width) 这样算，
-  // 表格就是按这个补的空格；跟在本来就两格的字后面不再加
-  const VS16 = '\ufe0f';
-  const vs16Width = (prev) => (prev === 1 ? 1 : 0);
   // 表情和符号 (不是中日韩文字)：历史视图里装进固定宽度的小格子 (见 fitHtml)
   const isEmoji = (cp) => cp < 0x2e80 || (cp >= 0x1f000 && cp < 0x20000);
-
-  // 一个字在终端里占几格 (同 tmux：中日韩文字、全角符号、emoji 两格，组合用的附加符号不占格)
-  const WIDE = [[0x1100, 0x115f], [0x231a, 0x231b], [0x2329, 0x232a], [0x23e9, 0x23ec], [0x23f0, 0x23f0], [0x23f3, 0x23f3],
-    [0x25fd, 0x25fe], [0x2614, 0x2615], [0x2648, 0x2653], [0x267f, 0x267f], [0x2693, 0x2693], [0x26a1, 0x26a1],
-    [0x26aa, 0x26ab], [0x26bd, 0x26be], [0x26c4, 0x26c5], [0x26ce, 0x26ce], [0x26d4, 0x26d4], [0x26ea, 0x26ea],
-    [0x26f2, 0x26f3], [0x26f5, 0x26f5], [0x26fa, 0x26fa], [0x26fd, 0x26fd], [0x2705, 0x2705], [0x270a, 0x270b],
-    [0x2728, 0x2728], [0x274c, 0x274c], [0x274e, 0x274e], [0x2753, 0x2755], [0x2757, 0x2757], [0x2795, 0x2797],
-    [0x27b0, 0x27b0], [0x27bf, 0x27bf], [0x2b1b, 0x2b1c], [0x2b50, 0x2b50], [0x2b55, 0x2b55], [0x2e80, 0x303e],
-    [0x3041, 0x4dbf], [0x4e00, 0xa4cf], [0xa960, 0xa97f], [0xac00, 0xd7a3], [0xf900, 0xfaff], [0xfe10, 0xfe19],
-    [0xfe30, 0xfe6f], [0xff00, 0xff60], [0xffe0, 0xffe6], [0x16fe0, 0x16fe4], [0x17000, 0x18aff], [0x1b000, 0x1b2ff],
-    [0x1f004, 0x1f004], [0x1f0cf, 0x1f0cf], [0x1f18e, 0x1f18e], [0x1f191, 0x1f19a], [0x1f200, 0x1f251],
-    [0x1f300, 0x1f64f], [0x1f680, 0x1f6ff], [0x1f7e0, 0x1f7eb], [0x1f90c, 0x1f9ff], [0x1fa70, 0x1faff], [0x20000, 0x3fffd]];
-  const ZERO_RE = /[\u0300-\u036f\u0483-\u0489\u0591-\u05bd\u0610-\u061a\u064b-\u065f\u200b-\u200f\u2028-\u202e\u2060-\u2064\u20d0-\u20ff\ufe00-\ufe0f\ufe20-\ufe2f\u{1f3fb}-\u{1f3ff}\u{e0100}-\u{e01ef}]/u;
-  function cellWidth(c) {
-    const cp = c.codePointAt(0);
-    if (cp < 0x300) return 1;
-    if (ZERO_RE.test(c)) return 0;
-    let lo = 0, hi = WIDE.length - 1;
-    while (lo <= hi) {
-      const mid = (lo + hi) >> 1;
-      if (cp < WIDE[mid][0]) hi = mid - 1;
-      else if (cp > WIDE[mid][1]) lo = mid + 1;
-      else return 2;
-    }
-    return 1;
-  }
+  const VS16 = '\ufe0f';
+  // 一个字在终端里占几格：和实时画面、服务器上的终端记录同一份规则 (public/cellwidth.js)
+  const { cellWidth } = CellWidth;
 
   // 按 gridFit 量出来的结果，把要单独补宽度的字包起来；不占格的附加符号跟着前一个字。
   // ASCII (和 fix 里没有的字符) 一律用 base 的间距，不再沿用上一个字符的 —— 否则中文字符后面的英文
   // 会继承中文的间距，一行里越往右偏得越多
   //
   // 表情 (✅ 🔥 这类两格的，和后面跟着 FE0F 的 ⚠️ 等) 不靠量字宽补间距：装进 cell 宽 × 格数的小格子 (.ls-c)。
-  // 表情的实际宽度各个浏览器、字体都不一样，iPhone 上量出来的和画出来的对不上，表格里带表情的行右边框就偏出去一格
+  // 表情的实际宽度各个浏览器、字体都不一样，iPhone 上量出来的和画出来的对不上，表格里带表情的行右边框就偏出去一格。
+  // ⚠️ 的格子只有一格 (同实时画面，见 public/cellwidth.js)，画出来的表情伸到后面那格 (tmux 在那里补了空格子)
   function fitHtml(t, fit, base, cell) {
     const bs = base === undefined ? undefined : String(base);
     if (!fit?.size && bs === undefined) return esc(t);
@@ -430,7 +401,7 @@
         const tail = cs.slice(i + 1, j).join(''), vs = tail.includes(VS16);
         if (vs || (w === 2 && isEmoji(c.codePointAt(0)))) {
           flush();
-          out += `<span class="ls-c" style="width:${((vs ? 2 : w) * cell).toFixed(3)}px">${esc(c + tail)}</span>`;
+          out += `<span class="ls-c" style="width:${(w * cell).toFixed(3)}px">${esc(c + tail)}</span>`;
           i = j - 1;
           continue;
         }

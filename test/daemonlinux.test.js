@@ -53,6 +53,7 @@ function server(port, darwin) {
         if (darwin && cmd === 'uname -sm') { ch.write('Darwin arm64\n'); ch.exit(0); ch.end(); return; }
         // 命令在本机临时目录里真的执行 (bridge 这种一直跑的：通道的输入输出接上，通道关了就结束它)
         const pr = spawn('sh', ['-c', cmd], { cwd: home, env: ENV });
+        pr.stdin.on('error', () => {}); // 进程已经结束还有输入过来：写入失败是异步报的 (EPIPE)，try 接不住，会让整个测试崩掉
         ch.on('data', (d) => { try { pr.stdin.write(d); } catch {} });
         ch.on('end', () => { try { pr.stdin.end(); } catch {} });
         pr.stdout.on('data', (d) => { try { ch.write(d); } catch {} });
