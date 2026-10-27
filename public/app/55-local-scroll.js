@@ -306,25 +306,33 @@
   // 实时画面按格子画 (中文 / emoji 占两格，其他一格)，历史视图是普通文字：英文字宽和格子差一点点，
   // 中文、emoji 和后备字体里的符号更是宽窄不一，表格的竖线对不齐、占满一行的分隔线放不下而折行。
   // 量出每种字在历史视图里的实际宽度，用 letter-spacing 把每个字补成正好 1 / 2 格 (和实时画面一样宽)。
-  // 英文统一补在整个视图上；返回其他要单独补的字 → 补多少 px
+  // 英文统一补在整个视图上；返回其他要单独补的字 → 补多少 px。
+  // 粗体单独量一遍 (同 xterm 的字宽缓存分粗细)：Windows 上中文粗体常是系统模拟加粗，每个字宽出 1px 左右，
+  // 以前按常规体补，一行里几个粗体中文右边框就偏出去几像素
   function gridFit(pre, text, cw) {
     const chars = [...new Set(text.replace(ANSI_RE, '').match(/[^\x00-\x7f]/gu) || [])].filter(cellWidth);
-    const probe = document.createElement('div');
-    probe.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;letter-spacing:0';
-    probe.innerHTML = `<span>${'0'.repeat(100)}</span>` + chars.map((c) => `<span>${esc(c)}</span>`).join('');
-    pre.appendChild(probe);
-    const w = [...probe.children].map((x) => x.getBoundingClientRect().width);
-    probe.remove();
-    const base = cw - w[0] / 100;
-    pre.style.letterSpacing = base.toFixed(3) + 'px';
-    const fix = new Map();
-    chars.forEach((c, i) => {
-      const d = cellWidth(c) * cw - w[i + 1];
-      if (Math.abs(d - base) > 0.01) fix.set(c, d.toFixed(3));
-    });
+    const measure = (style) => {
+      const probe = document.createElement('div');
+      probe.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;letter-spacing:0';
+      probe.innerHTML = `<span style="${style}">${'0'.repeat(100)}</span>` + chars.map((c) => `<span style="${style}">${esc(c)}</span>`).join('');
+      pre.appendChild(probe);
+      const w = [...probe.children].map((x) => x.getBoundingClientRect().width);
+      probe.remove();
+      const base = cw - w[0] / 100;
+      const fix = new Map();
+      chars.forEach((c, i) => {
+        const d = cellWidth(c) * cw - w[i + 1];
+        if (Math.abs(d - base) > 0.01) fix.set(c, d.toFixed(3));
+      });
+      return { fix, base };
+    };
+    const reg = measure('font-weight:normal');
+    pre.style.letterSpacing = reg.base.toFixed(3) + 'px';
+    // 粗体：只在历史里有粗体 (SGR 1) 时才量
+    const bold = /\x1b\[(?:[0-9;]*;)?1(?:;[0-9;]*)?m/.test(text) ? measure('font-weight:bold') : reg;
     // base 一起返回：ASCII 每格固定用 base 的间距。以前 fitHtml 让 ASCII 沿用「上一个字符的间距」，
     // 中文后面的英文就继承了中文的 +2px，整行被拉宽 / 压窄（历史视图里中英混排的行看起来错位）
-    return { fix, base: base.toFixed(3), cell: cw };
+    return { fix: reg.fix, base: reg.base.toFixed(3), cell: cw, bold: { fix: bold.fix, base: bold.base.toFixed(3) } };
   }
 
   // 历史视图里切长行插进去的换行 (显示用，原文里没有)
@@ -481,7 +489,8 @@
     const put = (t) => {
       if (!t) return;
       const c = css();
-      const h = fitHtml(t, fit?.fix, fit?.base, fit?.cell);
+      const f = g.bold ? fit?.bold : fit;
+      const h = fitHtml(t, f?.fix, f?.base, fit?.cell);
       out += c ? `<span style="${c}">${h}</span>` : h;
     };
     ANSI_RE.lastIndex = 0;
