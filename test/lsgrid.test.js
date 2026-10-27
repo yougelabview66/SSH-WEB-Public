@@ -116,12 +116,23 @@ async function check(p, label) {
   if (label.includes('滚动条')) ok(r.bar > 0, `${label}：历史视图有滚动条 (${r.bar}px)`);
   const far = Math.max(...r.out.map((x) => x.right));
   if (label.includes('手机')) {
-    // 表格比屏幕宽 (手机上看电脑画的表格)：带框线的行不折行，每行还是一行，左右滑动看 —— 以前切开后每行折成两三行，整张表错行
-    ok(tableRows.every((x) => x.rows === 1) && r.sw > r.cw + 10, `${label}：超宽的表格不折行，能左右滑动 (每行 ${[...new Set(tableRows.map((x) => x.rows))].join('/')} 行，内容宽 ${r.sw}px / 可见 ${r.cw}px)`);
-    await p.evaluate(() => { const pre = document.querySelector('.term.active .ls-body'); pre.scrollLeft = pre.scrollWidth; });
+    // 表格比屏幕宽 (手机上看电脑画的表格)：整张表放进自己的横滑条带，每行还是一行；整个历史视图不横滚 (普通文字不跟着飘)
+    const t = await p.evaluate(() => {
+      const pre = document.querySelector('.term.active .ls-body'), tb = [...pre.querySelectorAll('.ls-tbl')];
+      const c = pre.cloneNode(true); c.querySelectorAll('.ls-wrap').forEach((x) => x.remove());
+      return { n: tb.length, sw: tb[0]?.scrollWidth, cw: tb[0]?.clientWidth, rows: tb[0] ? tb[0].textContent.split('\n').filter(Boolean).length : 0,
+        preSw: pre.scrollWidth, preCw: pre.clientWidth, same: c.textContent === document.querySelector('.term.active .lscroll').lsText };
+    });
+    ok(t.n === 1 && t.rows === TABLE.length + 1 /* 紧跟着的整行分隔线也带框线字符，算在一起 */ && tableRows.every((x) => x.rows === 1) && t.sw > t.cw + 10,
+      `${label}：超宽的表格整张放进一个横滑条带，每行不折行 (条带 ${t.n} 个，${t.rows} 行，内容宽 ${t.sw}px / 可见 ${t.cw}px)`);
+    ok(t.preSw <= t.preCw, `${label}：整个历史视图不横向滚 (内容宽 ${t.preSw}px / 可见 ${t.preCw}px)`);
+    ok(t.same, `${label}：历史视图的文字和原文一样 (表格条带没有多出 / 吃掉换行，长按定位、复制面板换算行号照旧)`);
+    await p.evaluate(() => { const tb = document.querySelector('.term.active .ls-tbl'); tb.scrollLeft = tb.scrollWidth; });
     const r2 = await p.evaluate(measure).catch(() => null);
     const far2 = r2 && Math.max(...r2.out.filter((x) => x.line.startsWith('  ')).map((x) => x.right));
-    ok(r2 && far2 <= r2.visRight + 0.5 && far2 > r2.visRight - 40, `${label}：滑到最右边能看到表格的右边框 (最右 ${far2?.toFixed(1)}px，可见到 ${r2?.visRight.toFixed(1)}px)`);
+    ok(r2 && far2 <= r2.visRight + 0.5 && far2 > r2.visRight - 40, `${label}：表格滑到最右边能看到右边框 (最右 ${far2?.toFixed(1)}px，可见到 ${r2?.visRight.toFixed(1)}px)`);
+    ok(await p.evaluate(() => !document.querySelector('.term.active .ls-tbl').classList.contains('more')), `${label}：滑到最右边，右边缘的渐隐提示去掉`);
+    await p.evaluate(() => { document.querySelector('.term.active .ls-tbl').scrollLeft = 0; });
   } else ok(far <= r.visRight + 0.5, `${label}：最右边的字没被裁掉 / 没被滚动条盖住 (最右 ${far.toFixed(1)}px，可见到 ${r.visRight.toFixed(1)}px)`);
   ok(full.length >= 2 && full.every((x) => x.rows === 1), `${label}：占满整行的分隔线不折行 (${full.map((x) => x.len + ' 字 ' + x.rows + ' 行').join('，')})`);
   return r;
@@ -162,10 +173,18 @@ async function check(p, label) {
     if (label === '手机') { // 真的用手指滑 (浏览器原生的触摸滚动)：以前触摸都被终端的滑动处理拦下，只换算成上下滚，左右滑不动
       const g = await ctx.newCDPSession(p);
       const pb = await p.locator('.term.active .ls-body').boundingBox();
-      const top0 = await p.evaluate(() => { const pre = document.querySelector('.term.active .ls-body'); pre.scrollLeft = 0; return pre.scrollTop; });
+      // 表格滚到看得见的地方 (条带上半截)，在表格上往左滑：只有表格动
+      const tb = await p.evaluate(() => { const pre = document.querySelector('.term.active .ls-body'), t = pre.querySelector('.ls-tbl');
+        pre.scrollTop += t.getBoundingClientRect().top - pre.getBoundingClientRect().top - 40; const r = t.getBoundingClientRect(); return { y: r.top + 30 }; });
+      await swipe(g, pb.x + pb.width * 0.8, tb.y, -250, 0);
+      const h1 = await p.evaluate(() => ({ t: document.querySelector('.term.active .ls-tbl').scrollLeft, pre: document.querySelector('.term.active .ls-body').scrollLeft }));
+      ok(h1.t > 50 && h1.pre === 0, `${label}：手指按在表格上往左滑，只有表格往左移 (表格 ${h1.t}px，整个视图 ${h1.pre}px)`);
+      // 在普通文字上往左滑：什么都不动 (不再左右飘)
+      await p.evaluate(() => { document.querySelector('.term.active .ls-tbl').scrollLeft = 0; const pre = document.querySelector('.term.active .ls-body'); pre.scrollTop = pre.scrollHeight; });
       await swipe(g, pb.x + pb.width * 0.8, pb.y + pb.height / 2, -250, 0);
-      const sl = await p.evaluate(() => document.querySelector('.term.active .ls-body').scrollLeft);
-      ok(sl > 50, `${label}：在历史视图里手指往左滑，表格跟着往左移 (scrollLeft ${sl})`);
+      const h2 = await p.evaluate(() => ({ t: document.querySelector('.term.active .ls-tbl').scrollLeft, pre: document.querySelector('.term.active .ls-body').scrollLeft }));
+      ok(h2.t === 0 && h2.pre === 0, `${label}：手指按在普通文字上往左滑，什么都不横移 (表格 ${h2.t}px，整个视图 ${h2.pre}px)`);
+      const top0 = await p.evaluate(() => document.querySelector('.term.active .ls-body').scrollTop);
       await swipe(g, pb.x + pb.width / 2, pb.y + pb.height / 3, 0, 250);
       const top1 = await p.evaluate(() => document.querySelector('.term.active .ls-body').scrollTop);
       ok(top1 < top0 - 50, `${label}：手指往下滑，历史往回滚 (scrollTop ${Math.round(top0)} → ${Math.round(top1)})`);
