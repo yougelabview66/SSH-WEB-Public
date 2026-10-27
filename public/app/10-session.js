@@ -27,6 +27,7 @@
       scrollback,
       allowProposedApi: true,
     });
+    CellWidth.useCellWidth(s.term); // ✅ 这类表情算两格 (同 tmux / Claude Code，见 public/cellwidth.js)
     s.fit = new FitAddon.FitAddon();
     s.term.loadAddon(s.fit);
     const rawFit = s.fit.fit.bind(s.fit);

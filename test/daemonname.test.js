@@ -42,6 +42,7 @@ const fakeSess = {
   ssh: {},
   rawExec: (ssh, cmd, cb, ms) => {
     const pr = spawn('sh', ['-c', cmd], { env: { ...process.env, HOME: home } });
+    pr.stdin.on('error', () => {}); // 进程已经结束还有输入过来：EPIPE 是异步报的，try 接不住
     const chunks = [];
     let timer = setTimeout(() => { try { pr.kill('SIGKILL'); } catch {} }, ms || 3000);
     pr.stdout.on('data', (d) => chunks.push(d));

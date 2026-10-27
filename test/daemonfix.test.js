@@ -62,6 +62,7 @@ function server(port) {
         }
         const cmd = info.command.split(VHOME).join(homeFwd); // 假的 home 路径换成真的，sh 里执行得了
         const pr = spawn('sh', ['-c', cmd], { cwd: home, env: ENV });
+        pr.stdin.on('error', () => {}); // 进程已经结束还有输入过来：EPIPE 是异步报的，try 接不住
         ch.on('data', (d) => { try { pr.stdin.write(d); } catch {} });
         ch.on('end', () => { try { pr.stdin.end(); } catch {} });
         pr.stdout.on('data', (d) => { try { ch.write(d); } catch {} });
