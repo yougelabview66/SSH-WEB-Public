@@ -88,7 +88,7 @@ const measure = () => {
   }
   const sr = screen.getBoundingClientRect();
   const pr = pre.getBoundingClientRect();
-  return { bar: pre.offsetWidth - pre.clientWidth, visRight: pr.left + pre.clientLeft + pre.clientWidth, out, screenLeft: sr.left, screenWidth: sr.width, preLeft: pre.getBoundingClientRect().left + parseFloat(getComputedStyle(pre).paddingLeft) };
+  return { sw: pre.scrollWidth, cw: pre.clientWidth, bar: pre.offsetWidth - pre.clientWidth, visRight: pr.left + pre.clientLeft + pre.clientWidth, out, screenLeft: sr.left, screenWidth: sr.width, preLeft: pre.getBoundingClientRect().left + parseFloat(getComputedStyle(pre).paddingLeft) };
 };
 
 async function check(p, label) {
@@ -108,7 +108,14 @@ async function check(p, label) {
   const full = r.out.filter((x) => x.line.startsWith('─'));
   if (label.includes('滚动条')) ok(r.bar > 0, `${label}：历史视图有滚动条 (${r.bar}px)`);
   const far = Math.max(...r.out.map((x) => x.right));
-  ok(far <= r.visRight + 0.5, `${label}：最右边的字没被裁掉 / 没被滚动条盖住 (最右 ${far.toFixed(1)}px，可见到 ${r.visRight.toFixed(1)}px)`);
+  if (label.includes('手机')) {
+    // 表格比屏幕宽 (手机上看电脑画的表格)：带框线的行不折行，每行还是一行，左右滑动看 —— 以前切开后每行折成两三行，整张表错行
+    ok(tableRows.every((x) => x.rows === 1) && r.sw > r.cw + 10, `${label}：超宽的表格不折行，能左右滑动 (每行 ${[...new Set(tableRows.map((x) => x.rows))].join('/')} 行，内容宽 ${r.sw}px / 可见 ${r.cw}px)`);
+    await p.evaluate(() => { const pre = document.querySelector('.term.active .ls-body'); pre.scrollLeft = pre.scrollWidth; });
+    const r2 = await p.evaluate(measure).catch(() => null);
+    const far2 = r2 && Math.max(...r2.out.filter((x) => x.line.startsWith('  ')).map((x) => x.right));
+    ok(r2 && far2 <= r2.visRight + 0.5 && far2 > r2.visRight - 40, `${label}：滑到最右边能看到表格的右边框 (最右 ${far2?.toFixed(1)}px，可见到 ${r2?.visRight.toFixed(1)}px)`);
+  } else ok(far <= r.visRight + 0.5, `${label}：最右边的字没被裁掉 / 没被滚动条盖住 (最右 ${far.toFixed(1)}px，可见到 ${r.visRight.toFixed(1)}px)`);
   ok(full.length >= 2 && full.every((x) => x.rows === 1), `${label}：占满整行的分隔线不折行 (${full.map((x) => x.len + ' 字 ' + x.rows + ' 行').join('，')})`);
   return r;
 }
@@ -120,7 +127,7 @@ async function check(p, label) {
   const withBars = await chromium.launch({ executablePath: process.env.CHROME_PATH || undefined, args: ['--no-sandbox'], ignoreDefaultArgs: ['--hide-scrollbars'] });
   const errors = [];
 
-  for (const [label, opts, b] of [['电脑', { viewport: { width: 1280, height: 800 } }], ['电脑 (显示滚动条)', { viewport: { width: 1280, height: 800 } }, withBars], ['电脑 (粗体字更宽)', { viewport: { width: 1280, height: 800 } }], ['平板横屏', { ...devices['iPad Pro 11 landscape'] }]]) {
+  for (const [label, opts, b] of [['电脑', { viewport: { width: 1280, height: 800 } }], ['电脑 (显示滚动条)', { viewport: { width: 1280, height: 800 } }, withBars], ['电脑 (粗体字更宽)', { viewport: { width: 1280, height: 800 } }], ['平板横屏', { ...devices['iPad Pro 11 landscape'] }], ['手机', { ...devices['iPhone 13'] }]]) {
     const ctx = await (b || browser).newContext(opts);
     const p = await ctx.newPage(); p.on('pageerror', (e) => errors.push(e.message));
     await p.goto(BASE + '/'); await p.waitForSelector('#app:not(.hidden)');

@@ -11,10 +11,11 @@ const fs = require('fs');
 const path = require('path');
 const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'app', '55-local-scroll.js'), 'utf8');
 const ansiLine = src.slice(src.indexOf('  const ANSI_RE = '), src.indexOf('\n', src.indexOf('  const ANSI_RE = ')));
+const boxLine = src.slice(src.indexOf('  const BOX_RE = '), src.indexOf('\n', src.indexOf('  const BOX_RE = ')));
 const a = src.indexOf('  function splitByCells(');
 const b = src.indexOf('  // 按 gridFit 量出来的结果');
 const mod = { exports: {} };
-new Function('module', 'CellWidth', ansiLine + '\n' + src.slice(a, b) + '\nmodule.exports = { splitByCells, ANSI_RE, cellWidth };')(mod, require('../public/cellwidth'));
+new Function('module', 'CellWidth', ansiLine + '\n' + boxLine + '\n' + src.slice(a, b) + '\nmodule.exports = { splitByCells, ANSI_RE, cellWidth };')(mod, require('../public/cellwidth'));
 const { splitByCells, ANSI_RE, cellWidth } = mod.exports;
 
 // 复刻 lib/session/remote.js 的 lineToAnsi (这里只关心「每段颜色都写 SGR」这个特性)
