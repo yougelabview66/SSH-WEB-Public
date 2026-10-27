@@ -736,6 +736,11 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 /* 历史视图里的表情：固定占几格的小格子 (宽度由 55-local-scroll.js 的 fitHtml 写)。顶端对齐、行高照旧，不把这一行撑高；
    表情画得比格子宽也不挤开后面的字 */
 .ls-body .ls-c { display: inline-block; vertical-align: top; letter-spacing: 0; white-space: pre; }
+/* 比历史视图宽的表格：整张表自己左右滑 (见 55-local-scroll.js 的 block)，别的文字不跟着动；
+   右边缘渐隐提示「右边还有」，滑到头去掉 (.more) */
+.ls-body .ls-tbl { overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: thin; }
+.ls-body .ls-tbl.more { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), rgba(0, 0, 0, .3));
+  mask-image: linear-gradient(to right, #000 calc(100% - 32px), rgba(0, 0, 0, .3)); }
 .ls-close { position: absolute; bottom: 12px; right: 18px; /* 右上角是主机状态悬浮窗的默认位置 */ z-index: 1; font-size: 12px; padding: 4px 10px; opacity: .92;
   box-shadow: 0 2px 10px var(--shadow); box-sizing: border-box; /* 手机上高度按按键栏的按键设 (见 fitExitBtn) */ }
 .ls-close.tmux-exit { z-index: 25; } /* 直接放在终端上，要高于 xterm 内部图层 */

@@ -108,14 +108,22 @@
     // 不再让浏览器折行：抓历史时折行已经拼回一整条 (-J / isWrapped)，必须正好在 cols 格处切开才和实时画面一致。
     // 浏览器按像素宽折行，和 cols × 每格宽 差一点点，表格竖线就对不上（右边一列跑到下一行行首）
     pre.style.whiteSpace = 'pre'; // 我们自己切，别让浏览器再折一次
-    pre.style.overflowX = 'auto'; // 带框线的超宽行 (表格) 不切，左右滑动看 (见 splitByCells)；别的行都切到放得下，不会横向滚
+    pre.style.overflowX = 'hidden'; // 整体不横滚：超宽的表格在自己的条带里左右滑 (见 block 的 .ls-tbl)，别的行都切到放得下
+    // 表格条带滑到最右边就去掉右边缘的渐隐 (还有内容的提示)
+    pre.addEventListener('scroll', (e) => {
+      const t = e.target;
+      if (t.classList?.contains('ls-tbl')) t.classList.toggle('more', t.scrollLeft + t.clientWidth < t.scrollWidth - 2);
+    }, true);
     // 几千行一次全塞进页面要卡一两秒：分成块，先放最后几块马上显示，前面的在后台一块块补到上面。
     // 块从最后往前切 (最前面那块不满)；块末尾的换行留着，textContent 和整段文字一样 (复制面板按它数行)
     const lines = text.split('\n'), chunks = [], g = sgrInit();
-    for (let i = 0, end = lines.length % LS_CHUNK || LS_CHUNK; i < lines.length; i = end, end += LS_CHUNK) {
+    for (let i = 0, end = lines.length % LS_CHUNK || LS_CHUNK; i < lines.length; end = i + LS_CHUNK) {
+      // 表格 (连续带框线的行) 不拆到两块里：超宽的表格整张放进一个横滑的条带 (见 block)，拆开的两半各滑各的
+      while (end > i + 1 && end < lines.length && BOX_RE.test(lines[end - 1]) && BOX_RE.test(lines[end])) end--;
       const t = lines.slice(i, end).join('\n') + (end < lines.length ? '\n' : '');
       chunks.push({ t, g: { ...g } }); // 这块开头的颜色 (接着上一块)
       sgrScan(t, g, pal);
+      i = end;
     }
     // 每块硬切成若干显示行，再逐行转 HTML：这样长行（表格那种拼回来的）正好在边界处断开，
     // 浏览器不会再自己折一次。ANSI 颜色状态跨段接着算 (ansiToHtml 会把状态写进传进去的 g)。
@@ -139,7 +147,24 @@
       const d = document.createElement('div');
       const g = { ...c.g };
       let html = '';
-      for (const raw of c.t.split('\n')) {
+      const rows = c.t.split('\n');
+      for (let k = 0; k < rows.length; k++) {
+        const raw = rows[k];
+        // 比历史视图宽的表格 (连续带框线的行，有一行放不下)：整张表放进自己的横滑条带 (.ls-tbl)，手指按在表上才能左右滑，
+        // 别的文字不动 (以前整个历史视图一起横滑，上下滑普通文字时手指稍斜一点就左右飘)。
+        // 条带是块元素，自己就换行：最后一行后面的换行照样写上 (textContent 和原文一样，复制面板按它数行)，
+        // 是这一块的最后一行就不写 (同下面去掉的那个)
+        if (cols > 0 && BOX_RE.test(raw)) {
+          let j = k;
+          while (j < rows.length && BOX_RE.test(rows[j])) j++;
+          if (rows.slice(k, j).some((r) => lineCells(r) > cols)) {
+            html += '<div class="ls-tbl more">';
+            for (let m = k; m < j; m++) html += ansiToHtml(rows[m], theme, fit, pal, g) + (m < rows.length - 1 ? '\n' : '');
+            html += '</div>';
+            k = j - 1;
+            continue;
+          }
+        }
         const segs = cols > 0 ? splitByCells(raw, cols) : [{ text: raw }];
         // ansiToHtml 自己会把 ANSI 状态写进传进去的 g，不用再 sgrScan 一遍。
         // 切开长行插进去的换行包在 .ls-wrap 里：选中复制时去掉 (见 plainSel)，复制出来还是原来的一整行
@@ -336,6 +361,16 @@
   }
 
   const BOX_RE = /[\u2500-\u257f]/;
+  // 一行占几格 (颜色序列不算，FE0F 同 splitByCells)
+  function lineCells(text) {
+    let n = 0, prev = 0;
+    for (const ch of text.replace(ANSI_RE, '')) {
+      const w = ch === VS16 ? vs16Width(prev) : cellWidth(ch);
+      n += w;
+      if (w) prev = ch === VS16 ? 2 : w;
+    }
+    return n;
+  }
   // 历史视图里切长行插进去的换行 (显示用，原文里没有)
   const SOFT_BR = '<span class="ls-wrap">\n</span>';
   // 选中的文字去掉切长行插进去的换行 (直接 toString 会把一整行复制成好几行)
@@ -358,7 +393,7 @@
   // 顺带：以前正好切在转义序列中间会把 \x1b[36m 劈成两半，后半截 [36m 当普通文字画出来 (画面里多出 0m / 36m)
   //
   // 带框线字符 (│ ┌ ├ └ ─ 这些) 的行不切：表格比历史视图宽 (电脑上画的表格拿到手机上看) 时，切开的每一行都折成两三行，
-  // 整张表错行看不出结构。保持一整行，历史视图左右滑动看 (见 openLocalScroll 的 overflowX)
+  // 整张表错行看不出结构。保持一整行，放进横滑的条带里左右滑动看 (见 openLocalScroll 的 block)
   function splitByCells(text, cols) {
     if (BOX_RE.test(text)) return [{ text, cell: 0 }];
     const out = [];
