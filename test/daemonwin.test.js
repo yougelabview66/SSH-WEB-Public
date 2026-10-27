@@ -10,7 +10,7 @@ const path = require('path');
 const { spawn, execFileSync } = require('child_process');
 const { Server, utils: { sftp: { OPEN_MODE, STATUS_CODE } } } = require('ssh2');
 const WebSocket = require('ws');
-const { BASE, ok, wait, run, launch, hostKey, addHost, killUnder } = require('./helpers');
+const { BASE, ok, wait, waitFor, run, launch, hostKey, addHost, killUnder } = require('./helpers');
 
 const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sshweb-dw-')));
 const dhome = path.join(home, 'daemon'); // 守护进程的数据目录 (socket、日志)
@@ -329,13 +329,13 @@ run(async () => {
   ok(await p.isVisible('#dialog .dp-busy'), '点「返回」：回到列表');
   await p.click('#dialog .dp-busy');
   await p.click('#dialog .dp-confirm [data-c=go]');
-  await p.waitForFunction((n) => document.querySelectorAll('.tab').length === n, tabs0, { timeout: 8000 }).catch(() => {}); await wait(500);
+  await waitFor(p, (n) => document.querySelectorAll('.tab').length === n, tabs0, 8000).catch(() => {}); await wait(500);
   ok(await p.locator('.tab').count() === tabs0 && await p.isHidden('#dialog'), '「切到那个标签」：新开的标签关掉，回到正用着它的标签');
   // 「退出」：关掉这个标签
   await row.click();
   await p.waitForSelector('#dialog:not(.hidden) .dp-row', { timeout: 15000 });
   await p.click('#dialogActions button:has-text("退出")');
-  await p.waitForFunction((n) => document.querySelectorAll('.tab').length === n, tabs0, { timeout: 8000 }).catch(() => {}); await wait(500);
+  await waitFor(p, (n) => document.querySelectorAll('.tab').length === n, tabs0, 8000).catch(() => {}); await wait(500);
   ok(await p.locator('.tab').count() === tabs0, '选择框点「退出」：关掉这个标签');
   // 关接着常驻会话的标签：问要不要把常驻会话也结束 (取消 / 保留在后台 / 结束会话)
   const lsIds = () => execFileSync(BIN, ['ls'], { env: { ...process.env, SSHWEBD_HOME: dhome } }).toString().split('\n').slice(1).map((l) => l.trim().split(/\s+/)[0]).filter((x) => /^\d+$/.test(x));
@@ -349,7 +349,7 @@ run(async () => {
   ok(await p.locator('.tab').count() === tabs0, '「取消」：不关');
   await closeAsk();
   await p.click('#dialogActions button:has-text("保留在后台")');
-  await p.waitForFunction((n) => document.querySelectorAll('.tab').length === n, tabs0 - 1, { timeout: 8000 }).catch(() => {}); await wait(1000);
+  await waitFor(p, (n) => document.querySelectorAll('.tab').length === n, tabs0 - 1, 8000).catch(() => {}); await wait(1000);
   ok(await p.locator('.tab').count() === tabs0 - 1 && lsIds().join() === ids0.join(), '「保留在后台」：标签关了，常驻会话还在: ' + JSON.stringify([ids0, lsIds()]));
   await row.click();
   await p.waitForSelector('#dialog:not(.hidden) .dp-row', { timeout: 15000 });
@@ -358,7 +358,7 @@ run(async () => {
   await p.waitForSelector('.tab.active .dot.ok', { timeout: 15000 }); await wait(800);
   await closeAsk();
   await p.click('#dialogActions button:has-text("结束会话")');
-  await p.waitForFunction((n) => document.querySelectorAll('.tab').length === n, tabs0 - 1, { timeout: 8000 }).catch(() => {}); await wait(1500);
+  await waitFor(p, (n) => document.querySelectorAll('.tab').length === n, tabs0 - 1, 8000).catch(() => {}); await wait(1500);
   ok(/^"C:\\Users\\me\\\.ssh-web\\sshwebd[^"]*\.exe" kill \d+$/.test(kills.at(-1) || '') && await p.locator('.tab').count() === tabs0 - 1 && !lsIds().includes(kid) && lsIds().length === ids0.length - 1, `「结束会话」：标签关了，常驻会话 ${kid} 也结束了: ` + JSON.stringify(lsIds()));
   // 强制删除还有连接的会话：同一个弹窗里先问 (否 / 是，强制删除)，删了以后接着它的标签也关掉，列表原地刷新
   await row.click();
