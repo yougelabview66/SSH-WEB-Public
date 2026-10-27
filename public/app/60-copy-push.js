@@ -34,33 +34,54 @@
   // 历史视图 (tmux 本地快速滚动) 打开时：复制的是历史视图里的文字 (不是终端当前那一屏)
   function openCopyPanel(s, at) {
     if (!s) return;
-    const ta = $('#copyText');
+    const pre = $('#copyText');
     const hist = s.scrollView?.querySelector('.ls-body');
-    let line = -1;
+    let text, data, line = -1;
     if (hist) {
       s.scrollView.lsRest(); // 前面的历史还在后台往上补：先补完
       // 优先用原始文本：显示时长行会在 cols 格处被切开 (splitByCells)、插入换行，textContent 不是原文
-      ta.value = (s.scrollView.lsText ?? hist.textContent).replace(/\n+$/, '');
+      text = (s.scrollView.lsText ?? hist.textContent).replace(/\n+$/, '');
+      data = s.scrollView.lsData ?? text;
       const domLine = at ? lineAt(hist, at.x, at.y) : firstVisibleLine(hist);
       // 换回原始文本的行号 (见 domLineToTextLine 的说明)。必须用历史视图切行时的格数 (lsCols)：
       // 它是按历史视图实际宽度量的，比终端列数小 (手机上小好几格)，拿 term.cols 换算会少数显示行、定位偏到后面
-      line = domLineToTextLine(ta.value.split('\n'), s.scrollView.lsCols || s.term?.cols || 80, domLine);
+      line = domLineToTextLine(text.split('\n'), s.scrollView.lsCols || s.term?.cols || 80, domLine);
     } else {
       const t = terminalText(s, at ? terminalRowAt(s, at.y) : -1);
-      ta.value = t.text;
+      text = data = t.text;
       if (at) line = t.line;
     }
-    const n = ta.value ? ta.value.split('\n').length : 0;
+    const n = text ? text.split('\n').length : 0;
     $('#copyInfo').textContent = hist ? `${n} 行 (tmux 历史)`
       : s.term.buffer.active.type === 'alternate' ? `${n} 行 (全屏程序只有当前画面)` : `${n} 行`;
     mInput.blur();
-    ta.style.paddingBottom = '';
-    ta.scrollLeft = 0; // 上次左右滑过：从行首开始看
     $('#copyPanel').dataset.tab = s.id; // 手机上同性能监控 (见 tabPanels)
     $('#copyPanel').classList.remove('hidden');
     tabPanels(); // 同历史面板：在别的标签上打开过会带着 tab-away
-    if (n && line >= 0) scrollToLine(ta, Math.min(line, n - 1), at?.y);
-    else { ta._place = null; ta.scrollTop = ta.scrollHeight; } // 定位到最新内容
+    renderCopy(s, pre, data, text); // 面板显示出来才量得出宽度
+    if (n && line >= 0) scrollToLine(pre, Math.min(line, n - 1), at?.y);
+    else { pre._place = null; pre.scrollTop = pre.scrollHeight; } // 定位到最新内容
+  }
+
+  // 复制面板的内容照历史视图的样子排 (同一个 gridView)：每种字补成正好 1 / 2 格，表格竖线对齐，超宽的表格整张左右滑。
+  // 以前是文本框：iPhone 上中文和英文是两种字体，一个中文字不正好是两个英文宽，文本框里没法按字补，表格竖线对不齐
+  function renderCopy(s, pre, data, text) {
+    pre.textContent = '';
+    pre.style.paddingBottom = '';
+    const fs = 12, lh = Math.round(fs * 1.45);
+    Object.assign(pre.style, { fontFamily: s.term.options.fontFamily, fontSize: fs + 'px', lineHeight: lh + 'px', letterSpacing: '0' });
+    const probe = document.createElement('span'); // 这个字号一格本来多宽
+    probe.style.cssText = 'position:absolute;visibility:hidden;white-space:pre';
+    probe.textContent = '0'.repeat(100);
+    pre.appendChild(probe);
+    const cw = probe.getBoundingClientRect().width / 100;
+    probe.remove();
+    const { cols, chunks, block } = gridView(pre, data, s.term.cols || 80, cw, termTheme());
+    const f = document.createDocumentFragment();
+    for (const c of chunks) f.append(block(c));
+    pre.append(f);
+    pre.lsText = text; // 复制全部、换算行号用原文
+    pre.lsCols = cols;
   }
 
   // 把 DOM 里的行号换算成原始文本的行号：显示时长行会被 splitByCells 切成几行，
@@ -78,41 +99,65 @@
     return Math.max(0, rawLines.length - 1);
   }
 
-  // 复制面板滚到第 k 行，有 anchorY (手指的位置) 就让这一行停在手指那个高度，否则停在最上面。
-  // 中文 / emoji 用的后备字体让这些行比别的行高，不能按「平均行高 × 行号」算，
-  // 量前 k 行实际有多高。字体刚加载完行高还会变，所以过一会儿再对一次 (用户自己滑过就不动了)
-  function scrollToLine(ta, k, anchorY) {
-    const full = ta.value;
+  // 复制面板滚到原文第 k 行，有 anchorY (手指的位置) 就让这一行停在手指那个高度，否则停在最上面。
+  // 长行切成几行显示：先换算成第几个显示行，再量它实际在哪 (中文 / emoji 的行可能高一点，不能按行高乘)。
+  // 字体刚加载完位置还会变，所以过一会儿再对一次 (用户自己滑过就不动了)
+  function scrollToLine(pre, k, anchorY) {
     const place = () => {
       // 面板关了 / 换了内容 / 用户已经自己滑了：不动
-      if (ta._place !== place || $('#copyPanel').classList.contains('hidden') || ta.scrollTop !== ta._lineTop) return;
-      ta.style.paddingBottom = '';
-      ta.style.flex = 'none'; ta.style.height = ta.style.minHeight = '0px';
-      ta.value = full.split('\n', k).join('\n');
-      const h = k ? ta.scrollHeight - parseFloat(getComputedStyle(ta).paddingBottom) : 0;
-      ta.value = full;
-      ta.style.flex = ta.style.height = ta.style.minHeight = '';
-      const want = h - anchorOffset(ta, anchorY);
+      if (pre._place !== place || $('#copyPanel').classList.contains('hidden') || pre.scrollTop !== pre._lineTop) return;
+      pre.style.paddingBottom = '';
+      const top = domLineTop(pre, textLineToDomLine(pre.lsText.split('\n'), pre.lsCols, k));
+      const want = top - anchorOffset(pre, anchorY);
       // 靠近最后的行滚不到手指那么高：底下补一点空白
-      const short = want - (ta.scrollHeight - ta.clientHeight);
-      if (short > 0) ta.style.paddingBottom = parseFloat(getComputedStyle(ta).paddingBottom) + short + 'px';
-      ta.scrollTop = want;
-      ta._lineTop = ta.scrollTop;
+      const short = want - (pre.scrollHeight - pre.clientHeight);
+      if (short > 0) pre.style.paddingBottom = parseFloat(getComputedStyle(pre).paddingBottom) + short + 'px';
+      pre.scrollTop = want;
+      pre._lineTop = pre.scrollTop;
     };
-    ta._place = place;
-    ta._lineTop = ta.scrollTop;
+    pre._place = place;
+    pre._lineTop = pre.scrollTop;
     place();
     requestAnimationFrame(place);
     setTimeout(place, 300);
     document.fonts?.ready.then(place);
   }
 
-  // 这一行显示在文本框顶部往下多少：手指的高度 (上面留一行、下面留两行)
-  function anchorOffset(ta, y) {
+  // 原文第 k 行是第几个显示行 (domLineToTextLine 反过来)
+  function textLineToDomLine(rawLines, cols, k) {
+    if (!(cols > 0)) return k;
+    let shown = 0;
+    for (let i = 0; i < k && i < rawLines.length; i++) shown += Math.max(1, splitByCells(rawLines[i], cols).length);
+    return shown;
+  }
+
+  // 第 d 个显示行的顶端在 pre 内容里的位置 (px，从内容最上面算)：按文字找到这一行的第一个字，量它在哪
+  function domLineTop(pre, d) {
+    const w = document.createTreeWalker(pre, NodeFilter.SHOW_TEXT);
+    let n, seen = 0, node = null, off = 0;
+    while ((n = w.nextNode())) {
+      if (seen === d) { node = n; off = 0; break; }
+      let i = -1;
+      while (seen < d && (i = n.data.indexOf('\n', i + 1)) >= 0) seen++;
+      if (seen === d && i >= 0) {
+        if (i + 1 < n.data.length) { node = n; off = i + 1; break; }
+      }
+    }
+    if (!node) return d ? pre.scrollHeight : 0;
+    // 在行首临时放一个空的小标记量位置 (空行只有换行符，换行符本身量不出位置)
+    const r = document.createRange(), mk = document.createElement('span');
+    r.setStart(node, off); r.collapse(true); r.insertNode(mk);
+    const top = mk.getBoundingClientRect().top;
+    mk.remove();
+    return top - pre.getBoundingClientRect().top - pre.clientTop + pre.scrollTop - parseFloat(getComputedStyle(pre).paddingTop);
+  }
+
+  // 这一行显示在复制面板顶部往下多少：手指的高度 (上面留一行、下面留两行)
+  function anchorOffset(pre, y) {
     if (y == null) return 0;
-    const lh = parseFloat(getComputedStyle(ta).lineHeight) || 18;
-    const want = y - ta.getBoundingClientRect().top - ta.clientTop - lh / 2;
-    return Math.max(0, Math.min(Math.max(want, lh), ta.clientHeight - 3 * lh));
+    const lh = parseFloat(getComputedStyle(pre).lineHeight) || 18;
+    const want = y - pre.getBoundingClientRect().top - pre.clientTop - parseFloat(getComputedStyle(pre).paddingTop) - lh / 2;
+    return Math.max(0, Math.min(Math.max(want, lh), pre.clientHeight - 3 * lh));
   }
 
   // 历史视图里最上面那一行是第几行
@@ -176,14 +221,29 @@
   }
 
   $('#copyAll').addEventListener('click', async () => {
-    const text = $('#copyText').value;
+    const text = $('#copyText').lsText || '';
     copyToast(await copyText(text) ? `已复制全部 (${text.length} 个字符)` : '复制失败，请长按文字手动复制');
   });
+  // 复制面板里选中的文字 (去掉切长行插进去的换行，同历史视图)；没选中返回空
+  const panelSel = () => {
+    const sel = getSelection();
+    return sel?.rangeCount && !sel.isCollapsed && $('#copyText').contains(sel.getRangeAt(0).commonAncestorContainer) ? plainSel(sel) : '';
+  };
+  // 按下按钮时先记下选中的文字：有的手机点按钮会把选中取消掉，到 click 时已经没了
+  let selAtPress = '';
+  $('#copySel').addEventListener('pointerdown', () => { selAtPress = panelSel(); });
   $('#copySel').addEventListener('click', async () => {
-    const ta = $('#copyText');
-    const text = ta.value.slice(ta.selectionStart, ta.selectionEnd);
+    const text = panelSel() || selAtPress;
+    selAtPress = '';
     if (!text) return copyToast('请先长按文字选择要复制的部分');
     copyToast(await copyText(text) ? `已复制 ${text.length} 个字符` : '复制失败，请长按文字手动复制');
+  });
+  // 系统菜单的「拷贝」/ Ctrl+C：同上，去掉切长行插进去的换行
+  $('#copyText').addEventListener('copy', (e) => {
+    const text = panelSel();
+    if (!text || !e.clipboardData) return;
+    e.clipboardData.setData('text/plain', text);
+    e.preventDefault();
   });
   $('#copyClose').addEventListener('click', closeCopyPanel);
   $('#copyPanel').addEventListener('mousedown', (e) => { if (e.target.id === 'copyPanel') closeCopyPanel(); });

@@ -63,8 +63,8 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
 }).listen(2250, '127.0.0.1');
 
 // 历史视图里每一行的位置：行首 / 行尾那个字的左右边缘，这一行占了几个视觉行
-const measure = () => {
-  const pre = document.querySelector('.term.active .ls-body');
+const measure = (sel = '.term.active .ls-body') => {
+  const pre = document.querySelector(sel);
   const screen = document.querySelector('.term.active .xterm-screen');
   const nodes = [];
   const w = document.createTreeWalker(pre, NodeFilter.SHOW_TEXT);
@@ -188,6 +188,21 @@ async function check(p, label) {
       await swipe(g, pb.x + pb.width / 2, pb.y + pb.height / 3, 0, 250);
       const top1 = await p.evaluate(() => document.querySelector('.term.active .ls-body').scrollTop);
       ok(top1 < top0 - 50, `${label}：手指往下滑，历史往回滚 (scrollTop ${Math.round(top0)} → ${Math.round(top1)})`);
+      // 长按打开复制面板：内容照历史视图的样子排，表格竖线照样对齐 (以前是文本框，iPhone 上中文不正好两个英文宽，竖线对不齐)
+      await p.evaluate(() => { const pre = document.querySelector('.term.active .ls-body'), t = pre.querySelector('.ls-tbl');
+        pre.scrollTop += t.getBoundingClientRect().top - pre.getBoundingClientRect().top - 40; });
+      const tb2 = await p.evaluate(() => document.querySelector('.term.active .ls-tbl').getBoundingClientRect().top + 30);
+      await g.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: pb.x + 60, y: tb2 }] }); await wait(700);
+      await g.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await wait(800);
+      const c = await p.evaluate(measure, '#copyText');
+      const crows = c.out.filter((x) => x.line.startsWith('  '));
+      const cr = crows.map((x) => x.right), cspread = Math.max(...cr) - Math.min(...cr);
+      const ct = await p.evaluate(() => { const p = document.getElementById('copyText'), t = p.querySelector('.ls-tbl'); return { shown: !document.getElementById('copyPanel').classList.contains('hidden'), tbl: !!t && t.scrollWidth > t.clientWidth, sw: p.scrollWidth, cw: p.clientWidth }; });
+      ok(ct.shown && crows.length === TABLE.length && cspread < 1 && crows.every((x) => x.rows === 1),
+        `${label}：长按出来的复制面板里，表格每一行的右边框对齐、不折行 (相差 ${cspread.toFixed(1)}px，${crows.length} 行)`);
+      ok(ct.tbl && ct.sw <= ct.cw, `${label}：复制面板里超宽的表格自己左右滑，整个面板不横向滚`);
+      await p.screenshot({ path: shot('lsgrid-手机-复制面板.png') });
+      await p.tap('#copyClose'); await wait(300);
     }
     if (label.startsWith('电脑')) { // 选中切成几行显示的长行，松开鼠标自动复制：剪贴板里是原来的一整行
       await ctx.grantPermissions(['clipboard-read', 'clipboard-write']);

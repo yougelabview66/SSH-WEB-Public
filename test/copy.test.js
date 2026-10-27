@@ -34,16 +34,12 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: sb.x + 60, y }] }); await wait(700);
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await wait(800); // 等面板过一会儿的再次对齐
     const at = await m.evaluate((y) => {
-      // 复制面板里手指高度是哪一行：量前 k 行在文本框里实际多高，找到盖住手指的那一行
-      const ta = document.getElementById('copyText'), lines = ta.value.split('\n'), full = ta.value, st = ta.scrollTop;
-      const target = y - ta.getBoundingClientRect().top - ta.clientTop + st;
-      const pb = parseFloat(getComputedStyle(ta).paddingBottom), pad = ta.style.paddingBottom;
-      ta.style.flex = 'none'; ta.style.height = ta.style.minHeight = '0px';
-      const h = (k) => { ta.value = full.split('\n', k).join('\n'); return k ? ta.scrollHeight - pb : 0; };
-      let lo = 0, hi = lines.length - 1;
-      while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (h(mid) <= target) lo = mid; else hi = mid - 1; }
-      ta.value = full; ta.style.flex = ta.style.height = ta.style.minHeight = ''; ta.style.paddingBottom = pad; ta.scrollTop = st;
-      return { line: lines[lo], shown: !document.getElementById('copyPanel').classList.contains('hidden') };
+      // 复制面板里手指高度是哪一行：按页面上这个位置的字算 (数前面有几个换行)
+      const pre = document.getElementById('copyText'), x = pre.getBoundingClientRect().left + 20;
+      const rg = document.caretRangeFromPoint(x, y), r = document.createRange();
+      if (!rg || !pre.contains(rg.startContainer)) return { line: '', shown: !document.getElementById('copyPanel').classList.contains('hidden') };
+      r.setStart(pre, 0); r.setEnd(rg.startContainer, rg.startOffset);
+      return { line: pre.textContent.split('\n')[(r.toString().match(/\n/g) || []).length], shown: !document.getElementById('copyPanel').classList.contains('hidden') };
     }, y);
     ok(at.shown && at.line.startsWith(want), `长按终端${frac > 0.5 ? '靠下' : '中间'}的「${want.trim()}」：复制面板里手指处是「${at.line}」`);
     await m.screenshot({ path: shot(`copy-${frac}.png`) });

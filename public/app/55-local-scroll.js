@@ -80,22 +80,10 @@
     s.bypassWheel = false;
   }
 
-  function openLocalScroll(s, data, up) {
-    const theme = termTheme();
-    const screen = s.box.querySelector('.xterm-screen');
-    const lh = (screen && screen.clientHeight / s.term.rows) || 17;
-    const v = document.createElement('div');
-    v.className = 'lscroll';
-    v.innerHTML = '<button class="ls-close" title="Esc / 滚到最底下再往下 / 打字 也可以返回">回到实时画面 ✕</button><pre class="ls-body" tabindex="-1"></pre>';
-    const pre = v.querySelector('.ls-body');
-    Object.assign(pre.style, {
-      fontFamily: s.term.options.fontFamily, fontSize: s.term.options.fontSize + 'px', lineHeight: lh + 'px',
-      color: theme.foreground, background: theme.background,
-    });
-    s.box.appendChild(v); // 先放进页面才量得出字宽
-    const text = data.replace(/\n+$/, '');
-    const cw = screen && screen.clientWidth / s.term.cols; // 实时画面一格多宽
-    const tc = s.term.cols || 80;
+  // 按终端的格子排一段带颜色的文字 (历史视图、复制面板共用)：每种字补成正好 1 / 2 格宽 (gridFit)，长行在放得下的格数处切开，
+  // 超宽的表格整张放进横滑条带。pre 要先放进页面 (量字宽)；tc = 终端列数，cw = 一格本来多宽。
+  // 返回切行的格数 cols、分好的块 chunks 和把一块转成元素的 block
+  function gridView(pre, text, tc, cw, theme) {
     // 历史视图能放字的宽度。滚动条已经扣掉了 (.ls-body 的 scrollbar-gutter: stable)：以前在放内容之前量，
     // 那时还没有滚动条，内容放进去后它占掉 15px 左右，最右边一两格被盖住
     const pcs = getComputedStyle(pre);
@@ -109,11 +97,14 @@
     // 浏览器按像素宽折行，和 cols × 每格宽 差一点点，表格竖线就对不上（右边一列跑到下一行行首）
     pre.style.whiteSpace = 'pre'; // 我们自己切，别让浏览器再折一次
     pre.style.overflowX = 'hidden'; // 整体不横滚：超宽的表格在自己的条带里左右滑 (见 block 的 .ls-tbl)，别的行都切到放得下
-    // 表格条带滑到最右边就去掉右边缘的渐隐 (还有内容的提示)
-    pre.addEventListener('scroll', (e) => {
-      const t = e.target;
-      if (t.classList?.contains('ls-tbl')) t.classList.toggle('more', t.scrollLeft + t.clientWidth < t.scrollWidth - 2);
-    }, true);
+    // 表格条带滑到最右边就去掉右边缘的渐隐 (还有内容的提示)。复制面板的 pre 一直是同一个，只挂一次
+    if (!pre.lsTblScroll) {
+      pre.lsTblScroll = true;
+      pre.addEventListener('scroll', (e) => {
+        const t = e.target;
+        if (t.classList?.contains('ls-tbl')) t.classList.toggle('more', t.scrollLeft + t.clientWidth < t.scrollWidth - 2);
+      }, true);
+    }
     // 几千行一次全塞进页面要卡一两秒：分成块，先放最后几块马上显示，前面的在后台一块块补到上面。
     // 块从最后往前切 (最前面那块不满)；块末尾的换行留着，textContent 和整段文字一样 (复制面板按它数行)
     const lines = text.split('\n'), chunks = [], g = sgrInit();
@@ -175,6 +166,26 @@
       d.innerHTML = html.replace(/\n$/, '');
       return d;
     };
+    return { cols, chunks, block };
+  }
+
+  function openLocalScroll(s, data, up) {
+    const theme = termTheme();
+    const screen = s.box.querySelector('.xterm-screen');
+    const lh = (screen && screen.clientHeight / s.term.rows) || 17;
+    const v = document.createElement('div');
+    v.className = 'lscroll';
+    v.innerHTML = '<button class="ls-close" title="Esc / 滚到最底下再往下 / 打字 也可以返回">回到实时画面 ✕</button><pre class="ls-body" tabindex="-1"></pre>';
+    const pre = v.querySelector('.ls-body');
+    Object.assign(pre.style, {
+      fontFamily: s.term.options.fontFamily, fontSize: s.term.options.fontSize + 'px', lineHeight: lh + 'px',
+      color: theme.foreground, background: theme.background,
+    });
+    s.box.appendChild(v); // 先放进页面才量得出字宽
+    const text = data.replace(/\n+$/, '');
+    const cw = screen && screen.clientWidth / s.term.cols; // 实时画面一格多宽
+    const tc = s.term.cols || 80;
+    const { cols, chunks, block } = gridView(pre, text, tc, cw, theme);
     let next = chunks.length - 1;
     for (let n = 0; next >= 0 && n < s.term.rows * 2 + up * 3; n += LS_CHUNK) pre.prepend(block(chunks[next--]));
     // 补到上面时正在看的内容不动：浏览器自己会保持 (scroll anchoring)，已经滚到最顶上 / 不支持的浏览器手动补上多出来的高度
@@ -202,6 +213,7 @@
     // 复制面板要的是「原始历史文本」：显示时为了让长行正好在 cols 格断开 (splitByCells) 会插入换行，
     // 直接读 textContent 会多出一堆本不存在的换行。这里把去掉 ANSI 的原文存一份，复制时优先用它
     v.lsText = text.replace(ANSI_RE, '');
+    v.lsData = text; // 带颜色的原文 (复制面板照历史视图的样子排，见 60-copy-push.js 的 renderCopy)
     v.lsCols = cols; // 显示时按几格切的行 (复制面板换算行号要用同一个值，见 60-copy-push.js 的 domLineToTextLine)
     syncLsBars();
     pre.scrollTop = pre.scrollHeight - pre.clientHeight - up * 3 * lh; // 和滚轮一样往回看几行

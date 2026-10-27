@@ -358,35 +358,32 @@ const WHEEL_UP = '\x1b[<64;';
   }, [px, py]);
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: px, y: py }] }); await wait(700);
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await wait(800); // 等面板过一会儿的再次对齐
-  const cp = await m.evaluate((y) => {
-    const ta = document.getElementById('copyText'), lines = ta.value.split('\n'), full = ta.value, st = ta.scrollTop;
-    // 复制面板里手指高度是哪一行：前 k 行在这个文本框里实际多高 (量出来的，中文行更高)，找到盖住手指的那一行
-    const target = y - ta.getBoundingClientRect().top - ta.clientTop + st;
-    const pb = parseFloat(getComputedStyle(ta).paddingBottom), pad = ta.style.paddingBottom;
-    ta.style.flex = 'none'; ta.style.height = ta.style.minHeight = '0px';
-    const h = (k) => { ta.value = full.split('\n', k).join('\n'); return k ? ta.scrollHeight - pb : 0; };
-    let lo = 0, hi = lines.length - 1;
-    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (h(mid) <= target) lo = mid; else hi = mid - 1; }
-    ta.value = full; ta.style.flex = ta.style.height = ta.style.minHeight = ''; ta.style.paddingBottom = pad; ta.scrollTop = st;
-    const top = lines[lo];
-    return { shown: !document.getElementById('copyPanel').classList.contains('hidden'), n: lines.length, top,
-      info: document.getElementById('copyInfo').textContent, hasOld: ta.value.includes('line 1 普通输出'), hasNew: ta.value.includes('ERROR line 3000') };
-  }, py);
+  const cp = await m.evaluate(([x, y]) => {
+    // 复制面板里手指高度是哪一行：按页面上这个位置的字算 (数前面有几个换行)
+    const pre = document.getElementById('copyText'), text = pre.lsText || '';
+    const rg = document.caretRangeFromPoint(x, y), r = document.createRange();
+    let top = '';
+    if (rg && pre.contains(rg.startContainer)) { r.setStart(pre, 0); r.setEnd(rg.startContainer, rg.startOffset); top = pre.textContent.split('\n')[(r.toString().match(/\n/g) || []).length]; }
+    return { shown: !document.getElementById('copyPanel').classList.contains('hidden'), n: text.split('\n').length, top,
+      info: document.getElementById('copyInfo').textContent, hasOld: text.includes('line 1 普通输出'), hasNew: text.includes('ERROR line 3000') };
+  }, [px, py]);
   ok(cp.shown && cp.hasOld && cp.hasNew && cp.n >= 3000 && cp.info.includes('tmux 历史'), `手机：在历史视图里长按 → 复制面板里是整段 tmux 历史 (${cp.n} 行，${cp.info})，不是终端当前那一屏`);
   const num = (t) => +(/line (\d+)/.exec(t || '') || [])[1];
   ok(num(pressed) > num(seen) && num(cp.top) === num(pressed), `按住的那一行在复制面板里就在手指底下 (按住「${pressed}」，面板里手指处「${cp.top}」)`);
-  // 长行不折行 (电脑上画的宽表格折行后每行错开)，左右滑动看：有横向溢出，最长那行比一行能放下的格数长
-  const wrap = await m.evaluate(() => {
-    const ta = document.getElementById('copyText'), cs = getComputedStyle(ta);
-    const longest = Math.max(...ta.value.split('\n').map((l) => l.length));
-    const probe = document.createElement('span'); probe.style.cssText = `position:absolute;visibility:hidden;white-space:pre;font:${cs.font}`;
-    probe.textContent = '0'.repeat(10); document.body.appendChild(probe);
-    const fit = Math.floor((ta.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)) / (probe.getBoundingClientRect().width / 10)); probe.remove();
-    return { ws: cs.whiteSpace, sw: ta.scrollWidth, cw: ta.clientWidth, longest, fit };
+  // 复制面板照历史视图的样子排：长行在放得下的地方切开 (同历史视图)，整体不横向滚
+  const wrap = await m.evaluate(() => { const p = document.getElementById('copyText'); return { sw: p.scrollWidth, cw: p.clientWidth, wraps: p.querySelectorAll('.ls-wrap').length, longest: Math.max(...p.lsText.split('\n').map((l) => l.length)) }; });
+  ok(wrap.sw <= wrap.cw && wrap.wraps > 0, '手机：复制面板里长行在放得下的地方切开 (同历史视图)，整体不横向滚 ' + JSON.stringify(wrap));
+  // 选中一段 (跨过切开的长行)，点「复制选中」：复制出来是原文 (没有切行插进去的换行)
+  await ctx.grantPermissions(['clipboard-read', 'clipboard-write']);
+  const picked = await m.evaluate(() => {
+    const p = document.getElementById('copyText'), w = p.querySelector('.ls-wrap');
+    const r = document.createRange(); r.setStartBefore(w.previousSibling || w); r.setEndAfter(w.nextSibling || w);
+    const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+    return { shown: s.toString(), plain: s.toString().includes('\n') };
   });
-  ok(wrap.ws === 'pre' && wrap.sw > wrap.cw && wrap.longest > wrap.fit, '手机：复制面板里长行不折行，可以左右滑动看 (有横向溢出) ' + JSON.stringify(wrap));
-  const left = await m.evaluate(() => { const ta = document.getElementById('copyText'); ta.scrollLeft = 200; return ta.scrollLeft; });
-  ok(left > 0, `手机：复制面板能左右滚 (scrollLeft ${left})`);
+  await m.locator('#copySel').tap(); await wait(500);
+  const got2 = await m.evaluate(() => navigator.clipboard.readText()).catch(() => null);
+  ok(picked.plain && got2 && !got2.includes('\n') && got2.length > 0, `手机：选中切开的长行点「复制选中」，复制出来是原来的一整行 (${got2?.length} 字，没有多出换行)`);
   await m.screenshot({ path: shot('lscroll-copy.png') });
   await m.evaluate(() => document.getElementById('copyPanel').classList.add('hidden'));
   // 电脑上在用这个标签 (手机这边锁着，点终端本来就不聚焦输入框)：先在手机上接管，下面才测得出会不会弹输入法
