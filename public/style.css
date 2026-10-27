@@ -668,13 +668,12 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 /* 复制终端内容 */
 .copyp { display: flex; flex-direction: column; height: min(640px, 100%); position: relative; }
 .copyp .note { color: var(--muted); font-size: 12px; }
-/* 长行不折行，左右滑动看：电脑上画的宽表格折行后每行错开两三行，看不出结构 (同历史视图里带框线的行，
-   见 55-local-scroll.js 的 splitByCells)。文本框没法只让一部分行折行，所以都不折。
-   定位按住的那一行按实际高度量 (见 60-copy-push.js 的 scrollToLine) */
-#copyText { flex: 1; min-height: 160px; margin: 0 0 12px; resize: none; white-space: pre; overflow-wrap: normal; word-break: normal;
-  overflow-y: auto; overflow-x: auto;
-  font: 12px/1.45 ui-monospace, Menlo, Consolas, monospace; background: var(--term-bg); color: var(--term-fg);
-  -webkit-user-select: text; user-select: text; }
+/* 复制面板的内容照历史视图的样子排 (见 60-copy-push.js 的 renderCopy)：每种字补成正好 1 / 2 格，表格竖线对齐，
+   超宽的表格整张左右滑 (.ls-tbl)，别的长行在放得下的地方切开。字体、字号、行高由 renderCopy 写 */
+#copyText { flex: 1; min-height: 160px; margin: 0 0 12px; padding: 6px 4px 6px 6px; overflow-y: auto; overflow-x: hidden;
+  scrollbar-gutter: stable; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  background: var(--term-bg); color: var(--term-fg); outline: none;
+  -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
 .copyp .actions .spacer { flex: 1; }
 .copy-toast { position: absolute; left: 50%; bottom: 70px; transform: translateX(-50%); background: var(--accent2);
   color: #fff; padding: 6px 14px; border-radius: 16px; font-size: 13px; opacity: 0; transition: opacity .2s;
@@ -735,11 +734,11 @@ body.no-select { user-select: none; -webkit-user-select: none; }
   overscroll-behavior: contain; -webkit-overflow-scrolling: touch; user-select: text; -webkit-user-select: text; outline: none; }
 /* 历史视图里的表情：固定占几格的小格子 (宽度由 55-local-scroll.js 的 fitHtml 写)。顶端对齐、行高照旧，不把这一行撑高；
    表情画得比格子宽也不挤开后面的字 */
-.ls-body .ls-c { display: inline-block; vertical-align: top; letter-spacing: 0; white-space: pre; }
+#copyText .ls-c, .ls-body .ls-c { display: inline-block; vertical-align: top; letter-spacing: 0; white-space: pre; }
 /* 比历史视图宽的表格：整张表自己左右滑 (见 55-local-scroll.js 的 block)，别的文字不跟着动；
    右边缘渐隐提示「右边还有」，滑到头去掉 (.more) */
-.ls-body .ls-tbl { overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: thin; }
-.ls-body .ls-tbl.more { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), rgba(0, 0, 0, .3));
+#copyText .ls-tbl, .ls-body .ls-tbl { overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: thin; }
+#copyText .ls-tbl.more, .ls-body .ls-tbl.more { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), rgba(0, 0, 0, .3));
   mask-image: linear-gradient(to right, #000 calc(100% - 32px), rgba(0, 0, 0, .3)); }
 .ls-close { position: absolute; bottom: 12px; right: 18px; /* 右上角是主机状态悬浮窗的默认位置 */ z-index: 1; font-size: 12px; padding: 4px 10px; opacity: .92;
   box-shadow: 0 2px 10px var(--shadow); box-sizing: border-box; /* 手机上高度按按键栏的按键设 (见 fitExitBtn) */ }
@@ -943,9 +942,8 @@ svg.ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-wid
    以前只有手机输入栏 (#mInput) 和终端搜索框做了，其余 (主机表单、历史 / 收藏搜索、文件路径、项目搜索、
    端口预览、自定义按键…) 还是 12~15px，点了就放大。
    放在样式表最后 + 列出那几个 ID 选择器：它们在前面用 #id 写过 font-size，优先级比 input 高，不列出来盖不住。
-   例外：#copyText 是复制面板里显示终端历史的只读 textarea (readonly)，用户不会在里面打字、不会触发
-   iOS 放大，放大字号反而把等宽排版挤乱、行高也跟着 1.45 的倍率变大 —— 它保持原来的 12px */
+   (复制面板 #copyText 现在不是文本框了，不受这条影响，保持 12px) */
 @media (max-width: 760px) {
   #dInput, #keyFile,
-  input:not([type=checkbox]):not([type=radio]), textarea:not(#copyText), select { font-size: 16px; }
+  input:not([type=checkbox]):not([type=radio]), textarea, select { font-size: 16px; }
 }
