@@ -18,8 +18,8 @@ const TABLE = [
   '  └──────────┴─────────────────────────────────────────────────────────────────────────────────────────────────┘',
 ];
 // 带表情的行：同 tmux 3.4+ capture-pane 抓出来的 —— ✅ 🔥 两格；⚠ 这类一格的字后面跟着 FE0F (显示成彩色表情)，
-// tmux 当两格算，但第二格是个空格子，抓出来是「⚠️ + 空格」。历史视图和实时画面一样：✅ 装进两格宽的小格子，
-// ⚠️ 装进一格宽的 (画出来伸到后面的空格上)，右边框和别的行对齐 (v1.83.47 把 ⚠️ 也装进两格，tmux 下右边框偏出去一格)
+// tmux 当两格算，但第二格是个空格子，抓出来是「⚠️ + 空格」。服务器把这个空格去掉 (dropVs16Pad)，历史视图里
+// 表情都装进两格宽的小格子 (同 Claude Code)，右边框和别的行对齐 (v1.83.47 没去空格，tmux 下 ⚠️ 那行偏出去一格)
 const cw = (t) => { let n = 0; for (const c of t.replace(/\x1b\[[0-9;]*m/g, '')) { const cp = c.codePointAt(0); n += c === '\ufe0f' ? 0 : cp >= 0x1f300 || cp === 0x2705 || (cp >= 0x2e80 && cp <= 0xffe6) ? 2 : 1; } return n; };
 const tmuxVs = (t) => t.replace(/\ufe0f/g, '\ufe0f ');
 const row = (a, b) => `  │${a}${' '.repeat(10 - cw(a))}│${tmuxVs(b)}${' '.repeat(97 - cw(tmuxVs(b)))}│`;
@@ -103,8 +103,8 @@ async function check(p, label) {
     return [...document.querySelectorAll('.term.active .ls-body .ls-c')].map((x) => ({ t: x.textContent, cells: x.getBoundingClientRect().width / cell }));
   }, cols).catch(() => null);
   const want = ['⚠\ufe0f', '✅', '🔥', '✔\ufe0f'];
-  ok(em && want.every((t) => em.some((x) => x.t === t)) && em.every((x) => Math.abs(x.cells - (x.t.includes('\ufe0f') ? 1 : 2)) < 0.02),
-    `${label}：表格里的表情装在固定宽的小格子里 (✅ 🔥 两格，⚠️ ✔️ 这种带 FE0F 的一格): ` + JSON.stringify(em && [...new Map(em.map((x) => [x.t, +x.cells.toFixed(3)]))]));
+  ok(em && want.every((t) => em.some((x) => x.t === t)) && em.every((x) => Math.abs(x.cells - 2) < 0.02),
+    `${label}：表格里的表情 (含 ⚠️ ✔️ 这种带 FE0F 的) 都装在正好两格宽的小格子里: ` + JSON.stringify(em && [...new Map(em.map((x) => [x.t, +x.cells.toFixed(3)]))]));
   const full = r.out.filter((x) => x.line.startsWith('─'));
   if (label.includes('滚动条')) ok(r.bar > 0, `${label}：历史视图有滚动条 (${r.bar}px)`);
   const far = Math.max(...r.out.map((x) => x.right));

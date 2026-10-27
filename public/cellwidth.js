@@ -1,8 +1,10 @@
 // 一个字在终端里占几格：网页里的终端、服务器上的无界面终端、历史视图共用这一份 (服务器端 require，网页里 <script> 加载成 CellWidth)。
 // 同 tmux / Claude Code / Windows 的 ConPTY：中日韩文字、全角符号、emoji (✅ ❌ 🔥 这类) 两格，组合用的附加符号不占格。
 // xterm 默认按 Unicode 6 算，✅ 这类只占一格，程序按两格补的空格就多出一格 —— 表格里带表情的行右边框往里缩一格，
-// 历史视图又按两格画，两边还对不上。⚠️ 这种「一格的字 + FE0F」不额外加宽：tmux 3.4 起自己把它当两格，
-// 但发给终端时在后面补一个空格子 (终端当一格画正好对齐)，终端再加宽反而多出一格
+// 历史视图又按两格画，两边还对不上。
+// ⚠️ 这种「一格的字 + FE0F」：Claude Code 等程序 (string-width) 算两格，普通屏幕上照着加宽 (见 useCellWidth)；
+// tmux 3.4 起自己也当两格，但发给终端时在后面补一个空格子 (终端当一格画正好对齐)，终端再加宽反而多出一格 ——
+// tmux 画在备用屏幕上，备用屏幕 (tmux、vim、less 这些全屏程序) 里不加宽
 (function (root) {
   'use strict';
   const WIDE = [[0x1100, 0x115f], [0x231a, 0x231b], [0x2329, 0x232a], [0x23e9, 0x23ec], [0x23f0, 0x23f0], [0x23f3, 0x23f3],
@@ -31,26 +33,27 @@
     return 1;
   }
 
-  // 给 xterm 用的宽度规则 (同 xterm 自带的 Unicode 6 规则的写法，只换了宽度表)。
+  // 终端改用这份规则 (要 allowProposedApi)：同 xterm 自带的 Unicode 6 规则的写法，只换了宽度表，
+  // 外加普通屏幕上 FE0F 把前面一格的字变成两格 (xterm 把宽度变大的组合字往后多占一格)。
   // charProperties 的返回值：第 0 位 = 和前一个字拼在一起，第 1-2 位 = 宽度 (xterm 内部 UnicodeService 的格式)
-  const provider = {
-    version: 'sshweb',
-    wcwidth(cp) {
-      if (cp < 32 || (cp >= 0x7f && cp < 0xa0)) return 0;
-      return cellWidth(String.fromCodePoint(cp));
-    },
-    charProperties(cp, preceding) {
-      let w = this.wcwidth(cp), join = w === 0 && preceding !== 0;
-      if (join) {
-        const pw = (preceding >> 1) & 3;
-        if (pw === 0) join = false;
-        else if (pw > w) w = pw;
-      }
-      return (w << 1) | (join ? 1 : 0);
-    },
-  };
-  // 终端改用这份规则 (要 allowProposedApi)
   function useCellWidth(term) {
+    const provider = {
+      version: 'sshweb',
+      wcwidth(cp) {
+        if (cp < 32 || (cp >= 0x7f && cp < 0xa0)) return 0;
+        return cellWidth(String.fromCodePoint(cp));
+      },
+      charProperties(cp, preceding) {
+        let w = this.wcwidth(cp), join = w === 0 && preceding !== 0;
+        if (join) {
+          const pw = (preceding >> 1) & 3;
+          if (pw === 0) join = false;
+          else if (cp === 0xfe0f && pw === 1 && term.buffer.active.type === 'normal') w = 2;
+          else if (pw > w) w = pw;
+        }
+        return (w << 1) | (join ? 1 : 0);
+      },
+    };
     term.unicode.register(provider);
     term.unicode.activeVersion = provider.version;
   }
