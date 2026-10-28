@@ -94,7 +94,7 @@
     // (同「💬 会话历史」卡片：没标题时拿第一句话当标题)
     const idText = (x) => x.tab || x.name || x.title || x.msg || x.cwd || `会话 ${x.id}`;
     // 每行 (同「💬 会话历史」卡片的样式)：会话名称 → 最新一次对话内容 → 项目工作路径 → 工作时间；
-    // 胶囊跟在工作时间后面 (与这行文字居中对齐)：命过名显示会话自己的「主机名-名字」，没命过显示接上后默认的「主机名-序号」
+    // 胶囊跟在工作时间后面 (与这行文字居中对齐)：命过名显示会话自己的「主机名-名字」，没命过只显示主机名 (同会话历史)
     const listHtml = () => {
       const list = cur.sessions || [];
       const rows = list.map((x) => `<div class="as-row dp-row${x.busy ? ' dp-busy' : ''}" data-id="${esc(x.id)}">
