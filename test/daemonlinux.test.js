@@ -166,6 +166,12 @@ run(async () => {
   a.type('cd proj\r'); await wait(800);
   const pi = await post('/api/project/info', { sid: a.sid(), dir: '' });
   ok(pi.source === 'terminal' && /\/proj$/.test(pi.root || pi.dir || ''), '项目目录：常驻会话里 cd 过去的目录 (按会话号 + 创建时间找进程，不认以前同号会话留下的): ' + JSON.stringify(pi));
+  // 选择框里每个会话的目录也一样：同号、创建时间不一样的 Agent 进程 (stale-dir) 不算
+  const pk = tab(host.id);
+  await until(() => pk.picks.length, 15000);
+  const row = pk.picks[0]?.sessions?.find((x) => x.id === '1');
+  ok(row && /\/proj$/.test(row.cwd), '选择框里的目录：按会话号 + 创建时间找进程，不显示以前同号会话的 Agent 目录: ' + JSON.stringify(row?.cwd));
+  await fetch(BASE + '/api/sessions/' + pk.sid(), { method: 'DELETE' }); pk.ws.close(); await wait(500);
   stale.kill();
 
   // ---- 3. 钩子：事件里 tabs 是旧标签、daemon 是会话编号 → 交给现在接着它的标签
