@@ -1,5 +1,5 @@
 'use strict';
-const { BASE, ok, wait, shot, launch, post, devices, hostKey, chromium } = require('./helpers');
+const { BASE, ok, wait, shot, launch, post, devices, hostKey, chromium, waitFor } = require('./helpers');
 const { Server } = require('ssh2');
 
 // tmux 历史视图里的表格 (Claude Code 画的框线表格，夹着中文和 emoji)：每一行的右边框要对齐，
@@ -131,7 +131,9 @@ async function check(p, label) {
     const r2 = await p.evaluate(measure).catch(() => null);
     const far2 = r2 && Math.max(...r2.out.filter((x) => x.line.startsWith('  ')).map((x) => x.right));
     ok(r2 && far2 <= r2.visRight + 0.5 && far2 > r2.visRight - 40, `${label}：表格滑到最右边能看到右边框 (最右 ${far2?.toFixed(1)}px，可见到 ${r2?.visRight.toFixed(1)}px)`);
-    ok(await p.evaluate(() => !document.querySelector('.term.active .ls-tbl').classList.contains('more')), `${label}：滑到最右边，右边缘的渐隐提示去掉`);
+    // 渐隐提示在 scroll 事件里去掉：事件是异步的，等它一下 (以前直接查，偶尔赶在事件之前)
+    const noMore = () => !document.querySelector('.term.active .ls-tbl').classList.contains('more');
+    ok(await waitFor(p, noMore, undefined, 2000).then(() => true, () => false), `${label}：滑到最右边，右边缘的渐隐提示去掉`);
     await p.evaluate(() => { document.querySelector('.term.active .ls-tbl').scrollLeft = 0; });
   } else ok(far <= r.visRight + 0.5, `${label}：最右边的字没被裁掉 / 没被滚动条盖住 (最右 ${far.toFixed(1)}px，可见到 ${r.visRight.toFixed(1)}px)`);
   ok(full.length >= 2 && full.every((x) => x.rows === 1), `${label}：占满整行的分隔线不折行 (${full.map((x) => x.len + ' 字 ' + x.rows + ' 行').join('，')})`);
