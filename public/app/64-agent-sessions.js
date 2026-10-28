@@ -57,9 +57,9 @@
       const f = input.value.trim().toLowerCase();
       return !f || q ? items : items.filter((x) => [x.title, x.prompt, x.cwd].some((v) => (v || '').toLowerCase().includes(f)));
     };
-    // 「主机名-名字」胶囊 (同常驻会话的选择框)：聊这个对话时命过名的显示那个名字 (「继续」时还原成它)，
-    // 没命过的显示现在这个标签的名字
-    const tabCap = (x) => { const n = x.tab || s.title; return `<span class="dp-name" title="${esc(n)}">${esc(n)}</span>`; };
+    // 「主机名-名字」胶囊 (同常驻会话的选择框)：这个对话最后在哪个标签里聊的 / 命过的名 (服务端记的，见 lib/agent-sessions.js)，
+    // 没记过的只显示主机名
+    const tabCap = (x) => { const n = x.tab || host; return `<span class="dp-name" title="${esc(n)}">${esc(n)}</span>`; };
     const render = () => {
       el.querySelectorAll('.as-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.agent === agent));
       const shown = filtered();
