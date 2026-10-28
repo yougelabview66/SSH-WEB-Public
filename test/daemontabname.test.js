@@ -275,6 +275,30 @@ run(async () => {
   hook({ hook_event_name: 'SessionStart', source: 'resume', session_id: 'conv-6' });
   await until(() => t.last('renamed')?.suffix === '', 5000);
   ok(t.last('renamed')?.suffix === '', 'Claude 恢复没命过名的对话：标签名清掉 (显示「DT-序号」): ' + JSON.stringify(t.msgs.filter((m) => m.type === 'renamed').slice(-2)));
+  // 会话历史「继续」命过名 (戌) 的 conv-2 → 退出的旧 Agent 晚到的 SessionEnd (旧对话 conv-6) → 马上改名「巳」→ 新 Agent 报事件：
+  // 晚到的不算，「巳」记到 conv-2 上，新 Agent 报事件时不被改回「戌」
+  const r4 = await post('/api/agent-sessions/resume', { sid: t.sid(), cmd: 'true', id: 'conv-2' });
+  await until(() => t.last('renamed')?.suffix === '戌', 3000);
+  hook({ hook_event_name: 'SessionEnd', session_id: 'conv-6' }); await wait(1500);
+  t.send({ type: 'rename', suffix: '巳' }); await wait(300);
+  hook({ hook_event_name: 'UserPromptSubmit', prompt: '接着聊二', session_id: 'conv-2' });
+  await until(() => /接着聊二/.test(t.last('state')?.detail || ''), 5000);
+  cap = await capOf(t.sid(), 'conv-2');
+  ok(r4.quit !== undefined && t.last('renamed')?.suffix === '巳' && cap === 'DT-巳', '「继续」后旧 Agent 的晚到事件不算：马上改的「巳」记到新对话上，不被改回: ' + JSON.stringify([r4, t.msgs.filter((m) => m.type === 'renamed').slice(-3), cap]));
+  // 新开的标签 (还没收到过钩子事件，同服务重启后) 先命名「午」，里面的 Agent 头一次报事件是命过名 (亥，更早) 的 conv-5：
+  // 分不清是刚换的还是一直在聊，按最后命的算，留着「午」并记到 conv-5 上
+  const f = tab(host.id);
+  await until(() => f.ready() || f.picks.length, 15000);
+  if (f.picks.length) { f.send({ type: 'daemon-pick-response', id: '' }); await until(f.ready, 15000); }
+  const fid = /新建常驻会话 (\d+)/.exec(f.out)?.[1];
+  f.send({ type: 'rename', suffix: '午' }); await wait(300);
+  for (let i = 0; i < 6 && !/头一次/.test(f.last('state')?.detail || ''); i++) {
+    hook({ hook_event_name: 'UserPromptSubmit', prompt: '头一次', session_id: 'conv-5', daemon: fid });
+    await until(() => /头一次/.test(f.last('state')?.detail || ''), 2000);
+  }
+  cap = await capOf(f.sid(), 'conv-5');
+  ok(/头一次/.test(f.last('state')?.detail || '') && f.last('renamed')?.suffix === '午' && cap === 'DT-午', '头一次收到事件 (服务重启后同)：标签后命的「午」比对话的新，留着并记到对话上: ' + JSON.stringify([f.msgs.filter((m) => m.type === 'renamed'), cap]));
+  await close(f);
   hook({ hook_event_name: 'UserPromptSubmit', prompt: '整理代码二' }); // 再回到 conv-1 (下面按它测)
   await until(() => /整理代码二/.test(t.last('state')?.detail || ''), 5000);
   await close(t);
