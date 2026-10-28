@@ -252,18 +252,29 @@ run(async () => {
   await until(() => u.last('renamed'), 3000);
   ok(ru.quit === false && u.last('renamed')?.suffix === '庚', '在没命名的标签里「继续」conv-2：标签名变成胶囊上的「庚」: ' + JSON.stringify([ru, u.msgs.filter((m) => m.type === 'renamed')]));
   await close(u);
-  // 标签改名「戌」(正在聊 conv-2，记到 conv-2)，再在终端里自己 --resume 回命过名 (庚) 的 conv-1：conv-1 的名字不被「戌」盖掉
+  // 标签改名「戌」(正在聊 conv-2，记到 conv-2)，再在终端里自己 --resume 回命过名 (庚) 的 conv-1：
+  // 同会话历史「继续」，标签名换成对话的「庚」，conv-1 的名字也不被「戌」盖掉
   t.send({ type: 'rename', suffix: '戌' }); await wait(300);
   hook({ hook_event_name: 'UserPromptSubmit', prompt: '切回一' });
   await until(() => /切回一/.test(t.last('state')?.detail || ''), 5000);
+  await until(() => t.last('renamed')?.suffix === '庚', 3000);
   convFile('conv-1');
   cap = await capOf(t.sid(), 'conv-1');
-  ok(cap === 'DT-庚' && (await capOf(t.sid(), 'conv-2')) === 'DT-戌', '自己 --resume 回命过名的对话：对话的名字「庚」不被标签的「戌」盖掉: ' + JSON.stringify(cap));
+  ok(t.last('renamed')?.suffix === '庚' && cap === 'DT-庚' && (await capOf(t.sid(), 'conv-2')) === 'DT-戌', '自己 --resume 回命过名的对话：标签名换成对话的「庚」，对话的名字不被「戌」盖掉: ' + JSON.stringify([t.last('renamed'), cap]));
   // Agent 退出以后改名「亥」(拿标签干别的)：不记到刚退出的 conv-1 上
   hook({ hook_event_name: 'SessionEnd' }); await wait(1500);
   t.send({ type: 'rename', suffix: '亥' }); await wait(300);
   cap = await capOf(t.sid(), 'conv-1');
   ok(cap === 'DT-庚', 'Agent 退出后改名：不记到上一个对话 conv-1 上，还是「DT-庚」: ' + JSON.stringify(cap));
+  // Claude 新开对话 (SessionStart source=startup)：标签留着「亥」，新对话记成「亥」
+  convFile('conv-5');
+  hook({ hook_event_name: 'SessionStart', source: 'startup', session_id: 'conv-5' }); await wait(1500);
+  cap = await capOf(t.sid(), 'conv-5');
+  ok(t.last('renamed')?.suffix === '亥' && cap === 'DT-亥', 'Claude 新开的对话：标签名不变，新对话记成标签的「亥」: ' + JSON.stringify([t.last('renamed'), cap]));
+  // Claude 恢复一个没命过名的旧对话 (SessionStart source=resume)：标签名清掉，按「主机名-序号」显示
+  hook({ hook_event_name: 'SessionStart', source: 'resume', session_id: 'conv-6' });
+  await until(() => t.last('renamed')?.suffix === '', 5000);
+  ok(t.last('renamed')?.suffix === '', 'Claude 恢复没命过名的对话：标签名清掉 (显示「DT-序号」): ' + JSON.stringify(t.msgs.filter((m) => m.type === 'renamed').slice(-2)));
   hook({ hook_event_name: 'UserPromptSubmit', prompt: '整理代码二' }); // 再回到 conv-1 (下面按它测)
   await until(() => /整理代码二/.test(t.last('state')?.detail || ''), 5000);
   await close(t);
