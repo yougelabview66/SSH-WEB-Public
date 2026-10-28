@@ -119,11 +119,14 @@ async function openPick(hostId, id, extra) {
   return { t, row: t.picks.at(-1)?.sessions?.find((x) => x.id === id) };
 }
 const shown = (row) => row && (row.tab || row.tabDef); // 选择框里那一行显示的标签名
+const post = (u, b) => fetch(BASE + u, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) }).then((r) => r.json());
 const J = (row) => JSON.stringify(row && { tab: row.tab, tabDef: row.tabDef });
 
 run(async () => {
   if (!BIN) { ok(true, '(没有 Go：跳过)'); return; }
   fs.writeFileSync(path.join(home, '.profile'), "PS1='$ '\n");
+  fs.mkdirSync(path.join(home, '.ssh-web'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.ssh-web', 'hook.sh'), '#!/bin/sh\n'); // 装了钩子 (有 hook.sh 就读事件)
   const host = await addHost('DT', 2351, { winDaemon: true });
 
   // ---- 1. 接着会话时命名「甲」→ 关标签 → 再开：选择框里是 DT-甲
@@ -206,7 +209,42 @@ run(async () => {
   await close(e);
   ({ t, row } = await openPick(host.id, id));
   ok(row && !row.tab, '再开选择框里也不显示「己」: ' + J(row));
-  t.ws.close();
+
+  // ---- 8. 会话里 Claude 在聊对话 conv-1：命名「庚」→ 关标签 → 接上它马上改成「辛」(Agent 还没再报事件) →
+  // 结束会话 → 新标签在会话历史里「继续」conv-1：标签名是最后改的「辛」，不是「庚」
+  t.send({ type: 'daemon-pick-response', id });
+  await until(t.ready, 15000);
+  fs.mkdirSync(path.join(home, '.cache', 'ssh-web'), { recursive: true });
+  await wait(1500);
+  const hook = (ev) => fs.appendFileSync(path.join(home, '.cache', 'ssh-web', 'hook.log'), JSON.stringify({ v: 2, t: Math.floor(Date.now() / 1000), agent: 'claude', tabs: 'old-tab', daemon: id, pane: '', session_id: 'conv-1', ...ev }) + '\n');
+  // 读事件的通道可能还在换手 (前面的标签关了，换这个标签接着读)：没收到就再报一次
+  for (let i = 0; i < 8 && !/整理代码/.test(t.last('state')?.detail || ''); i++) {
+    hook({ hook_event_name: 'UserPromptSubmit', prompt: '整理代码' });
+    await until(() => /整理代码/.test(t.last('state')?.detail || ''), 2000);
+  }
+  ok(/整理代码/.test(t.last('state')?.detail || ''), '钩子事件到了 (标签知道里面在聊 conv-1): ' + JSON.stringify([t.msgs.filter((m) => m.type === 'state').slice(-2), fs.readFileSync(path.join(home, '.cache', 'ssh-web', 'hook.log'), 'utf8').length]));
+  t.send({ type: 'rename', suffix: '庚' }); await wait(300);
+  await close(t);
+  ({ t } = await openPick(host.id, id));
+  t.send({ type: 'daemon-pick-response', id });
+  await until(t.ready, 15000);
+  t.send({ type: 'rename', suffix: '辛' }); await wait(300);
+  t.send({ type: 'close', kill: true });
+  await wait(1500); // 等会话结束
+  t.ws.close(); await wait(800);
+  const n = tab(host.id);
+  await until(() => n.ready() || n.picks.length, 15000);
+  if (n.picks.length) { n.send({ type: 'daemon-pick-response', id: '' }); await until(n.ready, 15000); }
+  await wait(1000);
+  const r = await post('/api/agent-sessions/resume', { sid: n.sid(), cmd: 'true', id: 'conv-1' });
+  await until(() => n.last('renamed'), 3000);
+  // 会话历史列表：这个对话后面的胶囊是「DT-辛」
+  fs.mkdirSync(path.join(home, '.claude', 'projects', '-srv-x'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.claude', 'projects', '-srv-x', 'conv-1.jsonl'), JSON.stringify({ type: 'user', message: { role: 'user', content: '整理代码' }, cwd: '/srv/x' }) + '\n');
+  const ls = await post('/api/agent-sessions', { sid: n.sid(), agent: 'claude' });
+  ok(ls.sessions?.find((x) => x.id === 'conv-1')?.tab === 'DT-辛', '会话历史列表里这个对话带着命的名「DT-辛」(显示成胶囊): ' + JSON.stringify(ls.sessions || ls));
+  ok(r.quit === false && n.last('renamed')?.suffix === '辛', '会话历史里「继续」这个对话：还原最后改的名字「辛」: ' + JSON.stringify([r, n.msgs.filter((m) => m.type === 'renamed')]));
+  n.ws.close();
 
   for (const x of await (await fetch(BASE + '/api/sessions')).json()) await fetch(BASE + '/api/sessions/' + x.id, { method: 'DELETE' });
   for (const c of conns) c.end();
