@@ -288,6 +288,21 @@ run(async () => {
   ok(ls2.sessions?.find((x) => x.id === 'conv-1')?.tab === 'DT-丑', '会话历史里这个对话也变成「DT-丑」: ' + JSON.stringify(ls2.sessions?.find((x) => x.id === 'conv-1')));
   q2.ws.close();
 
+  // ---- 12. 另一个标签命名「寅」又清掉 (比对话记着的「丑」晚)，再在里面「继续」conv-1：标签不还原成「丑」，对话上也记成清掉了
+  const w = tab(host.id);
+  await until(() => w.ready() || w.picks.length, 15000);
+  if (w.picks.length) { w.send({ type: 'daemon-pick-response', id: '' }); await until(w.ready, 15000); }
+  w.send({ type: 'rename', suffix: '寅' }); await wait(300);
+  w.send({ type: 'rename', suffix: '' }); await wait(300);
+  const nRen = w.msgs.filter((m) => m.type === 'renamed').length;
+  const r3 = await post('/api/agent-sessions/resume', { sid: w.sid(), cmd: 'true', id: 'conv-1' });
+  await wait(500);
+  ok(r3.quit === false && w.msgs.filter((m) => m.type === 'renamed').length === nRen, '清掉名字比对话记着的新：标签不还原成「丑」: ' + JSON.stringify([r3, w.msgs.filter((m) => m.type === 'renamed')]));
+  const ls3 = await post('/api/agent-sessions', { sid: w.sid(), agent: 'claude' });
+  const c3 = ls3.sessions?.find((x) => x.id === 'conv-1');
+  ok(c3 && !c3.tab, '会话历史里这个对话不再显示清掉之前的「DT-丑」: ' + JSON.stringify(c3));
+  w.ws.close();
+
   for (const x of await (await fetch(BASE + '/api/sessions')).json()) await fetch(BASE + '/api/sessions/' + x.id, { method: 'DELETE' });
   for (const c of conns) c.end();
   await wait(500);
