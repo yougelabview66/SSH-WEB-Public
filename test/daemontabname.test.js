@@ -252,6 +252,18 @@ run(async () => {
   await until(() => u.last('renamed'), 3000);
   ok(ru.quit === false && u.last('renamed')?.suffix === '庚', '在没命名的标签里「继续」conv-2：标签名变成胶囊上的「庚」: ' + JSON.stringify([ru, u.msgs.filter((m) => m.type === 'renamed')]));
   await close(u);
+  // 标签改名「戌」(正在聊 conv-2，记到 conv-2)，再在终端里自己 --resume 回命过名 (庚) 的 conv-1：conv-1 的名字不被「戌」盖掉
+  t.send({ type: 'rename', suffix: '戌' }); await wait(300);
+  hook({ hook_event_name: 'UserPromptSubmit', prompt: '切回一' });
+  await until(() => /切回一/.test(t.last('state')?.detail || ''), 5000);
+  convFile('conv-1');
+  cap = await capOf(t.sid(), 'conv-1');
+  ok(cap === 'DT-庚' && (await capOf(t.sid(), 'conv-2')) === 'DT-戌', '自己 --resume 回命过名的对话：对话的名字「庚」不被标签的「戌」盖掉: ' + JSON.stringify(cap));
+  // Agent 退出以后改名「亥」(拿标签干别的)：不记到刚退出的 conv-1 上
+  hook({ hook_event_name: 'SessionEnd' }); await wait(1500);
+  t.send({ type: 'rename', suffix: '亥' }); await wait(300);
+  cap = await capOf(t.sid(), 'conv-1');
+  ok(cap === 'DT-庚', 'Agent 退出后改名：不记到上一个对话 conv-1 上，还是「DT-庚」: ' + JSON.stringify(cap));
   hook({ hook_event_name: 'UserPromptSubmit', prompt: '整理代码二' }); // 再回到 conv-1 (下面按它测)
   await until(() => /整理代码二/.test(t.last('state')?.detail || ''), 5000);
   await close(t);
@@ -290,6 +302,10 @@ run(async () => {
   p1.send({ type: 'rename', suffix: '壬' });
   await until(() => p2.last('renamed')?.suffix === '壬', 3000);
   ok(p2.last('renamed')?.suffix === '壬', '同一个会话的另一个标签跟着换成「壬」: ' + JSON.stringify(p2.msgs.filter((m) => m.type === 'renamed')));
+  // 在 p1 里从会话历史「继续」没命过名的 conv-8：p1 名字清掉，同一个会话的 p2 也跟着清掉
+  const r9 = await post('/api/agent-sessions/resume', { sid: p1.sid(), cmd: 'true', id: 'conv-8' });
+  await until(() => p2.last('renamed')?.suffix === '', 3000);
+  ok(r9.quit === false && p1.last('renamed')?.suffix === '' && p2.last('renamed')?.suffix === '', '「继续」换的名字：同一个会话的另一个标签也跟着换: ' + JSON.stringify([r9, p2.msgs.filter((m) => m.type === 'renamed')]));
   await close(p2);
 
   // ---- 10. 标签先命名「癸」，之后别的标签把会话改成「子」：「癸」这个标签再接上这个会话 → 用最后命的「子」
