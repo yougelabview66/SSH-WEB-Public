@@ -290,6 +290,18 @@
     return d;
   }
 
+  // 名字和已有的主机一样：先问一下 (标签、主机状态卡片、推送里都只写名字，两台同名的分不清是哪台)。
+  // 不改名也能存 (可能就是想这样)；取消的话留在表单里，选中名字方便改。编辑时名字没改的不问 (重名是以前就答应过的)
+  function dupNameOk(d) {
+    const name = (d.name || `${d.username}@${d.host}`).trim();
+    if (editing && (editing.name || '').trim().toLowerCase() === name.toLowerCase()) return true;
+    const same = hosts.find((h) => h.id !== editing?.id && (h.name || '').trim().toLowerCase() === name.toLowerCase());
+    if (!same || confirm(`已经有一台主机叫「${name}」(${same.username}@${same.host})。\n\n名字一样的话，标签、主机状态卡片、推送通知里分不清是哪一台。\n还是用这个名字吗？`)) return true;
+    form.querySelector('[name=name]').focus();
+    form.querySelector('[name=name]').select();
+    return false;
+  }
+
   async function saveHost(d) {
     const body = { ...d };
     // 切换了认证方式时清掉旧凭据
@@ -305,8 +317,10 @@
 
   $('#btnSaveOnly').addEventListener('click', async () => {
     if (!form.reportValidity()) return;
+    const d = formData();
+    if (!dupNameOk(d)) return;
     try {
-      await saveHost(formData());
+      await saveHost(d);
       closeModal();
     } catch (err) { $('#formErr').textContent = err.message; }
   });
@@ -315,6 +329,7 @@
     e.preventDefault();
     const d = formData();
     const title = d.name || `${d.username}@${d.host}`;
+    if (d.save && !dupNameOk(d)) return;
     try {
       if (d.save) {
         const saved = await saveHost(d);
