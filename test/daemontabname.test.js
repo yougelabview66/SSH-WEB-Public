@@ -166,10 +166,10 @@ run(async () => {
   ok(shown(row) === 'DT-丁', '重连前刚改的名：再开显示「丁」: ' + J(row));
   t.ws.close(); await wait(600);
 
-  // ---- 4b. 只是恢复标签带着的名字 (可能是以前还原出来的旧名字，没有 suffixNew)：不盖掉记着的新名字
+  // ---- 4b. 只是恢复标签带着的名字 (可能是以前还原出来的旧名字，没有 suffixNew)：不盖掉记着的新名字，标签换成最后命的「丁」
   e = tab(host.id, { suffix: '旧名字', daemonId: id });
   await until(e.ready, 15000);
-  ok(e.last('renamed') === undefined, '恢复的标签照样显示自己带着的名字，不被改');
+  ok(e.last('renamed')?.suffix === '丁', '恢复的标签换成会话最后命的名字「丁」: ' + JSON.stringify(e.msgs.filter((m) => m.type === 'renamed')));
   await close(e);
   ({ t, row } = await openPick(host.id, id));
   ok(shown(row) === 'DT-丁', '恢复标签带着的旧名字不盖掉最后改的「丁」: ' + J(row));
@@ -244,7 +244,49 @@ run(async () => {
   const ls = await post('/api/agent-sessions', { sid: n.sid(), agent: 'claude' });
   ok(ls.sessions?.find((x) => x.id === 'conv-1')?.tab === 'DT-辛', '会话历史列表里这个对话带着命的名「DT-辛」(显示成胶囊): ' + JSON.stringify(ls.sessions || ls));
   ok(r.quit === false && n.last('renamed')?.suffix === '辛', '会话历史里「继续」这个对话：还原最后改的名字「辛」: ' + JSON.stringify([r, n.msgs.filter((m) => m.type === 'renamed')]));
-  n.ws.close();
+  // 「继续」还原出来的名字也记到这个标签现在接着的常驻会话上：关标签 (保留) → 再开，选择框里那个会话也是 DT-辛
+  const nid = /新建常驻会话 (\d+)/.exec(n.out)?.[1];
+  await close(n);
+  ({ t, row } = await openPick(host.id, nid));
+  ok(shown(row) === 'DT-辛', '「继续」对话后，常驻会话也记成还原出来的名字「辛」: ' + J(row));
+  t.ws.close();
+
+  // ---- 9. 同一个常驻会话在两个标签里开着：一个标签改名「壬」，另一个标签马上跟着变
+  const p1 = tab(host.id);
+  await until(() => p1.ready() || p1.picks.length, 15000);
+  if (p1.picks.length) { p1.send({ type: 'daemon-pick-response', id: '' }); await until(p1.ready, 15000); }
+  const pid = /新建常驻会话 (\d+)/.exec(p1.out)?.[1];
+  let p2; ({ t: p2 } = await openPick(host.id, pid));
+  p2.send({ type: 'daemon-pick-response', id: pid, share: true });
+  await until(p2.ready, 15000);
+  p1.send({ type: 'rename', suffix: '壬' });
+  await until(() => p2.last('renamed')?.suffix === '壬', 3000);
+  ok(p2.last('renamed')?.suffix === '壬', '同一个会话的另一个标签跟着换成「壬」: ' + JSON.stringify(p2.msgs.filter((m) => m.type === 'renamed')));
+  await close(p2);
+
+  // ---- 10. 标签先命名「癸」，之后别的标签把会话改成「子」：「癸」这个标签再接上这个会话 → 用最后命的「子」
+  const q1 = tab(host.id);
+  await until(() => q1.picks.length, 15000);
+  q1.send({ type: 'rename', suffix: '癸' }); await wait(300);
+  q1.send({ type: 'daemon-pick-response', id: '' }); // 先接个新的会话
+  await until(q1.ready, 15000);
+  p1.send({ type: 'rename', suffix: '子' }); await wait(300);
+  await close(p1);
+  q1.send({ type: 'close' }); q1.ws.close(); await wait(600);
+  const q2 = tab(host.id, { suffix: '癸' }); // 网页上恢复的「癸」标签 (服务重启后)，去接 pid 这个会话
+  await until(() => q2.picks.length, 15000);
+  q2.send({ type: 'daemon-pick-response', id: pid });
+  await until(q2.ready, 15000);
+  ok(q2.last('renamed')?.suffix === '子', '接上的会话后来命的名「子」比标签上的「癸」新：换成「子」: ' + JSON.stringify(q2.msgs.filter((m) => m.type === 'renamed')));
+
+  // ---- 11. 标签后来命名「丑」，再在里面「继续」以前命过名 (辛) 的对话 conv-1：留着「丑」，对话也记成「丑」
+  q2.send({ type: 'rename', suffix: '丑' }); await wait(300);
+  const r2 = await post('/api/agent-sessions/resume', { sid: q2.sid(), cmd: 'true', id: 'conv-1' });
+  await wait(500);
+  ok(r2.quit === false && q2.last('renamed')?.suffix === '丑', '标签上的名字比对话记着的新：留着「丑」: ' + JSON.stringify([r2, q2.msgs.filter((m) => m.type === 'renamed')]));
+  const ls2 = await post('/api/agent-sessions', { sid: q2.sid(), agent: 'claude' });
+  ok(ls2.sessions?.find((x) => x.id === 'conv-1')?.tab === 'DT-丑', '会话历史里这个对话也变成「DT-丑」: ' + JSON.stringify(ls2.sessions?.find((x) => x.id === 'conv-1')));
+  q2.ws.close();
 
   for (const x of await (await fetch(BASE + '/api/sessions')).json()) await fetch(BASE + '/api/sessions/' + x.id, { method: 'DELETE' });
   for (const c of conns) c.end();
