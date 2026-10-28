@@ -113,6 +113,8 @@ run(async () => {
   const caps = await p.$$eval('.agentsp .as-row .as-meta .dp-name', (xs) => xs.map((x) => x.textContent));
   const tabTitle = await p.textContent('#tabs .tab.active .title');
   ok(caps.length === 2 && caps.every((c) => c === tabTitle), '每个会话后面有「主机名-名字」胶囊 (同常驻会话选择框)，没命过名的显示现在这个标签的名字: ' + J([caps, tabTitle]));
+  const btns = await p.$$eval('.agentsp .as-row .as-btns', (xs) => xs.map((x) => [...x.querySelectorAll('button')].map((b) => b.textContent).join(' ')));
+  ok(btns.length === 2 && btns.every((b) => b === '继续 复制 删除'), '「继续」在最左边、「删除」在最右边 (同常驻会话选择框的「接上 删除」): ' + J(btns));
   await p.screenshot({ path: shot('agent-sessions.png') });
   await p.fill('.agentsp .as-search input', '登录'); await wait(200);
   ok(J(await titles()) === J(['登录页样式修复']), '打字：筛选列出来的 (标题、第一句话、目录)');

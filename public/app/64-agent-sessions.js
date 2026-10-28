@@ -67,9 +67,9 @@
           <div class="as-main"><div class="as-title">${esc(x.title || x.prompt || '(没有标题)')}</div>
             ${x.title && x.prompt ? `<div class="as-prompt">${esc(x.prompt)}</div>` : ''}
             <div class="as-meta dp-when"><span class="dp-when-t">${esc(x.cwd || '目录不明')} · ${fmtAgo(x.mtime)} · ${fmtSize(x.size)}</span>${tabCap(x)}</div></div>
-          <div class="as-btns"><button type="button" data-a="del" title="删除这个会话 (移到主机的 ~/.ssh-web/trash/，点两下)">删除</button>
+          <div class="as-btns"><button type="button" data-a="resume" class="primary" title="${esc(x.cmd)}">继续</button>
             <button type="button" data-a="copy" title="复制恢复命令">复制</button>
-            <button type="button" data-a="resume" class="primary" title="${esc(x.cmd)}">继续</button></div>
+            <button type="button" data-a="del" title="删除这个会话 (移到主机的 ~/.ssh-web/trash/，点两下)">删除</button></div>
         </div>`).join('') || `<div class="as-empty">${q ? `没有找到含「${esc(q)}」的会话` : input.value.trim() ? '没有符合的会话（回车或点「搜索」在全部内容里搜）' : '这台主机上没找到这个 Agent 的会话'}</div>`;
     };
     const load = async () => {
