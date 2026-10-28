@@ -1,7 +1,7 @@
 'use strict';
 // 会话历史点「继续」：标签里还开着 Agent (Claude Code 等) 时，恢复命令会打进它的输入框 ——
 // 先按两下 Ctrl+C 退出它 (Grok 这种界面上没有特别的字的，光标停在 > 开头的输入行上也认得)，等回到 shell 再执行；普通 shell 直接执行、不多按 Ctrl+C；
-// 退不出来就不执行，提示手动退出，标签名和对话记的名字都还回去。
+// 退不出来就不执行，提示手动退出，标签名还回去。
 // 这台主机 uname 认不出是 Linux (像别的系统)，勾着「常驻会话」(新建主机默认勾上)：安静地开普通终端，不提示「常驻会话没开起来」，主机列表上不标「常驻」
 const { Server } = require('ssh2');
 const { BASE, ok, wait, run, hostKey, addHost } = require('./helpers');
@@ -76,21 +76,13 @@ run(async () => {
   r = await resume(sid, 'claude --resume ghi');
   ok(r.status === 409 && /手动退出/.test(r.body.error) && !got.includes('claude --resume ghi'), '退不出来：命令不发 (免得打进 Agent 的输入框)，提示手动退出: ' + JSON.stringify([r.body, got]));
 
-  // 4. 命过名「甲」的标签「继续」对话 ghi 没成功：对话上不留下「甲」—— 另一个带着旧名字恢复的标签再「继续」ghi，不会被改成「甲」
+  // 4. 命过名「甲」的标签「继续」对话 ghi (没命过名)：标签名先清掉；没成功 → 名字还回「甲」
+  const renamed = [];
+  ws.on('message', (d, bin) => { if (bin) return; const m = JSON.parse(d); if (m.type === 'renamed') renamed.push(m.suffix); });
   ws.send(JSON.stringify({ type: 'rename', suffix: '甲' })); await wait(300);
+  renamed.length = 0;
   r = await resume(sid, 'claude --resume ghi', 'ghi');
-  ok(r.status === 409, '「继续」ghi 没成功: ' + JSON.stringify(r.body));
-  mode = 'agent'; ctrlC = [];
-  const ws2 = new WebSocket(BASE.replace('http', 'ws') + '/ws');
-  let sid2 = null;
-  const renamed2 = [];
-  ws2.on('message', (d, bin) => { if (bin) return; const m = JSON.parse(d); if (m.type === 'status' && m.status === 'connected') sid2 = m.sid; if (m.type === 'renamed') renamed2.push(m.suffix); });
-  await new Promise((res) => ws2.on('open', res));
-  ws2.send(JSON.stringify({ type: 'connect', hostId: host.id, title: 'AR', suffix: '旧', cols: 100, rows: 30 }));
-  for (let i = 0; i < 50 && !sid2; i++) await wait(100);
-  await wait(800);
-  r = await resume(sid2, 'claude --resume ghi', 'ghi');
-  ok(r.status === 200 && !renamed2.length, '没成功的那次没把「甲」记到对话上：这个标签留着自己的名字: ' + JSON.stringify([r.body, renamed2]));
-  ws2.close();
+  for (let i = 0; i < 20 && renamed.length < 2; i++) await wait(100); // WebSocket 上的消息可能比 HTTP 回复晚到
+  ok(r.status === 409 && JSON.stringify(renamed) === JSON.stringify(['', '甲']), '「继续」没成功：标签名换成对话的 (清掉) 以后又还回「甲」: ' + JSON.stringify([r.body, renamed]));
   ws.close();
 });
