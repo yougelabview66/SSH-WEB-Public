@@ -273,7 +273,8 @@
         // offset: 已收到的输出字节数，断线重连时服务端只补发缺的部分
         ws.send(JSON.stringify({ type: 'attach', id: s.remoteId, offset: s.offset, pageId, deviceId, lite: s.lite, ...size }));
       } else {
-        ws.send(JSON.stringify({ type: 'connect', ...s.params, title: s.baseTitle, n: s.n, ...(s.suffix && { suffix: s.suffix }), histHost: s.histHost, pageId, deviceId, ...size }));
+        // suffixNew：名字是刚改的、还没送到服务端 (服务重启期间改的名等)，接上常驻会话时要记到会话上 (见 session/index.js)
+        ws.send(JSON.stringify({ type: 'connect', ...s.params, title: s.baseTitle, n: s.n, ...(s.suffix && { suffix: s.suffix }), ...(s.pendingSuffix != null && { suffixNew: true }), histHost: s.histHost, pageId, deviceId, ...size }));
       }
       // 应用层心跳，避免 Cloudflare / 反向代理 100 秒空闲断开；服务端每次都回 pong。
       // 不在这里判断「多久没收到东西就断开重连」：ping/pong 往返慢一个周期 (隧道卡、主机忙) 就会把好连接误杀，

@@ -181,11 +181,12 @@
   }
 
   // 用户命了名：本地先改，再告诉服务端 (所有设备上的这个标签、刷新后的恢复、常驻会话都记新名字)。
-  // ws 断着时走 HTTP；还没有会话 id (正在连) 就只改本地，连上时 connect 消息自己会带上
+  // ws 断着时走 HTTP；还没有会话 id (正在连) 就只改本地，连上时 connect 消息带上 / attached 时补发。
+  // 送到之前一直记着 (pendingSuffix)：不然连上时会被服务端那边的旧名字改回去
   function renameTab(s, suffix) {
     applyTabSuffix(s, suffix);
-    if (!s.remoteId) return;
     s.pendingSuffix = suffix; // 命名时断线没送到的话，重新连上 (attached) 时补发
+    if (!s.remoteId) return;
     if (s.ws && s.ws.readyState === WebSocket.OPEN) send(s, { type: 'rename', suffix });
     else api('POST', `/api/sessions/${s.remoteId}/rename`, { suffix }).then(() => { s.pendingSuffix = null; }).catch(() => {});
   }
