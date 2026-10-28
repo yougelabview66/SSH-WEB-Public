@@ -104,6 +104,15 @@ run(async () => {
   // 同目录还有一个没被认出的文件，所以这个会话仍能拿到结果，但不能是那个已被认出的文件
   const skip = await claudePeekByCwd(fakeSess, [{ id: 'S-just', cwd: '/srv/a', to: now }], { knownFiles: new Set(['-srv-a/aaaaaaaa-0000-0000-0000-000000000001.jsonl']) });
   ok(skip.get('S-just')?.file !== '-srv-a/aaaaaaaa-0000-0000-0000-000000000001.jsonl', `已按对话 id 认出的文件不再分给别人 (拿到的是 ${JSON.stringify(skip.get('S-just')?.title)}): ${JSON.stringify(skip.get('S-just')?.file)}`);
+  // 会话开了以后没开过 Agent：目录里只有会话开之前的旧对话 → 不算它的 (以前会显示成那个旧对话的名字)
+  put('.claude/projects/-srv-c/dddddddd-0000-0000-0000-000000000005.jsonl', [
+    J({ type: 'user', message: { role: 'user', content: '以前聊的' }, cwd: '/srv/c' }),
+    J({ type: 'ai-title', aiTitle: '以前的对话' }),
+  ].join('\n') + '\n', 180);
+  const fresh = await claudePeekByCwd(fakeSess, [{ id: 'S-fresh', cwd: '/srv/c', to: now, from: now - 10 * 60000 }]);
+  ok(!fresh.has('S-fresh'), `会话开之前就没再写过的对话不算这个会话的 (开了会话没开 Agent，不显示以前的对话名): ${JSON.stringify(fresh.get('S-fresh')?.title)}`);
+  const inLife = await claudePeekByCwd(fakeSess, [{ id: 'S-life', cwd: '/srv/a', to: now, from: now - 10 * 60000 }]);
+  ok(inLife.get('S-life')?.title === '新对话', `会话开了以后写过的照样认得: ${JSON.stringify(inLife.get('S-life')?.title)}`);
   // 文件第一行很长 (SessionStart 的钩子附件) 也要读到 cwd —— 以前整行截 2048 字节，cwd 在第 3500 字节就读不到
   const longLine = J({ type: 'attachment', attachment: { type: 'hook_success', pad: 'x'.repeat(3400) }, cwd: '/srv/long', sessionId: 'cccccccc-0000-0000-0000-000000000004' });
   put('.claude/projects/-srv-long/cccccccc-0000-0000-0000-000000000004.jsonl', [
