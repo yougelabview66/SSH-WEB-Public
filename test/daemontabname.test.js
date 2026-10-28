@@ -223,13 +223,13 @@ run(async () => {
     await until(() => /整理代码/.test(t.last('state')?.detail || ''), 2000);
   }
   ok(/整理代码/.test(t.last('state')?.detail || ''), '钩子事件到了 (标签知道里面在聊 conv-1): ' + JSON.stringify([t.msgs.filter((m) => m.type === 'state').slice(-2), fs.readFileSync(path.join(home, '.cache', 'ssh-web', 'hook.log'), 'utf8').length]));
-  // 会话历史列表：没命过名的标签里聊的，胶囊只显示主机名「DT」，不带序号
+  // 会话历史列表：没命过名的标签里聊的，不显示胶囊
   const convFile = (cid) => { fs.mkdirSync(path.join(home, '.claude', 'projects', '-srv-x'), { recursive: true });
     fs.writeFileSync(path.join(home, '.claude', 'projects', '-srv-x', cid + '.jsonl'), JSON.stringify({ type: 'user', message: { role: 'user', content: '整理代码' }, cwd: '/srv/x' }) + '\n'); };
   const capOf = async (sid, cid) => (await post('/api/agent-sessions', { sid, agent: 'claude' })).sessions?.find((x) => x.id === cid)?.tab;
   convFile('conv-1'); convFile('conv-2');
   let cap = await capOf(t.sid(), 'conv-1');
-  ok(cap === 'DT', '没命过名的标签里聊的对话：会话历史胶囊只显示主机名「DT」: ' + JSON.stringify(cap));
+  ok(cap === undefined, '没命过名的标签里聊的对话：会话历史里不显示胶囊: ' + JSON.stringify(cap));
   t.send({ type: 'rename', suffix: '庚' }); await wait(300);
   // 标签命名「庚」后在里面开了新对话 conv-2 (对话上没命过名)：会话历史里 conv-2 的胶囊是它在聊的标签「DT-庚」
   hook({ session_id: 'conv-2', hook_event_name: 'UserPromptSubmit', prompt: '新对话' });
@@ -244,6 +244,14 @@ run(async () => {
   cap = await capOf(o.sid(), 'conv-2');
   ok(cap === 'DT-庚', '在别的标签 (DT-卯) 打开会话历史：胶囊还是记着的「DT-庚」: ' + JSON.stringify(cap));
   await close(o);
+  // 没命过名的新标签里「继续」conv-2：标签名还原成胶囊上的「庚」(看到的就是继续后得到的)
+  const u = tab(host.id);
+  await until(() => u.ready() || u.picks.length, 15000);
+  if (u.picks.length) { u.send({ type: 'daemon-pick-response', id: '' }); await until(u.ready, 15000); }
+  const ru = await post('/api/agent-sessions/resume', { sid: u.sid(), cmd: 'true', id: 'conv-2' });
+  await until(() => u.last('renamed'), 3000);
+  ok(ru.quit === false && u.last('renamed')?.suffix === '庚', '在没命名的标签里「继续」conv-2：标签名变成胶囊上的「庚」: ' + JSON.stringify([ru, u.msgs.filter((m) => m.type === 'renamed')]));
+  await close(u);
   hook({ hook_event_name: 'UserPromptSubmit', prompt: '整理代码二' }); // 再回到 conv-1 (下面按它测)
   await until(() => /整理代码二/.test(t.last('state')?.detail || ''), 5000);
   await close(t);
@@ -320,7 +328,7 @@ run(async () => {
   ok(r3.quit === false && w.msgs.filter((m) => m.type === 'renamed').length === nRen, '清掉名字比对话记着的新：标签不还原成「丑」: ' + JSON.stringify([r3, w.msgs.filter((m) => m.type === 'renamed')]));
   const ls3 = await post('/api/agent-sessions', { sid: w.sid(), agent: 'claude' });
   const c3 = ls3.sessions?.find((x) => x.id === 'conv-1');
-  ok(c3?.tab === 'DT', '会话历史里这个对话不再显示清掉之前的「DT-丑」(只显示主机名): ' + JSON.stringify(c3));
+  ok(c3 && !c3.tab, '会话历史里这个对话不再显示清掉之前的「DT-丑」(不显示胶囊): ' + JSON.stringify(c3));
   w.ws.close();
 
   for (const x of await (await fetch(BASE + '/api/sessions')).json()) await fetch(BASE + '/api/sessions/' + x.id, { method: 'DELETE' });
