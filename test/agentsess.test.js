@@ -112,8 +112,7 @@ run(async () => {
   ok(J(await titles()) === J(['我起的名字', '登录页样式修复']) && /最近 2 个会话/.test(await p.textContent('.agentsp .as-info')), '「⋯ 更多 → 会话历史」：默认 Claude，按最近列出来');
   const caps = await p.$$eval('.agentsp .as-row .as-meta .dp-name', (xs) => xs.map((x) => x.textContent));
   const tabTitle = await p.textContent('#tabs .tab.active .title');
-  const hostTitle = tabTitle.replace(/-\d+$/, '');
-  ok(caps.length === 2 && hostTitle !== tabTitle && caps.every((c) => c === hostTitle), '每个会话后面有胶囊 (同常驻会话选择框)：没记过在哪个标签聊的旧对话只显示主机名，不带序号、不跟着现在的标签: ' + J([caps, tabTitle]));
+  ok(caps.length === 0, '以前的对话 (没在命过名的标签里聊过)：不显示名字胶囊，不跟着现在的标签「' + tabTitle + '」: ' + J(caps));
   const btns = await p.$$eval('.agentsp .as-row .as-btns', (xs) => xs.map((x) => [...x.querySelectorAll('button')].map((b) => b.textContent).join(' ')));
   ok(btns.length === 2 && btns.every((b) => b === '继续 复制 删除'), '「继续」在最左边、「删除」在最右边 (同常驻会话选择框的「接上 删除」): ' + J(btns));
   await p.screenshot({ path: shot('agent-sessions.png') });
