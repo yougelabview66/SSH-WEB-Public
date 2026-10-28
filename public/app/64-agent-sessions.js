@@ -57,13 +57,16 @@
       const f = input.value.trim().toLowerCase();
       return !f || q ? items : items.filter((x) => [x.title, x.prompt, x.cwd].some((v) => (v || '').toLowerCase().includes(f)));
     };
+    // 「主机名-名字」胶囊 (同常驻会话的选择框)：聊这个对话时命过名的显示那个名字 (「继续」时还原成它)，
+    // 没命过的显示现在这个标签的名字
+    const tabCap = (x) => { const n = x.tab || s.title; return `<span class="dp-name" title="${esc(n)}">${esc(n)}</span>`; };
     const render = () => {
       el.querySelectorAll('.as-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.agent === agent));
       const shown = filtered();
       list.innerHTML = shown.map((x) => `<div class="as-row" data-i="${items.indexOf(x)}">
           <div class="as-main"><div class="as-title">${esc(x.title || x.prompt || '(没有标题)')}</div>
             ${x.title && x.prompt ? `<div class="as-prompt">${esc(x.prompt)}</div>` : ''}
-            <div class="as-meta">${esc(x.cwd || '目录不明')} · ${fmtAgo(x.mtime)} · ${fmtSize(x.size)}</div></div>
+            <div class="as-meta dp-when"><span class="dp-when-t">${esc(x.cwd || '目录不明')} · ${fmtAgo(x.mtime)} · ${fmtSize(x.size)}</span>${tabCap(x)}</div></div>
           <div class="as-btns"><button type="button" data-a="del" title="删除这个会话 (移到主机的 ~/.ssh-web/trash/，点两下)">删除</button>
             <button type="button" data-a="copy" title="复制恢复命令">复制</button>
             <button type="button" data-a="resume" class="primary" title="${esc(x.cmd)}">继续</button></div>

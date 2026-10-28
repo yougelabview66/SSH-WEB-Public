@@ -110,6 +110,9 @@ run(async () => {
   await p.waitForSelector('.agentsp .as-row');
   const titles = () => p.$$eval('.agentsp .as-row .as-title', (xs) => xs.map((x) => x.textContent));
   ok(J(await titles()) === J(['我起的名字', '登录页样式修复']) && /最近 2 个会话/.test(await p.textContent('.agentsp .as-info')), '「⋯ 更多 → 会话历史」：默认 Claude，按最近列出来');
+  const caps = await p.$$eval('.agentsp .as-row .as-meta .dp-name', (xs) => xs.map((x) => x.textContent));
+  const tabTitle = await p.textContent('#tabs .tab.active .title');
+  ok(caps.length === 2 && caps.every((c) => c === tabTitle), '每个会话后面有「主机名-名字」胶囊 (同常驻会话选择框)，没命过名的显示现在这个标签的名字: ' + J([caps, tabTitle]));
   await p.screenshot({ path: shot('agent-sessions.png') });
   await p.fill('.agentsp .as-search input', '登录'); await wait(200);
   ok(J(await titles()) === J(['登录页样式修复']), '打字：筛选列出来的 (标题、第一句话、目录)');
