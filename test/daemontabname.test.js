@@ -223,6 +223,12 @@ run(async () => {
     await until(() => /整理代码/.test(t.last('state')?.detail || ''), 2000);
   }
   ok(/整理代码/.test(t.last('state')?.detail || ''), '钩子事件到了 (标签知道里面在聊 conv-1): ' + JSON.stringify([t.msgs.filter((m) => m.type === 'state').slice(-2), fs.readFileSync(path.join(home, '.cache', 'ssh-web', 'hook.log'), 'utf8').length]));
+  // 会话历史列表：钩子报来以后，这个对话的胶囊是它在聊的这个标签的名字 (没命名：「DT-序号」)，不是现在打开会话历史的标签
+  fs.mkdirSync(path.join(home, '.claude', 'projects', '-srv-x'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.claude', 'projects', '-srv-x', 'conv-1.jsonl'), JSON.stringify({ type: 'user', message: { role: 'user', content: '整理代码' }, cwd: '/srv/x' }) + '\n');
+  const tn = t.last('attached')?.session?.n;
+  const ls0 = await post('/api/agent-sessions', { sid: t.sid(), agent: 'claude' });
+  ok(tn && ls0.sessions?.find((x) => x.id === 'conv-1')?.tab === `DT-${tn}`, '会话历史里这个对话记着在哪个标签聊的「DT-序号」: ' + JSON.stringify([tn, ls0.sessions?.find((x) => x.id === 'conv-1')]));
   t.send({ type: 'rename', suffix: '庚' }); await wait(300);
   await close(t);
   ({ t } = await openPick(host.id, id));
@@ -300,7 +306,7 @@ run(async () => {
   ok(r3.quit === false && w.msgs.filter((m) => m.type === 'renamed').length === nRen, '清掉名字比对话记着的新：标签不还原成「丑」: ' + JSON.stringify([r3, w.msgs.filter((m) => m.type === 'renamed')]));
   const ls3 = await post('/api/agent-sessions', { sid: w.sid(), agent: 'claude' });
   const c3 = ls3.sessions?.find((x) => x.id === 'conv-1');
-  ok(c3 && !c3.tab, '会话历史里这个对话不再显示清掉之前的「DT-丑」: ' + JSON.stringify(c3));
+  ok(c3?.tab === 'DT', '会话历史里这个对话不再显示清掉之前的「DT-丑」(只显示主机名): ' + JSON.stringify(c3));
   w.ws.close();
 
   for (const x of await (await fetch(BASE + '/api/sessions')).json()) await fetch(BASE + '/api/sessions/' + x.id, { method: 'DELETE' });
