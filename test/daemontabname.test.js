@@ -180,7 +180,7 @@ run(async () => {
   t.send({ type: 'rename', suffix: '' }); await wait(300);
   await close(t);
   ({ t, row } = await openPick(host.id, id));
-  ok(row && !row.tab && !/丁/.test(shown(row)), '清掉名字以后再开：不显示旧名字: ' + J(row));
+  ok(row && !row.tab && shown(row) === 'DT', '清掉名字以后再开：不显示旧名字，胶囊只显示主机名「DT」(不带序号): ' + J(row));
 
   // ---- 6. 命名「戊」后，在弹窗开着时清掉再接上：不还原成「戊」，再开也不显示
   t.send({ type: 'daemon-pick-response', id });
@@ -223,13 +223,29 @@ run(async () => {
     await until(() => /整理代码/.test(t.last('state')?.detail || ''), 2000);
   }
   ok(/整理代码/.test(t.last('state')?.detail || ''), '钩子事件到了 (标签知道里面在聊 conv-1): ' + JSON.stringify([t.msgs.filter((m) => m.type === 'state').slice(-2), fs.readFileSync(path.join(home, '.cache', 'ssh-web', 'hook.log'), 'utf8').length]));
-  // 会话历史列表：钩子报来以后，这个对话的胶囊是它在聊的这个标签的名字 (没命名：「DT-序号」)，不是现在打开会话历史的标签
-  fs.mkdirSync(path.join(home, '.claude', 'projects', '-srv-x'), { recursive: true });
-  fs.writeFileSync(path.join(home, '.claude', 'projects', '-srv-x', 'conv-1.jsonl'), JSON.stringify({ type: 'user', message: { role: 'user', content: '整理代码' }, cwd: '/srv/x' }) + '\n');
-  const tn = t.last('attached')?.session?.n;
-  const ls0 = await post('/api/agent-sessions', { sid: t.sid(), agent: 'claude' });
-  ok(tn && ls0.sessions?.find((x) => x.id === 'conv-1')?.tab === `DT-${tn}`, '会话历史里这个对话记着在哪个标签聊的「DT-序号」: ' + JSON.stringify([tn, ls0.sessions?.find((x) => x.id === 'conv-1')]));
+  // 会话历史列表：没命过名的标签里聊的，胶囊只显示主机名「DT」，不带序号
+  const convFile = (cid) => { fs.mkdirSync(path.join(home, '.claude', 'projects', '-srv-x'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.claude', 'projects', '-srv-x', cid + '.jsonl'), JSON.stringify({ type: 'user', message: { role: 'user', content: '整理代码' }, cwd: '/srv/x' }) + '\n'); };
+  const capOf = async (sid, cid) => (await post('/api/agent-sessions', { sid, agent: 'claude' })).sessions?.find((x) => x.id === cid)?.tab;
+  convFile('conv-1'); convFile('conv-2');
+  let cap = await capOf(t.sid(), 'conv-1');
+  ok(cap === 'DT', '没命过名的标签里聊的对话：会话历史胶囊只显示主机名「DT」: ' + JSON.stringify(cap));
   t.send({ type: 'rename', suffix: '庚' }); await wait(300);
+  // 标签命名「庚」后在里面开了新对话 conv-2 (对话上没命过名)：会话历史里 conv-2 的胶囊是它在聊的标签「DT-庚」
+  hook({ session_id: 'conv-2', hook_event_name: 'UserPromptSubmit', prompt: '新对话' });
+  await until(() => /新对话/.test(t.last('state')?.detail || ''), 5000);
+  cap = await capOf(t.sid(), 'conv-2');
+  ok(cap === 'DT-庚', '命过名的标签里开的新对话：胶囊是这个标签的名字「DT-庚」: ' + JSON.stringify(cap));
+  // 打开会话历史的是另一个标签：胶囊照样是记着的，不跟着它
+  const o = tab(host.id);
+  await until(() => o.ready() || o.picks.length, 15000);
+  if (o.picks.length) { o.send({ type: 'daemon-pick-response', id: '' }); await until(o.ready, 15000); }
+  o.send({ type: 'rename', suffix: '卯' }); await wait(300);
+  cap = await capOf(o.sid(), 'conv-2');
+  ok(cap === 'DT-庚', '在别的标签 (DT-卯) 打开会话历史：胶囊还是记着的「DT-庚」: ' + JSON.stringify(cap));
+  await close(o);
+  hook({ hook_event_name: 'UserPromptSubmit', prompt: '整理代码二' }); // 再回到 conv-1 (下面按它测)
+  await until(() => /整理代码二/.test(t.last('state')?.detail || ''), 5000);
   await close(t);
   ({ t } = await openPick(host.id, id));
   t.send({ type: 'daemon-pick-response', id });
@@ -245,8 +261,6 @@ run(async () => {
   const r = await post('/api/agent-sessions/resume', { sid: n.sid(), cmd: 'true', id: 'conv-1' });
   await until(() => n.last('renamed'), 3000);
   // 会话历史列表：这个对话后面的胶囊是「DT-辛」
-  fs.mkdirSync(path.join(home, '.claude', 'projects', '-srv-x'), { recursive: true });
-  fs.writeFileSync(path.join(home, '.claude', 'projects', '-srv-x', 'conv-1.jsonl'), JSON.stringify({ type: 'user', message: { role: 'user', content: '整理代码' }, cwd: '/srv/x' }) + '\n');
   const ls = await post('/api/agent-sessions', { sid: n.sid(), agent: 'claude' });
   ok(ls.sessions?.find((x) => x.id === 'conv-1')?.tab === 'DT-辛', '会话历史列表里这个对话带着命的名「DT-辛」(显示成胶囊): ' + JSON.stringify(ls.sessions || ls));
   ok(r.quit === false && n.last('renamed')?.suffix === '辛', '会话历史里「继续」这个对话：还原最后改的名字「辛」: ' + JSON.stringify([r, n.msgs.filter((m) => m.type === 'renamed')]));
