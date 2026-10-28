@@ -118,9 +118,9 @@ async function openPick(hostId, id, extra) {
   await until(() => t.picks.length, 15000);
   return { t, row: t.picks.at(-1)?.sessions?.find((x) => x.id === id) };
 }
-const shown = (row) => row && row.tab; // 选择框里那一行显示的标签名 (胶囊；没命过名不显示)
+const shown = (row) => row && (row.tab || row.tabDef); // 选择框里那一行显示的标签名 (胶囊；没命过名是接上后的「主机名-序号」)
 const post = (u, b) => fetch(BASE + u, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) }).then((r) => r.json());
-const J = (row) => JSON.stringify(row && { tab: row.tab });
+const J = (row) => JSON.stringify(row && { tab: row.tab, tabDef: row.tabDef });
 
 run(async () => {
   if (!BIN) { ok(true, '(没有 Go：跳过)'); return; }
@@ -180,7 +180,7 @@ run(async () => {
   t.send({ type: 'rename', suffix: '' }); await wait(300);
   await close(t);
   ({ t, row } = await openPick(host.id, id));
-  ok(row && !row.tab, '清掉名字以后再开：不显示旧名字，也不显示胶囊: ' + J(row));
+  ok(row && !row.tab && shown(row) === `DT-${t.last('attached')?.session?.n}`, '清掉名字以后再开：不显示旧名字，胶囊是接上后这个标签的「DT-序号」: ' + J(row));
 
   // ---- 6. 命名「戊」后，在弹窗开着时清掉再接上：不还原成「戊」，再开也不显示
   t.send({ type: 'daemon-pick-response', id });
