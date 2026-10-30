@@ -25,7 +25,7 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   await m.screenshot({ path: shot('keys1.png') });
   await m.locator('#keysCur .krow', { hasText: 'Home' }).locator('[data-op=del]').tap();
   await m.locator('#keysCur .krow', { hasText: 'Shift' }).locator('[data-op=del]').tap();
-  for (const k of ['^B', 'Esc Esc', 'F5', '空格']) await m.locator('#keysAvail button', { hasText: new RegExp('^' + k.replace(/[\^$]/g, '\\$&') + '$') }).tap();
+  for (const k of ['^B', 'Esc Esc', '立即发送', 'F5', '空格']) await m.locator('#keysAvail button', { hasText: new RegExp('^' + k.replace(/[\^$]/g, '\\$&') + '$') }).tap();
   await m.fill('#kcLabel', '压缩'); await m.fill('#kcSeq', '/compact\\r'); await m.tap('#keysCustom button');
   // 把「压缩」移到第 2 位
   for (let i = 0; i < 30; i++) {
@@ -44,6 +44,8 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   ok(got === '\x02', '^B 发送 tmux 前缀 (\\x02)');
   got = ''; await m.tap('#mobileBar [data-k=escesc]'); await wait(150);
   ok(got === '\x1b\x1b', 'Esc Esc 发送两次 Esc');
+  got = ''; await m.tap('#mobileBar [data-k=sendnow]'); await wait(150);
+  ok(got === '\x18\x13', '立即发送：发 Ctrl+X Ctrl+S (Claude Code 排队的消息立即发送)');
   got = ''; await m.tap('#mobileBar [data-k=f5]'); await wait(150);
   ok(got === '\x1b[15~', 'F5 发送 \\x1b[15~');
   got = ''; await m.tap('#mobileBar [data-k=space]'); await wait(150);
