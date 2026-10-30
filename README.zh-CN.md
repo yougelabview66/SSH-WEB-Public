@@ -135,7 +135,7 @@ npm test                          # 或者只跑几个：npm test -- desk lat
 
 ## 致谢
 
-设计参考了 [webssh](https://github.com/huashengdun/webssh)、[webssh2](https://github.com/billchurch/webssh2)、[sshwifty](https://github.com/nirui/sshwifty) 和 [Orca](https://github.com/stablyai/orca)；基于 [xterm.js](https://xtermjs.org/) 和 [ssh2](https://github.com/mscdex/ssh2)。
+设计参考了 [webssh](https://github.com/huashengdun/webssh)、[webssh2](https://github.com/billchurch/webssh2) 和 [sshwifty](https://github.com/nirui/sshwifty)；基于 [xterm.js](https://xtermjs.org/) 和 [ssh2](https://github.com/mscdex/ssh2)。
 
 ## 许可证
 

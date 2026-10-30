@@ -135,7 +135,7 @@ Tests drive a real browser against mock SSH servers on 127.0.0.1; nothing touche
 
 ## Acknowledgements
 
-Inspired by [webssh](https://github.com/huashengdun/webssh), [webssh2](https://github.com/billchurch/webssh2), [sshwifty](https://github.com/nirui/sshwifty) and [Orca](https://github.com/stablyai/orca). Built on [xterm.js](https://xtermjs.org/) and [ssh2](https://github.com/mscdex/ssh2).
+Inspired by [webssh](https://github.com/huashengdun/webssh), [webssh2](https://github.com/billchurch/webssh2) and [sshwifty](https://github.com/nirui/sshwifty). Built on [xterm.js](https://xtermjs.org/) and [ssh2](https://github.com/mscdex/ssh2).
 
 ## License
 
