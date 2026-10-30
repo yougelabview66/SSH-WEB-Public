@@ -392,6 +392,8 @@
       } else if (m.type === 'tsize') {
         s.srvSize = { cols: m.cols, rows: m.rows }; // 使用者那边尺寸变了，镜像跟着变
         if (active === s && s.mine === false && s.box.clientWidth && !s.scrollView) s.fit.fit();
+      } else if (m.type === 'agent') {
+        s.agent = { id: m.agent, name: m.name }; // 钩子报的这个标签里在跑的 Agent (按键栏「立即发送」用，见 30-mobile-input.js)
       } else if (m.type === 'cli') {
         s.cli.set(m); // 服务器算的终端输入框内容 (包括别的设备上打的字)
       } else if (m.type === 'state') {
