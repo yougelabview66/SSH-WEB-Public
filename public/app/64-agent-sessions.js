@@ -88,7 +88,7 @@
         if (my !== seq) return;
         items = r.sessions;
         info.textContent = `${host} · ${q ? `含「${q}」的 ` : '最近 '}${items.length} 个会话${r.more ? '（只列最近的）' : ''}${r.partial ? '（搜索超时，只搜了最近的一部分）' : ''}`
-          + (AS_TESTED.includes(agent) ? '' : ' · 未实测：照着 Orca 的做法读的，有问题告诉我');
+          + (AS_TESTED.includes(agent) ? '' : ' · 未实测：还没在真的 Agent 上试过，有问题告诉我');
         if (!q) asCache.set(key, { items, info: info.textContent });
         render();
       } catch (e) {

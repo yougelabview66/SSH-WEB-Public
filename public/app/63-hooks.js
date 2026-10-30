@@ -40,7 +40,7 @@
         推送写得出具体内容（比如「要执行命令：npm test」「做完了：……」）。<br>
         会改这台主机上对应 Agent 的设置（原来的设置和你自己的钩子都保留，第一次安装前备份为 <code>…bak-sshweb</code>），
         并写入 <code class="hk-sname">~/.ssh-web/hook.sh</code>。装好后新开的 Agent 才生效，已经开着的要退出重开。<br>
-        标「未实测」的是照着 Orca 的做法写的，还没在真的 Agent 上试过，有问题把 <code>~/.cache/ssh-web/hook.log</code> 发给我。</div>
+        标「未实测」的还没在真的 Agent 上试过，有问题把 <code>~/.cache/ssh-web/hook.log</code> 发给我。</div>
       <div class="hk-rows"></div>
       <div class="hk-msg"></div>
     </div>`;
