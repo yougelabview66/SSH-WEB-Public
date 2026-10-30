@@ -12,6 +12,7 @@
     enter: { label: 'Enter', k: 'enter', desc: '回车' },
     space: { label: '空格', k: 'space', desc: '输入框有字时插到光标处，空着时直接发给终端 (如 Claude Code 多选题勾选)' },
     escesc: { label: 'Esc Esc', k: 'escesc', desc: 'Claude Code 撤回' },
+    sendnow: { label: '立即发送', k: 'sendnow', desc: 'Claude Code：排队的消息不等这轮回完，立即发送 (Ctrl+X Ctrl+S)' },
     '^b': { label: '^B', k: '^b', desc: 'tmux 前缀' }, '^r': { label: '^R', k: '^r', desc: '搜索历史' },
     '^a': { label: '^A', k: '^a', desc: '行首' }, '^e': { label: '^E', k: '^e', desc: '行尾' },
     '^u': { label: '^U', k: '^u', desc: '删到行首' }, '^w': { label: '^W', k: '^w', desc: '删一个词' },

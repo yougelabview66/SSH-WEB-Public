@@ -73,6 +73,8 @@
       out = (md.alt ? '\x1b' : '') + '\r';
     } else if (k === 'escesc') {
       out = '\x1b\x1b'; // Claude Code: 连按两次 Esc 撤回 / 编辑上一条
+    } else if (k === 'sendnow') {
+      out = '\x18\x13'; // Claude Code: Ctrl+X Ctrl+S 排队的消息立即发送 (Ctrl+Enter 也是，但过 tmux 后和回车分不出来)
     } else if (FKEYS[k]) {
       out = FKEYS[k];
     } else if (/^\^[a-z]$/.test(k)) {
