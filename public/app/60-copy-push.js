@@ -2,23 +2,64 @@
   // 手机上触摸被用来滚动，无法直接选中终端文字；这里把终端内容放进可选择的文本框
   const COPY_LINES = 1000;
 
-  // 终端文字 (最后 1000 行，自动换行的续行接回上一行) 和缓冲区第 row 行在其中是第几行
+  // 终端文字 (最后 1000 行，自动换行的续行接回上一行) 和缓冲区第 row 行在其中是第几行。
+  // text 是纯文字 (复制用)；data 是同样的文字带上颜色序列 (面板照历史视图的样子显示颜色，见 renderCopy)，
+  // 去掉颜色序列后和 text 一字不差 (换算行号两边要一致)
   function terminalText(s, row = -1) {
     const b = s.term.buffer.active;
     const start = Math.max(0, b.length - COPY_LINES);
-    const lines = [];
-    let at = 0;
+    const lines = [], colored = [];
+    let at = 0, cell;
     for (let i = start; i < b.length; i++) {
       const line = b.getLine(i);
       if (!line) continue;
-      const text = line.translateToString(true);
+      // 逐格读，同 translateToString(true)：没写过字的格子是空格，行尾没写过字的格子去掉，两格宽的字的后半格跳过
+      const cells = [];
+      let end = 0;
+      for (let x = 0; x < line.length; x++) {
+        cell = line.getCell(x, cell);
+        if (!cell?.getWidth()) continue;
+        const ch = cell.getChars();
+        cells.push([ch || ' ', cellSgr(cell)]);
+        if (ch) end = cells.length;
+      }
+      let text = '', ansi = '', cur = '';
+      for (let k = 0; k < end; k++) {
+        const [ch, sgr] = cells[k];
+        if (sgr !== cur) { ansi += `\x1b[0${sgr && ';' + sgr}m`; cur = sgr; }
+        text += ch;
+        ansi += ch;
+      }
+      if (cur) ansi += '\x1b[0m'; // 每行从默认样式开始 (分块显示时颜色不会带到下一行)
       // 自动换行的续行接回上一行
-      if (line.isWrapped && lines.length) lines[lines.length - 1] += text;
-      else lines.push(text);
+      if (line.isWrapped && lines.length) { lines[lines.length - 1] += text; colored[colored.length - 1] += ansi; }
+      else { lines.push(text); colored.push(ansi); }
       if (i === row) at = lines.length - 1;
     }
-    while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
-    return { text: lines.join('\n'), line: Math.min(at, Math.max(0, lines.length - 1)) };
+    while (lines.length && !lines[lines.length - 1].trim()) { lines.pop(); colored.pop(); }
+    return { text: lines.join('\n'), data: colored.join('\n'), line: Math.min(at, Math.max(0, lines.length - 1)) };
+  }
+
+  // 一格的样式换成颜色序列的参数 (历史视图认得的那些，见 55-local-scroll.js 的 applySgr)；默认样式是空串
+  function cellSgr(c) {
+    if (c.isAttributeDefault()) return '';
+    const p = [];
+    if (c.isBold()) p.push(1);
+    if (c.isDim()) p.push(2);
+    if (c.isItalic()) p.push(3);
+    if (c.isUnderline()) p.push(4);
+    if (c.isInverse()) p.push(7);
+    if (c.isStrikethrough()) p.push(9);
+    for (const fg of [true, false]) {
+      if (fg ? c.isFgDefault() : c.isBgDefault()) continue;
+      const v = fg ? c.getFgColor() : c.getBgColor();
+      if (fg ? c.isFgRGB() : c.isBgRGB()) p.push(fg ? 38 : 48, 2, (v >> 16) & 255, (v >> 8) & 255, v & 255);
+      // 前 16 色写成 30~37 / 90~97 (背景 40~47 / 100~107)：历史视图只对这种写法做「粗体用亮色」(同 xterm)
+      else if (v < 8) p.push((fg ? 30 : 40) + v);
+      else if (v < 16) p.push((fg ? 90 : 100) + v - 8);
+      else p.push(fg ? 38 : 48, 5, v);
+    }
+    return p.join(';');
   }
 
   // 手指按在终端第几行 (缓冲区里的行号)
@@ -48,7 +89,8 @@
       line = domLineToTextLine(text.split('\n'), s.scrollView.lsCols || s.term?.cols || 80, domLine);
     } else {
       const t = terminalText(s, at ? terminalRowAt(s, at.y) : -1);
-      text = data = t.text;
+      text = t.text;
+      data = t.data;
       if (at) line = t.line;
     }
     const n = text ? text.split('\n').length : 0;
