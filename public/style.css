@@ -729,7 +729,9 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 }
 /* 字体大小 */
 /* tmux 本地快速滚动的历史视图 */
-.lscroll { position: absolute; inset: 0; z-index: 20; display: flex; }
+.lscroll { position: absolute; inset: 0; z-index: 20; display: flex; animation: ls-in .12s ease-out; }
+/* 历史视图盖上来时淡入：盖住第一帧排字的闪烁，和实时画面之间的字形差别也不那么突兀 */
+@keyframes ls-in { from { opacity: 0; } to { opacity: 1; } }
 #app.ls-open #deskBar, #app.ls-open #mobileBar { display: none; } /* 历史视图打开时输入栏让出地方 */
 .ls-body { flex: 1; margin: 0; padding: 4px 0 0 6px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;
   scrollbar-gutter: stable; /* 内容放进去之前就留出滚动条的位置：打开时按这个宽度算每行放几格 (见 55-local-scroll.js) */

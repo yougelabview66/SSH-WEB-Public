@@ -82,6 +82,23 @@
     s.bypassWheel = false;
   }
 
+  // 往回滚 dist 像素：约 150ms 先快后慢的动画。按增量滚 —— 前面的历史还在后台往上补，scrollTop 会被整体推大，按绝对值滚会跳；
+  // 中途自己滚了、摸了、按了键就停，交给你
+  function smoothBack(pre, dist) {
+    if (!(dist > 0)) return;
+    const t0 = performance.now(), T = 150;
+    let done = 0, stop = false;
+    for (const ev of ['wheel', 'touchstart', 'mousedown', 'keydown']) pre.addEventListener(ev, () => { stop = true; }, { once: true, passive: true });
+    const step = (t) => {
+      if (stop || !pre.isConnected) return;
+      const p = Math.min(1, Math.max(0, (t - t0) / T)), want = Math.round(dist * (1 - (1 - p) ** 3));
+      pre.scrollTop -= want - done;
+      done = want;
+      if (p < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
+
   function openLocalScroll(s, data, up) {
     const theme = termTheme();
     const screen = s.box.querySelector('.xterm-screen');
@@ -94,6 +111,15 @@
       fontFamily: s.term.options.fontFamily, fontSize: s.term.options.fontSize + 'px', lineHeight: lh + 'px',
       color: theme.foreground, background: theme.background,
     });
+    // 实时画面里最后一行有字的那一行的底边 (屏幕上的高度)：打开后历史的最后一行停在同一个高度 (见下面)
+    const sr = screen?.getBoundingClientRect();
+    let liveBottom = null;
+    if (sr && s.term.rows) {
+      const b = s.term.buffer.active;
+      let last = s.term.rows - 1;
+      while (last > 0 && !b.getLine(b.viewportY + last)?.translateToString(true).trim()) last--;
+      liveBottom = sr.top + (last + 1) * (sr.height / s.term.rows);
+    }
     s.box.appendChild(v); // 先放进页面才量得出字宽
     const text = data.replace(/\n+$/, '');
     const cw = screen && screen.clientWidth / s.term.cols; // 实时画面一格多宽
@@ -129,7 +155,16 @@
     v.lsData = text; // 带颜色的原文 (复制面板照历史视图的样子排，见 60-copy-panel.js 的 renderCopy)
     v.lsCols = cols; // 显示时按几格切的行 (复制面板换算行号要用同一个值，见 60-copy-panel.js 的 domLineToTextLine)
     syncLsBars();
-    pre.scrollTop = pre.scrollHeight - pre.clientHeight - up * 3 * lh; // 和滚轮一样往回看几行
+    // 打开时历史的最后一行停在实时画面最后一行有字的那一行的高度，再用很快的动画往回滚 up 下滚轮的距离：
+    // 以前直接滚到最底再跳 up 下 —— 底下的留白 (style.css 的 .ls-body) 露出来、手机上输入栏收起，整个画面往上 / 往下跳一截，看着割裂
+    const pr = pre.getBoundingClientRect(), lastBlock = pre.lastElementChild;
+    // 最后一行的底边 (在历史视图内容里的位置)：量最后一块的底边 —— 不到一屏时 scrollHeight 是画面的高度，不是内容的
+    const end = lastBlock ? lastBlock.getBoundingClientRect().bottom - pr.top - pre.clientTop + pre.scrollTop : pre.scrollHeight;
+    const want = liveBottom == null ? end - pre.clientHeight : end - (liveBottom - pr.top - pre.clientTop);
+    // 历史不到一屏 (滚不到那么下面)：上面补一段空白，最后一行照样停在那个高度
+    if (want < 0) pre.style.paddingTop = parseFloat(getComputedStyle(pre).paddingTop) - want + 'px';
+    pre.scrollTop = Math.max(0, want);
+    smoothBack(pre, up * 3 * lh); // 和滚轮一样往回看几行
     // 输入框藏起来了，焦点放这里：PageUp / PageDown / Home / 方向键直接滚历史。
     // 是搜索打开的 (光标在搜索框里) 就不抢：手机上输入法会弹出来又收起
     if (!document.activeElement?.closest?.('.tsearch')) pre.focus({ preventScroll: true });
