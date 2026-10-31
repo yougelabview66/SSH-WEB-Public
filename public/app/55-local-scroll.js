@@ -22,12 +22,14 @@
     if (s.scrollLoading) { s.heldWheel += e.deltaY < 0 ? 1 : -1; return false; } // 等结果期间的滚动先记下 (往上为正)
     // 程序开了鼠标 (tmux) 才试 (不是 tmux 的话服务端很快回 no-tmux，一段时间内不再试)；常驻会话 (Windows)一直试。
     // Windows 没开常驻会话：不取历史 (不用 psmux 了)，滚轮按终端默认的方式处理
-    if (e.deltaY >= 0 || !s.sid || (s.term.modes.mouseTrackingMode === 'none' && !daemonHistory(s))) return true;
-    if (s.winHost && !daemonHistory(s)) return true;
+    // 自带完整对话的 Agent (Grok，见 09-agents.js 的 ownHistory)：不管开没开鼠标、是不是 Windows，都去读它的会话文件
+    const own = agentDoes(s, 'ownHistory');
+    if (e.deltaY >= 0 || !s.sid || (!own && s.term.modes.mouseTrackingMode === 'none' && !daemonHistory(s))) return true;
+    if (!own && s.winHost && !daemonHistory(s)) return true;
     if (s.noTmuxUntil > Date.now()) return true;
     s.scrollLoading = true;
     s.heldWheel = 1;
-    send(s, { type: 'tmux-history', lines: LS_LINES });
+    send(s, { type: 'tmux-history', lines: LS_LINES, ...(own && { agent: agentIdOf(s) }) });
     s.lsTimer = setTimeout(() => onTmuxHistory(s, { ok: false, reason: 'timeout' }), 12000); // 慢的主机 (NAS 第一次开通道、扫进程要好几秒) 多等一会儿，服务端那边同样放宽到 10 秒
     return false;
   }
@@ -55,7 +57,7 @@
     s.scrollLoading = false;
     clearTimeout(s.lsTimer);
     if (m.ok && s.heldWheel <= 0) return; // 等结果期间又滚回来了 (最后是往下的)，不打开
-    if (m.ok && historyMatchesScreen(s, m.data)) return openLocalScroll(s, m.data, Math.max(1, s.heldWheel));
+    if (m.ok && (m.own || historyMatchesScreen(s, m.data))) return openLocalScroll(s, m.data, Math.max(1, s.heldWheel)); // own：Agent 的会话记录，不是终端画面
     // 用不了：一段时间内不再尝试，把刚才拦下的滚轮补发给程序 (会进入 tmux 自己的复制模式，不弹提示)
     const reason = m.ok ? 'mismatch' : m.reason;
     s.noTmuxUntil = Date.now() + ({ 'no-tmux': 300000, busy: 5000, 'in-mode': 3000 }[reason] || 30000);
