@@ -29,7 +29,7 @@
     const el = previewEl = document.createElement('div');
     previewSess = s;
     el.className = 'overlay fpreview tab-panel';
-    el.dataset.tab = s.id; // 手机上同性能监控：只占标签栏到快捷键之间，切到别的标签时藏起来 (见 15-sync-webgl.js 的 activate)
+    el.dataset.tab = s.id; // 手机上同性能监控：只占标签栏到快捷键之间，切到别的标签时藏起来 (见 17-tabs.js 的 activate)
     el.innerHTML = `<div class="card fp-card">
       <div class="fp-head"><span class="fp-name"></span>
         <button type="button" data-a="dl">⬇ 下载</button><button type="button" data-a="close" title="关闭 (Esc)" aria-label="关闭">×</button></div>

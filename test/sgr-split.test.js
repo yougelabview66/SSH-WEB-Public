@@ -6,10 +6,10 @@
 const { ok } = require('./helpers');
 const { Terminal } = require('@xterm/headless');
 
-// 从 public/app/55-local-scroll.js 里取 splitByCells 等实现 (和网页里跑的是同一份代码)
+// 从 public/app/54-grid-view.js 里取 splitByCells 等实现 (和网页里跑的是同一份代码)
 const fs = require('fs');
 const path = require('path');
-const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'app', '55-local-scroll.js'), 'utf8');
+const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'app', '54-grid-view.js'), 'utf8');
 const ansiLine = src.slice(src.indexOf('  const ANSI_RE = '), src.indexOf('\n', src.indexOf('  const ANSI_RE = ')));
 const boxLine = src.slice(src.indexOf('  const BOX_RE = '), src.indexOf('\n', src.indexOf('  const BOX_RE = ')));
 const a = src.indexOf('  function splitByCells(');

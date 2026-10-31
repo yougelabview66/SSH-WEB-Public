@@ -16,6 +16,7 @@ AUTH_PASSWORD=test npm start           # http://127.0.0.1:8888
 ```
 
 - Server code lives in `lib/`, the browser app in `public/app/` — files are concatenated in numeric order into one script, so a new module gets a number after the modules it depends on. Restart the server after front-end changes.
+- Agent-specific behaviour lives in one file per agent: `lib/agents/<agent>.js` on the server (hook install, event quirks, session history) and the table in `public/app/09-agents.js` in the browser. To support a new agent, add a file there instead of branching on the agent name elsewhere.
 - The terminal daemon is in `sshwebd/` (Go; Windows ConPTY + Linux pty). After changing it run `npm test -- sshwebd daemonwin daemonlinux daemonauto`.
 - Code comments and UI text are currently in Chinese; English is fine in your contributions.
 

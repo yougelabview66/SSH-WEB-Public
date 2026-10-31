@@ -668,7 +668,7 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 /* 复制终端内容 */
 .copyp { display: flex; flex-direction: column; height: min(640px, 100%); position: relative; }
 .copyp .note { color: var(--muted); font-size: 12px; }
-/* 复制面板的内容照历史视图的样子排 (见 60-copy-push.js 的 renderCopy)：每种字补成正好 1 / 2 格，表格竖线对齐，
+/* 复制面板的内容照历史视图的样子排 (见 60-copy-panel.js 的 renderCopy)：每种字补成正好 1 / 2 格，表格竖线对齐，
    超宽的表格整张左右滑 (.ls-tbl)，别的长行在放得下的地方切开。字体、字号、行高由 renderCopy 写 */
 #copyText { flex: 1; min-height: 160px; margin: 0 0 12px; padding: 6px 4px 6px 6px; overflow-y: auto; overflow-x: hidden;
   scrollbar-gutter: stable; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
@@ -735,10 +735,10 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 /* 手机上历史视图的字不让长按选：长按是打开复制面板 (见 57-touch-scroll.js)，iPhone 同时也会在历史视图里开始选字，
    之后在复制面板里长按、拖动都去改盖在下面的历史视图里的选区，高亮被面板挡住，看着就是「长按没反应」 */
 @media (pointer: coarse) { .ls-body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; } }
-/* 历史视图里的表情：固定占几格的小格子 (宽度由 55-local-scroll.js 的 fitHtml 写)。顶端对齐、行高照旧，不把这一行撑高；
+/* 历史视图里的表情：固定占几格的小格子 (宽度由 54-grid-view.js 的 fitHtml 写)。顶端对齐、行高照旧，不把这一行撑高；
    表情画得比格子宽也不挤开后面的字 */
 #copyText .ls-c, .ls-body .ls-c { display: inline-block; vertical-align: top; letter-spacing: 0; white-space: pre; }
-/* 比历史视图宽的表格：整张表自己左右滑 (见 55-local-scroll.js 的 block)，别的文字不跟着动；
+/* 比历史视图宽的表格：整张表自己左右滑 (见 54-grid-view.js 的 block)，别的文字不跟着动；
    右边缘渐隐提示「右边还有」，滑到头去掉 (.more) */
 #copyText .ls-tbl, .ls-body .ls-tbl { overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: thin; }
 #copyText .ls-tbl.more, .ls-body .ls-tbl.more { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), rgba(0, 0, 0, .3));
@@ -822,7 +822,7 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 #rightBar { flex-shrink: 0; display: flex; flex-direction: column; min-width: 0; position: relative; background: var(--panel);
   border-left: 1px solid var(--border); font-size: 13px; }
 #rightBar.hidden { display: none; }
-/* 手机：同性能监控，只占标签栏下面到快捷键上面 (终端区域，位置见 15-sync-webgl.js 的 termsBox)，不盖住标签栏和输入栏 */
+/* 手机：同性能监控，只占标签栏下面到快捷键上面 (终端区域，位置见 17-tabs.js 的 termsBox)，不盖住标签栏和输入栏 */
 #rightBar.mobile { position: fixed; left: 0; right: 0; top: var(--terms-top, 0px); height: var(--terms-h, 100%); z-index: 40; width: auto !important; border: none; }
 #rightBar.mobile .rb-resize { display: none; }
 #rightBar.resizing { user-select: none; }
@@ -931,7 +931,7 @@ svg.ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-wid
 #rightRail svg.ic { width: 18px; height: 18px; }
 
 /* 属于当前标签的弹层 (文件预览、端口预览、会话历史、钩子通知、历史命令、复制文本)：手机 / 平板上同性能监控，
-   只占标签栏下面到快捷键上面，铺满、不要暗色背景和圆角；切到别的标签时藏起来 (见 15-sync-webgl.js 的 tabPanels) */
+   只占标签栏下面到快捷键上面，铺满、不要暗色背景和圆角；切到别的标签时藏起来 (见 17-tabs.js 的 tabPanels) */
 @media (pointer: coarse) {
   .overlay.tab-panel, #history.tab-panel, #copyPanel.tab-panel { inset: auto 0 auto 0; top: var(--terms-top, 0px); height: var(--terms-h, 100%);
     padding: 0; background: var(--panel); align-items: stretch; justify-content: stretch; z-index: 45; }
