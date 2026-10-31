@@ -29,6 +29,7 @@
     if (s.noTmuxUntil > Date.now()) return true;
     s.scrollLoading = true;
     s.heldWheel = 1;
+    s.lsPull = 0;
     send(s, { type: 'tmux-history', lines: LS_LINES, ...(own && { agent: agentIdOf(s) }) });
     s.lsTimer = setTimeout(() => onTmuxHistory(s, { ok: false, reason: 'timeout' }), 12000); // 慢的主机 (NAS 第一次开通道、扫进程要好几秒) 多等一会儿，服务端那边同样放宽到 10 秒
     return false;
@@ -56,8 +57,9 @@
     if (!s.scrollLoading) return;
     s.scrollLoading = false;
     clearTimeout(s.lsTimer);
-    if (m.ok && s.heldWheel <= 0) return; // 等结果期间又滚回来了 (最后是往下的)，不打开
+    if (m.ok && s.heldWheel <= 0) return resetPull(s); // 等结果期间又滚回来了 (最后是往下的)，不打开
     if (m.ok && (m.own || historyMatchesScreen(s, m.data))) return openLocalScroll(s, m.data, Math.max(1, s.heldWheel)); // own：Agent 的会话记录，不是终端画面
+    resetPull(s);
     // 用不了：一段时间内不再尝试，把刚才拦下的滚轮补发给程序 (会进入 tmux 自己的复制模式，不弹提示)
     const reason = m.ok ? 'mismatch' : m.reason;
     s.noTmuxUntil = Date.now() + ({ 'no-tmux': 300000, busy: 5000, 'in-mode': 3000 }[reason] || 30000);
@@ -80,6 +82,24 @@
       }));
     }
     s.bypassWheel = false;
+  }
+
+  // 手机：手指在终端上往下滑、正在等历史的时候，实时画面跟着手指往下拖 (以前一动不动，等历史来了再一下跳过去)；
+  // 打开时历史视图正好接在拖到的位置上 (见 openLocalScroll)。拖得再远也最多拖半屏
+  function pullWhileLoading(s, dy) {
+    s.lsPull = Math.min(s.box.clientHeight / 2, Math.max(0, (s.lsPull || 0) + dy));
+    s.term.element.style.transform = s.lsPull ? `translateY(${s.lsPull}px)` : '';
+  }
+  function resetPull(s) {
+    s.lsPull = 0;
+    if (s.term.element) s.term.element.style.transform = '';
+  }
+  // 手机：历史视图是手指在终端上滑开的，这一次滑动 (连同松手后的惯性) 剩下的部分跟着手指一像素一像素地滚
+  // (以前换算成滚轮，一下 3 行地跳)；滑到最底再往上推就回到实时画面
+  function touchScrollView(s, dy) {
+    const pre = s.scrollView.querySelector('.ls-body');
+    if (dy < 0 && atBottom(pre)) return closeByWheel(s);
+    pre.scrollTop -= dy;
   }
 
   // 往回滚 dist 像素：约 150ms 先快后慢的动画。按增量滚 —— 前面的历史还在后台往上补，scrollTop 会被整体推大，按绝对值滚会跳；
@@ -120,7 +140,11 @@
       while (last > 0 && !b.getLine(b.viewportY + last)?.translateToString(true).trim()) last--;
       liveBottom = sr.top + (last + 1) * (sr.height / s.term.rows);
     }
+    // 手机上手指拖着实时画面等来的：上面量的已经是拖下去的位置，历史视图直接接上 —— 不再往回滚、不淡入 (淡入时底下的画面弹回去反而会闪)
+    const pulled = s.lsPull > 0;
+    if (pulled) v.style.animation = 'none';
     s.box.appendChild(v); // 先放进页面才量得出字宽
+    resetPull(s);
     const text = data.replace(/\n+$/, '');
     const cw = screen && screen.clientWidth / s.term.cols; // 实时画面一格多宽
     const tc = s.term.cols || 80;
@@ -164,7 +188,7 @@
     // 历史不到一屏 (滚不到那么下面)：上面补一段空白，最后一行照样停在那个高度
     if (want < 0) pre.style.paddingTop = parseFloat(getComputedStyle(pre).paddingTop) - want + 'px';
     pre.scrollTop = Math.max(0, want);
-    smoothBack(pre, up * 3 * lh); // 和滚轮一样往回看几行
+    if (!pulled) smoothBack(pre, up * 3 * lh); // 和滚轮一样往回看几行
     // 输入框藏起来了，焦点放这里：PageUp / PageDown / Home / 方向键直接滚历史。
     // 是搜索打开的 (光标在搜索框里) 就不抢：手机上输入法会弹出来又收起
     if (!document.activeElement?.closest?.('.tsearch')) pre.focus({ preventScroll: true });

@@ -39,6 +39,7 @@
     // 按固定间隔匀速发送，避免一次甩动瞬间发出几十个事件导致远端重绘堆积、画面一顿一顿
     const pumpWheel = () => {
       wheelTimer = 0;
+      if (s.scrollView || s.scrollLoading) wheelQueue = 0; // 已经在等历史 / 历史视图开了：剩下的由手指直接拖 (见 scrollPx)
       if (!wheelQueue) return;
       const wait = WHEEL_GAP - (performance.now() - lastWheelAt);
       if (wait > 0) { wheelTimer = setTimeout(pumpWheel, wait); return; }
@@ -57,6 +58,8 @@
 
     // dy > 0: 手指下滑 = 往回看
     const scrollPx = (dy) => {
+      if (s.scrollView) return touchScrollView(s, dy); // 历史视图已经打开：跟着手指滚 (见 55-local-scroll.js)
+      if (s.scrollLoading) return pullWhileLoading(s, dy); // 正在等历史：画面跟着手指往下拖
       if (Math.sign(dy) !== Math.sign(acc)) acc = 0;
       acc += dy;
       if (wheelMode()) {
@@ -87,7 +90,7 @@
       lastFrameT = t;
       if (Math.abs(vel) < 0.04) return;
       scrollPx(vel * dt);
-      vel *= Math.pow(wheelMode() ? 0.88 : 0.95, dt / 16);
+      vel *= Math.pow(wheelMode() && !s.scrollView ? 0.88 : 0.95, dt / 16);
       frame = requestAnimationFrame(momentum);
     };
 
