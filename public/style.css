@@ -675,9 +675,6 @@ body.no-select { user-select: none; -webkit-user-select: none; }
   background: var(--term-bg); color: var(--term-fg); outline: none;
   -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
 .copyp .actions .spacer { flex: 1; }
-/* 临时诊断：iPhone 上长按复制面板的字不选词，记下手机上实际发生的事件 (见 60-copy-push.js 的 copyDebug) */
-#copyDebug { margin-top: 8px; max-height: 34%; overflow-y: auto; font: 10px/1.35 ui-monospace, monospace; color: var(--muted);
-  white-space: pre-wrap; word-break: break-all; border-top: 1px dashed var(--border); padding-top: 4px; -webkit-user-select: none; user-select: none; }
 .copy-toast { position: absolute; left: 50%; bottom: 70px; transform: translateX(-50%); background: var(--accent2);
   color: #fff; padding: 6px 14px; border-radius: 16px; font-size: 13px; opacity: 0; transition: opacity .2s;
   pointer-events: none; white-space: nowrap; }
