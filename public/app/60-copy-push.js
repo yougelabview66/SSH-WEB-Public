@@ -246,6 +246,53 @@
     e.preventDefault();
   });
   $('#copyClose').addEventListener('click', closeCopyPanel);
+
+  // ---- 临时诊断 (查完删)：iPhone 上复制面板里长按不选词 (长按再拖才选得上)，这里模拟不出 iOS 的原生长按，
+  // 把手机上实际发生的事件记在面板底部，用户截图发回来看卡在哪一步
+  const dbgEl = $('#copyDebug'), dbgLines = [];
+  const dbgOn = () => !dbgEl.classList.contains('hidden') && !$('#copyPanel').classList.contains('hidden');
+  const dbgDesc = (n) => {
+    const e = n?.nodeType === 3 ? n.parentElement : n;
+    if (!e || !e.tagName) return String(n?.nodeName || n);
+    const cs = getComputedStyle(e);
+    return e.tagName.toLowerCase() + (e.id ? '#' + e.id : '') + (e.classList.length ? '.' + [...e.classList].join('.') : '')
+      + `[us=${cs.webkitUserSelect || cs.userSelect},tc=${cs.webkitTouchCallout || '-'}]`;
+  };
+  const dbg = (msg) => {
+    if (!dbgOn()) return;
+    const t = new Date(), ts = `${t.getSeconds()}.${String(t.getMilliseconds()).padStart(3, '0')}`;
+    dbgLines.push(ts + ' ' + msg);
+    while (dbgLines.length > 40) dbgLines.shift();
+    dbgEl.textContent = dbgLines.join('\n');
+    dbgEl.scrollTop = dbgEl.scrollHeight;
+  };
+  const dbgSel = () => { const s = getSelection(); return s?.rangeCount ? `sel=${JSON.stringify(s.toString().slice(0, 12))} 在${dbgDesc(s.anchorNode)}` : 'sel=无'; };
+  let dbgT0 = 0;
+  // 捕获阶段记事件本身，冒泡到 window 时再记有没有被谁 preventDefault
+  for (const type of ['touchstart', 'touchend', 'touchcancel', 'contextmenu', 'selectstart', 'mousedown', 'click', 'focusin', 'focusout']) {
+    document.addEventListener(type, (e) => {
+      if (!dbgOn()) return;
+      const tt = e.touches?.[0] || e.changedTouches?.[0];
+      let at = '';
+      if (tt) at = ` 指下=${dbgDesc(document.elementFromPoint(tt.clientX, tt.clientY))}`;
+      if (type === 'touchstart') dbgT0 = performance.now();
+      const dur = type === 'touchend' || type === 'touchcancel' ? ` 按了${Math.round(performance.now() - dbgT0)}ms` : '';
+      dbg(`${type} 目标=${dbgDesc(e.target)}${at}${dur} 焦点=${dbgDesc(document.activeElement)}`);
+    }, { capture: true, passive: true });
+    window.addEventListener(type, (e) => { if (e.defaultPrevented) dbg(`  ↑ ${type} 被 preventDefault 了`); }, { passive: true });
+  }
+  document.addEventListener('selectionchange', () => dbg('selectionchange ' + dbgSel()));
+  const dbgStart = () => {
+    if (!dbgOn()) return;
+    dbgLines.length = 0;
+    const r = $('#copyText').getBoundingClientRect();
+    const stack = document.elementsFromPoint(r.left + r.width / 2, r.top + r.height / 2).slice(0, 4).map(dbgDesc).join(' > ');
+    dbg(`v${PAGE_VERSION} 诊断开始 (长按面板里的字，再截图) 中间一点从上往下=${stack} 焦点=${dbgDesc(document.activeElement)}`);
+  };
+  new MutationObserver(dbgStart).observe($('#copyPanel'), { attributes: true, attributeFilter: ['class'] });
+  // 默认不显示 (占地方，复制区域变小)：点「诊断」才开始记
+  if (isTouch) $('#copyDbgBtn').classList.remove('hidden');
+  $('#copyDbgBtn').addEventListener('click', () => { dbgEl.classList.toggle('hidden'); dbgStart(); });
   // 电脑上点面板外的暗色背景关掉。监听挂在 document 上，不挂在面板上：iPhone 把挂着 mousedown / click 监听的元素
   // (连同里面的东西) 当成「能点的按钮」，长按里面的字不选词，要长按再拖才选得上 (以前是文本框，不受影响)。
   // tabindex 同理：手机上不要 (只是电脑上点了以后能用键盘翻)
