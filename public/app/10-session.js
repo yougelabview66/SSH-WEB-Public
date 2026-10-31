@@ -86,6 +86,7 @@
     s.ro.observe(s.box);
     s.term.onData((data) => {
       data = filterMouse(data); // 点击时手抖 / 连点两下：不让 tmux 当成拖动选字 / 双击选词 (见 DRAG_PX / DBL_MS)
+      if (/\x1b\[[IO]/.test(data) && agentDoes(s, 'noFocusReport')) data = data.replace(/\x1b\[[IO]/g, ''); // Grok：焦点通知会让它整屏重画 (见 09-agents.js)
       if (!data) return;
       // 终端对程序询问的自动应答 (不是用户打的字)：服务端不算输入，不影响主机状态和打字预测
       if (TERM_REPLY_RE.test(data)) {

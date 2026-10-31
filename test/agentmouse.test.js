@@ -12,14 +12,14 @@ const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sshweb-am-')
 fs.mkdirSync(path.join(home, '.ssh-web'));
 fs.writeFileSync(path.join(home, '.ssh-web/watch.ps1'), ''); // 装过钩子：读事件的通道一直开着
 
-let watchCh = null, got = '', rows = 0;
+let watchCh = null, got = '', rows = 0, shellSt = null;
 new Server({ hostKeys: [hostKey()] }, (c) => {
   c.on('authentication', (ctx) => ctx.accept());
   c.on('ready', () => c.on('session', (acc) => {
     const s = acc();
     s.on('pty', (a, r, info) => { rows = info.rows; a(); }); s.on('window-change', (a, r, info) => { rows = info.rows; a && a(); });
     s.on('shell', (a) => {
-      const st = a();
+      const st = a(); shellSt = st;
       st.on('data', (d) => { got += d; });
       // 全屏界面 + 鼠标：按下 / 松开、按住拖动、所有移动都要 (SGR)
       st.write('\x1b[?1049h\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h\x1b[H\x1b[2J');
@@ -91,6 +91,12 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   await m.keyboard.type('yo'); await m.keyboard.press('Enter'); await wait(800);
   ok(got.startsWith('yo') && !got.includes('\x1b[<0;'), `Claude Code：发消息不点输入框 ${JSON.stringify(got.slice(0, 30))}`);
   ok(c2 === 'EMPTY' && p2 === 1, `Claude Code：拖动照旧交给程序 (按下报了 ${p2} 次)，没在终端里选字 (剪贴板：${c2})`);
+
+  // 钩子报的是 Claude Code，屏幕上却是 Grok (同一台主机上两个都开着，钩子记到了这个标签)：看屏幕，按 Grok 处理
+  shellSt.write('\x1b[999;1H  Shift+Tab:mode  │  Ctrl+x:shortcuts'); await wait(300);
+  await drag();
+  const c3 = await clip();
+  ok(c3.includes('reply line') && presses() === 0, `钩子报 Claude、屏幕上是 Grok：按 Grok 处理，直接拖动选字 (剪贴板：${c3.slice(0, 20)})`);
 
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
   await browser.close(); process.exit();

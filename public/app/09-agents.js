@@ -7,22 +7,25 @@
   //  - keepSelOnHover：终端里有选中时，不让终端收到没按键的鼠标移动 —— 程序要了所有鼠标移动 (Grok 是这样) 时，
   //    鼠标一动终端就上报一次，上报算用户输入，xterm 会把选中清掉 (松开鼠标一挪，刚选的字就没了)
   //  - promptLine：它的输入框那一行长什么样 (以 > / ❯ 开头，前面可能有边框)。下方输入栏发消息前先替你点一下这里 (见 agentBeforeSend)
-  //  - screen：钩子没报是哪个 Agent 时，屏幕最下面几行有这个就认作是它 (Grok 底下一直有「Ctrl+x:shortcuts」)
+  //  - screen：屏幕最下面几行有这个就认作是它 (Grok 底下一直有「Ctrl+x:shortcuts」)
+  //  - noFocusReport：不把终端「获得 / 失去焦点」的通知 (ESC [I / ESC [O) 转给它 —— Grok 一收到就清屏、整屏重画，
+  //    刚拖出来的选区立刻被冲掉 (实测 Grok 1.0.70；Hermes 的网页终端也是这样，见 hermes-inputbar 的 patch18)
   const AGENTS = {
     claude: { sendNow: true },
-    grok: { dragSelect: true, keepSelOnHover: true, promptLine: /^(\s*[│┃|]?\s*)[>❯›]/, screen: /Ctrl\+x:shortcuts/ },
+    grok: { dragSelect: true, keepSelOnHover: true, noFocusReport: true, promptLine: /^(\s*[│┃|]?\s*)[>❯›]/, screen: /Ctrl\+x:shortcuts/ },
   };
-  // 这个标签里在跑的 Agent：钩子报的 (s.agent.id，见 10-session.js 的 'agent' 消息) 为准；钩子没说 (没装钩子、SSH-WEB 重启后
-  // Agent 还没发过事件 —— Grok 里中文发不出去就一直等不到事件) 就看屏幕 (各 Agent 的 screen)
+  // 这个标签里在跑的 Agent：屏幕上明明白白是它 (各 Agent 的 screen) 就是它；屏幕上认不出才用钩子报的 (s.agent.id，见 10-session.js 的
+  // 'agent' 消息)。屏幕优先：钩子报的可能是这个标签里以前跑过的、或者记错标签的 Agent (同一台主机上 Claude Code 和 Grok 都开着)，
+  // 也可能还没报 (没装钩子、SSH-WEB 重启后 Agent 还没发过事件 —— Grok 里中文发不出去就一直等不到事件)
   function agentIdOf(s) {
-    if (s?.agent?.id) return s.agent.id;
     const b = s?.term?.buffer.active;
-    if (!b) return null;
-    const tail = [];
-    for (let y = s.term.rows - 1; y >= Math.max(0, s.term.rows - 6); y--) tail.push(b.getLine(b.baseY + y)?.translateToString(true) || '');
-    const text = tail.join('\n');
-    for (const [id, a] of Object.entries(AGENTS)) if (a.screen?.test(text)) return id;
-    return null;
+    if (b) {
+      const tail = [];
+      for (let y = s.term.rows - 1; y >= Math.max(0, s.term.rows - 6); y--) tail.push(b.getLine(b.baseY + y)?.translateToString(true) || '');
+      const text = tail.join('\n');
+      for (const [id, a] of Object.entries(AGENTS)) if (a.screen?.test(text)) return id;
+    }
+    return s?.agent?.id || null;
   }
   const agentDoes = (s, what) => !!AGENTS[agentIdOf(s)]?.[what];
 
