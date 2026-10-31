@@ -29,7 +29,7 @@ fs.writeFileSync(path.join(dir, 'sess-1', 'chat_history.jsonl'), CHAT);
 // 排版本身
 const r = history.render(CHAT).replace(/\x1b\[[0-9;]*m/g, '');
 ok(r.includes('❯ 第一个问题：检查系统') && r.includes('◆ 先看看系统') && r.includes('◈ 执行命令  看运行时间') && r.includes('$ uptime')
-  && r.includes('╎ 输出第 12 行') && !r.includes('输出第 13 行') && r.includes('… 还有 8 行') && r.includes('系统正常，已运行 9 小时。')
+  && r.includes('│ 输出第 12 行') && !r.includes('输出第 13 行') && r.includes('… 还有 8 行') && r.includes('系统正常，已运行 9 小时。')
   && r.includes('│ 内存使用 │ 充裕 │') && r.includes('┌──────────┬──────┐') && r.includes('━━━')
   && r.indexOf('第一个问题') < r.indexOf('第二个问题') && !r.includes('系统提示') && !r.includes('插入的提醒'),
 '会话记录排成对话：你的话、思考、工具 (中文名、命令和前 12 行输出)、回答 (粗体、表格画成框线、中文对齐)，每轮之间有分隔线；系统提示和插入的提醒不显示');
@@ -96,7 +96,7 @@ serve(2251, GROK, true); serve(2252, GROK, false); serve(2253, CLAUDE, true);
   const h = await scrollUp('GH', 2251);
   await m.screenshot({ path: require('./helpers').shot('grokhist.png') });
   const strip = await m.evaluate(() => [...document.querySelectorAll('.term.active .ls-body .ls-tbl')].some((t) => t.textContent.includes('LONGLONG') && t.textContent.includes('输出第 2 行')));
-  ok(strip, '工具输出左边是细线 ╎，长行不折行，整段放进能左右滑的条带');
+  ok(strip, '工具输出左边是竖线 │，长行不折行，整段放进能左右滑的条带');
   ok(h && h.includes('❯ 第一个问题：检查系统') && h.includes('◈ 执行命令') && h.includes('第二个问题：网络呢'),
     `Grok：往上滚，历史视图里是会话文件里的完整对话 (屏幕上只有最后一问一答) ${JSON.stringify((h || '').slice(0, 60))}`);
   await m.keyboard.press('Escape'); await wait(300);
