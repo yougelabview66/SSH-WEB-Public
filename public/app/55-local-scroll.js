@@ -213,6 +213,7 @@
     // 复制面板要的是「原始历史文本」：显示时为了让长行正好在 cols 格断开 (splitByCells) 会插入换行，
     // 直接读 textContent 会多出一堆本不存在的换行。这里把去掉 ANSI 的原文存一份，复制时优先用它
     v.lsText = text.replace(ANSI_RE, '');
+    v.lsData = text; // 带颜色的原文 (复制面板照历史视图的样子排，见 60-copy-push.js 的 renderCopy)
     v.lsCols = cols; // 显示时按几格切的行 (复制面板换算行号要用同一个值，见 60-copy-push.js 的 domLineToTextLine)
     syncLsBars();
     pre.scrollTop = pre.scrollHeight - pre.clientHeight - up * 3 * lh; // 和滚轮一样往回看几行

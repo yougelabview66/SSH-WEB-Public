@@ -42,6 +42,18 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
       return { line: pre.textContent.split('\n')[(r.toString().match(/\n/g) || []).length], shown: !document.getElementById('copyPanel').classList.contains('hidden') };
     }, y);
     ok(at.shown && at.line.startsWith(want), `长按终端${frac > 0.5 ? '靠下' : '中间'}的「${want.trim()}」：复制面板里手指处是「${at.line}」`);
+    // iPhone 把挂着鼠标点击监听的元素 (连同里面的东西) 当成「能点的按钮」，长按不选词、要长按再拖才选得上；tabindex 同理。
+    // 复制面板的文字和它外面的每一层 (到 body 为止) 都不能有
+    const clicky = [];
+    for (let i = 0; ; i++) {
+      const { result } = await cdp.send('Runtime.evaluate', { expression: `(() => { let e = document.getElementById('copyText'); for (let k = 0; k < ${i}; k++) e = e.parentElement; return e === document.body ? null : e; })()` });
+      if (!result.objectId) break;
+      const { listeners } = await cdp.send('DOMDebugger.getEventListeners', { objectId: result.objectId });
+      const bad = listeners.filter((l) => ['click', 'mousedown', 'mouseup', 'dblclick'].includes(l.type)).map((l) => l.type);
+      const ti = await m.evaluate((k) => { let e = document.getElementById('copyText'); for (let j = 0; j < k; j++) e = e.parentElement; return e.getAttribute('tabindex'); }, i);
+      if (bad.length || ti != null) clicky.push(`第 ${i} 层 ${bad.join('/')}${ti != null ? ' tabindex' : ''}`);
+    }
+    ok(clicky.length === 0, `手机：复制面板的文字和外层都不挂点击监听、没有 tabindex，iPhone 长按就能选词 ${clicky.join('；')}`);
     await m.screenshot({ path: shot(`copy-${frac}.png`) });
     await m.tap('#copyClose'); await wait(300);
   }
