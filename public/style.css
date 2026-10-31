@@ -732,7 +732,7 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 .ls-body { flex: 1; margin: 0; padding: 4px 0 0 6px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;
   scrollbar-gutter: stable; /* 内容放进去之前就留出滚动条的位置：打开时按这个宽度算每行放几格 (见 55-local-scroll.js) */
   overscroll-behavior: contain; -webkit-overflow-scrolling: touch; user-select: text; -webkit-user-select: text; outline: none;
-  padding-bottom: 48px; /* 最下面留出「回到实时画面」按钮的位置 (它浮在右下角，输入栏这时收起了)：滚到底时最后几行在按钮上面，不被挡住 */ }
+  padding-bottom: 96px; /* 最下面留一段空白：往下滑看最后几行时先完整露出来，再往下滑过空白到底才回到实时画面；也不被浮在右下角的「回到实时画面」挡住 */ }
 /* 手机上历史视图的字不让长按选：长按是打开复制面板 (见 57-touch-scroll.js)，iPhone 同时也会在历史视图里开始选字，
    之后在复制面板里长按、拖动都去改盖在下面的历史视图里的选区，高亮被面板挡住，看着就是「长按没反应」 */
 @media (pointer: coarse) { .ls-body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; } }
@@ -742,8 +742,15 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 /* 比历史视图宽的表格：整张表自己左右滑 (见 54-grid-view.js 的 block)，别的文字不跟着动；
    右边缘渐隐提示「右边还有」，滑到头去掉 (.more) */
 #copyText .ls-tbl, .ls-body .ls-tbl { overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: thin; }
-#copyText .ls-tbl.more, .ls-body .ls-tbl.more { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), rgba(0, 0, 0, .3));
-  mask-image: linear-gradient(to right, #000 calc(100% - 32px), rgba(0, 0, 0, .3)); }
+#copyText .ls-tbl.more, .ls-body .ls-tbl.more { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 48px), rgba(0, 0, 0, .15));
+  mask-image: linear-gradient(to right, #000 calc(100% - 48px), rgba(0, 0, 0, .15)); }
+/* 右边还有：右边缘中间一个小箭头。画在外面那层 (.ls-tblw) 上，表格左右滑时箭头不动；是伪元素不是文字 ——
+   不会被选中、复制，不影响复制面板数行号；不挡手势 (手指按在箭头上照样能滑)；滑到最右边 (.more 去掉) 就没了 */
+#copyText .ls-tblw, .ls-body .ls-tblw { position: relative; }
+#copyText .ls-tblw:has(> .ls-tbl.more)::after, .ls-body .ls-tblw:has(> .ls-tbl.more)::after {
+  content: '›'; position: absolute; right: 4px; top: 50%; transform: translateY(-50%); pointer-events: none;
+  width: 18px; height: 18px; border-radius: 50%; background: rgba(128, 128, 128, .22); color: var(--accent); opacity: .85;
+  font: 700 15px/17px system-ui, sans-serif; text-align: center; }
 .ls-close { position: absolute; bottom: 12px; right: 18px; /* 右上角是主机状态悬浮窗的默认位置 */ z-index: 1; font-size: 12px; padding: 4px 10px; opacity: .92;
   box-shadow: 0 2px 10px var(--shadow); box-sizing: border-box; /* 手机上高度按按键栏的按键设 (见 fitExitBtn) */ }
 .ls-close.tmux-exit { z-index: 25; } /* 直接放在终端上，要高于 xterm 内部图层 */
@@ -757,7 +764,7 @@ body.no-select { user-select: none; -webkit-user-select: none; }
   .ls-close { bottom: max(24px, calc(env(safe-area-inset-bottom) + 12px)); right: 28px; min-width: 112px; height: 44px !important;
     font-size: 14px; padding: 0 14px; opacity: 1; border-radius: 10px; box-shadow: 0 2px 12px var(--shadow); }
   /* 最下面留出按钮 (44px，离底边 24px / iPhone 底部小横条) 的位置，最后几行不被按钮和小横条挡住 */
-  .ls-body { padding-bottom: calc(max(24px, calc(env(safe-area-inset-bottom) + 12px)) + 56px); }
+  .ls-body { padding-bottom: calc(max(24px, calc(env(safe-area-inset-bottom) + 12px)) + 96px); }
   /* 「已复制」提示挪到按钮上面，别被盖住 */
   .lscroll > .font-toast { right: 28px; bottom: calc(max(24px, calc(env(safe-area-inset-bottom) + 12px)) + 52px); }
 }

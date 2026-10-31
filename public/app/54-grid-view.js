@@ -69,9 +69,10 @@
           let j = k;
           while (j < rows.length && BOX_RE.test(rows[j])) j++;
           if (rows.slice(k, j).some((r) => lineCells(r) > cols)) {
-            html += '<div class="ls-tbl more">';
+            // 外面再包一层 (.ls-tblw)：右边还有内容时在它右边画一个小箭头，箭头不跟着表格左右滑 (见 style.css)
+            html += '<div class="ls-tblw"><div class="ls-tbl more">';
             for (let m = k; m < j; m++) html += ansiToHtml(rows[m], theme, fit, pal, g) + (m < rows.length - 1 ? '\n' : '');
-            html += '</div>';
+            html += '</div></div>';
             k = j - 1;
             continue;
           }
