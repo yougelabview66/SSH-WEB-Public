@@ -373,6 +373,10 @@ const WHEEL_UP = '\x1b[<64;';
   // 复制面板照历史视图的样子排：长行在放得下的地方切开 (同历史视图)，整体不横向滚
   const wrap = await m.evaluate(() => { const p = document.getElementById('copyText'); return { sw: p.scrollWidth, cw: p.clientWidth, wraps: p.querySelectorAll('.ls-wrap').length, longest: Math.max(...p.lsText.split('\n').map((l) => l.length)) }; });
   ok(wrap.sw <= wrap.cw && wrap.wraps > 0, '手机：复制面板里长行在放得下的地方切开 (同历史视图)，整体不横向滚 ' + JSON.stringify(wrap));
+  // 历史带颜色，复制面板里不带：带颜色的字 iPhone 上长按很难选中，试过之后连白字也选不了
+  const colored = await m.evaluate(() => document.querySelectorAll('#copyText [style*="color"], #copyText [style*="background"], #copyText [style*="opacity"]').length);
+  const histColored = await m.evaluate(() => document.querySelectorAll('.term.active .ls-body [style*="color"]').length);
+  ok(histColored > 0 && colored === 0, `手机：历史视图带颜色 (${histColored} 处)，复制面板里一律不带颜色 (${colored} 处)，iPhone 上哪里都能长按选字`);
   // 选中一段 (跨过切开的长行)，点「复制选中」：复制出来是原文 (没有切行插进去的换行)
   await ctx.grantPermissions(['clipboard-read', 'clipboard-write']);
   const picked = await m.evaluate(() => {
