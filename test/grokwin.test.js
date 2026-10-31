@@ -1,12 +1,11 @@
 'use strict';
-// Windows 主机上跑着 Grok (钩子报的)：往上 / 往下滚不开历史视图 (经过 ConPTY 的全屏界面在终端历史里是重画的碎片)，
-// 换成 PageUp / PageDown 让 Grok 自己翻页 (同 Linux 上的全屏 Grok)；不是 Grok 时照旧；手机上手指滑也一样。
+// Windows 主机上跑着 Grok (钩子报的)：滚轮照通用的处理，不换成翻页键 (用户要保留历史视图；1.83.86 ~ 1.84.0 曾换成 PageUp / PageDown)。
 // 电脑输入框的提示文字写着「连按两下 Alt 切换到 CLI 自带输入框」
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { Server } = require('ssh2');
-const { BASE, ok, wait, launch, devices, hostKey } = require('./helpers');
+const { BASE, ok, wait, launch, hostKey } = require('./helpers');
 
 const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sshweb-gw-')));
 fs.mkdirSync(path.join(home, '.ssh-web'));
@@ -49,41 +48,11 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   const wheel = async (dy, n) => { await m.mouse.move(b.x + b.width / 2, b.y + b.height / 2); for (let i = 0; i < n; i++) { await m.mouse.wheel(0, dy); await wait(60); } await wait(400); };
   const emit = (ev) => watchCh.write(JSON.stringify({ v: 2, t: 1, agent: 'grok', tabs: '', pane: '', ...ev }) + '\r\n');
 
-  // 还没报 Grok：照旧 (不发翻页键)
-  shellIn = '';
-  await wheel(-100, 4);
-  ok(!shellIn.includes('\x1b[5~'), `没报 Grok 时滚轮不发翻页键 (${JSON.stringify(shellIn)})`);
-  await m.keyboard.press('Escape'); await wait(300);
-
   emit({ hook_event_name: 'UserPromptSubmit', prompt: 'hi' }); await wait(1200);
   shellIn = '';
   await wheel(-100, 6);
-  const up = (shellIn.match(/\x1b\[5~/g) || []).length;
-  const hist = await m.evaluate(() => !!document.querySelector('.term.active .lscroll'));
-  ok(up >= 1 && !hist && !/\x1b\[</.test(shellIn), `Windows 上的 Grok：往上滚发 PageUp (${up} 次)，不开历史视图 (${hist})，不发滚轮上报`);
-  shellIn = '';
   await wheel(100, 6);
-  const down = (shellIn.match(/\x1b\[6~/g) || []).length;
-  ok(down >= 1 && !shellIn.includes('\x1b[5~'), `往下滚发 PageDown (${down} 次)`);
-
-  // 手机：手指往下滑 (= 往回看) 也换成 PageUp
-  const mctx = await browser.newContext({ ...devices['Pixel 7'] });
-  const p = await mctx.newPage(); const cdp = await mctx.newCDPSession(p);
-  await p.goto(BASE + '/'); await p.waitForSelector('#app:not(.hidden)');
-  await p.tap('#btnToggle'); await p.locator('.host', { hasText: 'GW' }).first().tap(); await wait(2500);
-  await p.evaluate(() => document.querySelector('.term.active .owner-notice button')?.click()); await wait(500); // 电脑那边在用：先在手机上接管
-  await p.focus('#mInput'); await p.keyboard.press('Backspace'); await wait(300);
-  emit({ hook_event_name: 'UserPromptSubmit', prompt: 'hi' }); await wait(1200);
-  const tb = await p.locator('.term.active .xterm-screen').boundingBox();
-  shellIn = '';
-  const x = tb.x + tb.width / 2;
-  let y = tb.y + 60;
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
-  for (let i = 0; i < 20; i++) { y += 20; await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y }] }); await wait(30); }
-  await wait(200);
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await wait(800);
-  const mup = (shellIn.match(/\x1b\[5~/g) || []).length;
-  ok(mup >= 1 && !/\x1b\[</.test(shellIn), `手机：手指往下滑发 PageUp (${mup} 次) ${JSON.stringify(shellIn.slice(0, 40))}`);
+  ok(!shellIn.includes('\x1b[5~') && !shellIn.includes('\x1b[6~'), `Windows 上的 Grok：滚轮不换成翻页键 (${JSON.stringify(shellIn)})`);
 
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
   await browser.close(); process.exit();

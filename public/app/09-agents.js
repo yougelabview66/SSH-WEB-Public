@@ -3,14 +3,12 @@
   // 别处只问 agentDoes(s, '某功能')：改哪个 Agent 只动它自己那一项，不影响别的 (Claude Code 用着没问题，别跟着 Grok 一起改)。
   // 没装钩子 / 不认识的 Agent：一项都没有，照通用的处理
   //  - sendNow：按键栏「立即发送」发 Ctrl+X Ctrl+S (Claude Code 排队的消息不等这轮回完就发)；别的 Agent 里这两个键另有用处，不发
-  //  - pageScrollOnWin：Windows 主机上往上 / 往下滚 (手机手指滑) 换成 PageUp / PageDown 让它自己翻页，不开历史视图
-  //    (全屏界面经过 ConPTY 后，终端历史里是一屏屏重画的碎片，历史视图排不整齐；ConPTY 又不把滚轮转给它，见 55-local-scroll.js)
   //  - dragSelect：程序开着鼠标时，电脑上左键拖动直接在终端里选字 (不用按住 Shift)，单击照常交给程序
   //  - keepSelOnHover：终端里有选中时，不让终端收到没按键的鼠标移动 —— 程序要了所有鼠标移动 (Grok 是这样) 时，
   //    鼠标一动终端就上报一次，上报算用户输入，xterm 会把选中清掉 (松开鼠标一挪，刚选的字就没了)
   const AGENTS = {
     claude: { sendNow: true },
-    grok: { pageScrollOnWin: true, dragSelect: true, keepSelOnHover: true },
+    grok: { dragSelect: true, keepSelOnHover: true },
   };
   const agentDoes = (s, what) => !!AGENTS[s?.agent?.id]?.[what];
 
