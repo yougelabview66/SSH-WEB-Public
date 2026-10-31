@@ -675,6 +675,8 @@ body.no-select { user-select: none; -webkit-user-select: none; }
   background: var(--term-bg); color: var(--term-fg); outline: none;
   -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
 .copyp .actions .spacer { flex: 1; }
+/* Agent 的标志 (常驻会话选择框里名字前面，见 09-agents.js 的 AGENT_LOGOS)：和文字一样大、一样的颜色 */
+.ag-logo { width: 1em; height: 1em; vertical-align: -0.15em; margin-right: 4px; flex: none; }
 .copy-toast { position: absolute; left: 50%; bottom: 70px; transform: translateX(-50%); background: var(--accent2);
   color: #fff; padding: 6px 14px; border-radius: 16px; font-size: 13px; opacity: 0; transition: opacity .2s;
   pointer-events: none; white-space: nowrap; }

@@ -98,7 +98,7 @@
     const listHtml = () => {
       const list = cur.sessions || [];
       const rows = list.map((x) => `<div class="as-row dp-row${x.busy ? ' dp-busy' : ''}" data-id="${esc(x.id)}">
-        <div class="as-main"><div class="as-title">${esc(x.name || x.title || x.msg || x.cwd || `会话 ${x.id}`)}</div>
+        <div class="as-main"><div class="as-title">${x.name ? agentLogo(x.agent) : ''}${esc(x.name || x.title || x.msg || x.cwd || `会话 ${x.id}`)}</div>
           ${x.msg && (x.name || x.title) ? `<div class="as-prompt">${esc(x.msg)}</div>` : ''}
           ${(x.name || x.title || x.msg) && x.cwd ? `<div class="as-prompt">${esc(x.cwd)}</div>` : ''}<div class="as-meta dp-when"><span class="dp-when-t">${esc(x.when)}</span>${x.tab || x.tabDef ? `<span class="dp-name" title="${esc(x.tab || x.tabDef)}">${esc(x.tab || x.tabDef)}</span>` : ''}</div>
           ${x.busy ? `<div class="dp-used">正在${esc(x.busy)}里使用中</div>` : ''}</div>
