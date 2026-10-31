@@ -57,7 +57,7 @@
   let cmdMode = null; // { s: 所在标签, n: 已发出的字数 (退格删光时退出) }
   // 提示文字：一行放得下就用完整的，放不下换短的；再放不下就截短加省略号 —— 提示文字折行会把空输入框撑高，
   // 打字 / 发送时输入框高度来回变，每次都让终端改尺寸、程序整屏重画
-  const DESK_PH = [dInput.placeholder, 'Enter 发送 · Shift+Enter 换行'];
+  const DESK_PH = [dInput.placeholder, 'Enter 发送 · Shift+Enter 换行 · 连按两下 Alt 切到 CLI 输入框', 'Enter 发送 · Shift+Enter 换行'];
   const CMD_PH = ['命令模式：直接输入到终端，Enter 执行，Esc 退出', '命令模式 · Enter 执行 · Esc 退出'];
   const phCtx = document.createElement('canvas').getContext('2d');
   function fitPlaceholder() {
