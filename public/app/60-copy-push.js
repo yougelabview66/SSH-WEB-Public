@@ -196,7 +196,19 @@
   function closeCopyPanel() {
     $('#copyPanel').classList.add('hidden');
     noAutoZoom(false);
-    try { window.getSelection()?.removeAllRanges(); } catch {}
+    resetCopySel();
+  }
+
+  // 复制面板回到刚打开时的样子：取消选中、退出编辑。手机上它是可编辑的 (见下面)，选区和焦点留着的话
+  // iPhone 上第二次长按就选不上；光取消、失焦还不够，iPhone 自己记着上一次选字的状态，
+  // 先关掉「可编辑」、下一帧再打开，让它把那套状态也丢掉
+  function resetCopySel() {
+    const pre = $('#copyText');
+    try { getSelection()?.removeAllRanges(); } catch {}
+    pre.blur();
+    if (!pre.isContentEditable) return;
+    pre.contentEditable = 'false';
+    requestAnimationFrame(() => { pre.contentEditable = 'true'; });
   }
 
   async function copyText(text) {
@@ -233,9 +245,12 @@
     t.timer = setTimeout(() => t.classList.remove('show'), 1600);
   }
 
+  // 手机上复制完复位 (见 resetCopySel)。等这一轮事件处理完再清 (系统菜单的「拷贝」要先把选中的字交出去)
+  const copiedReset = () => { if (isTouch) setTimeout(resetCopySel); };
   $('#copyAll').addEventListener('click', async () => {
     const text = $('#copyText').lsText || '';
     copyToast(await copyText(text) ? `已复制全部 (${text.length} 个字符)` : '复制失败，请长按文字手动复制');
+    copiedReset();
   });
   // 复制面板里选中的文字 (去掉切长行插进去的换行，同历史视图)；没选中返回空
   const panelSel = () => {
@@ -249,7 +264,9 @@
     const text = panelSel() || selAtPress;
     selAtPress = '';
     if (!text) return copyToast('请先长按文字选择要复制的部分');
-    copyToast(await copyText(text) ? `已复制 ${text.length} 个字符` : '复制失败，请长按文字手动复制');
+    const ok = await copyText(text);
+    copyToast(ok ? `已复制 ${text.length} 个字符` : '复制失败，请长按文字手动复制');
+    if (ok) copiedReset();
   });
   // 系统菜单的「拷贝」/ Ctrl+C：同上，去掉切长行插进去的换行
   $('#copyText').addEventListener('copy', (e) => {
@@ -257,6 +274,7 @@
     if (!text || !e.clipboardData) return;
     e.clipboardData.setData('text/plain', text);
     e.preventDefault();
+    copiedReset();
   });
   $('#copyClose').addEventListener('click', closeCopyPanel);
 
@@ -324,12 +342,32 @@
       e.preventDefault();
       const text = panelSel();
       if (text && e.clipboardData) e.clipboardData.setData('text/plain', text);
+      copiedReset();
     });
     pre.addEventListener('input', () => {
       const top = pre.scrollTop;
       pre._render?.();
       pre.scrollTop = top;
     });
+    // 选着字 / 还在编辑时，轻点任何地方都复位 (面板里的字、标题、空白、面板外面都算)。只认轻点 (按得短、没挪)：
+    // 长按选字、拖手柄、滑动都不算。「复制选中」「复制全部」除外：它们要用到选中的字，复制完自己复位。
+    // 点在字上时拦下 iPhone 自己的处理 (放光标、弹菜单)，不然刚取消的选中又被它接着用
+    let tapAt = null;
+    document.addEventListener('touchstart', (e) => {
+      const t = e.touches[0];
+      tapAt = e.touches.length === 1 && !$('#copyPanel').classList.contains('hidden') ? { x: t.clientX, y: t.clientY, t: performance.now() } : null;
+    }, { capture: true, passive: true });
+    document.addEventListener('touchend', (e) => {
+      const a = tapAt, t = e.changedTouches[0];
+      tapAt = null;
+      if (!a || !t || performance.now() - a.t > 350 || Math.hypot(t.clientX - a.x, t.clientY - a.y) > 10) return;
+      if (e.target.closest?.('#copySel, #copyAll')) return;
+      const sel = getSelection();
+      const selected = sel?.rangeCount && !sel.isCollapsed && pre.contains(sel.anchorNode);
+      if (!selected && document.activeElement !== pre) return;
+      if (pre.contains(e.target)) e.preventDefault();
+      resetCopySel();
+    }, { capture: true, passive: false });
   }
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !$('#copyPanel').classList.contains('hidden')) closeCopyPanel();
