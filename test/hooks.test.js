@@ -14,7 +14,7 @@ const WebSocket = require('ws');
 const { BASE, ok, wait, run, launch, shot, hostKey, addHost } = require('./helpers');
 // 等测试这边的条件成立 (最多 ms 毫秒)
 const until = async (fn, ms) => { for (const end = Date.now() + ms; !fn() && Date.now() < end;) await wait(100); };
-const { HOOK_SH, HOOK_EVENTS, OPENCODE_PLUGIN } = require('../lib/hooks');
+const { HOOK_SH, HOOK_EVENTS, OPENCODE_PLUGIN, tomlSet, tomlUnset, TOML_MARK } = require('../lib/hooks');
 
 const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sshweb-hk-')));
 const settingsF = path.join(home, '.claude', 'settings.json');
@@ -214,6 +214,8 @@ run(async () => {
   const waitRow = async (id, re) => { for (let i = 0; i < 40 && !re.test(await rowState(id)); i++) await wait(200); };
   const hf = (f) => path.join(home, f);
   fs.mkdirSync(hf('.grok'), { recursive: true });
+  const pagerOrig = '# 我自己的设置\n[ui]\ntheme = "dark"\n';
+  fs.writeFileSync(hf('.grok/pager.toml'), pagerOrig);
   fs.mkdirSync(hf('.codex'), { recursive: true });
   const codexOrig = { hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo codex-mine' }] }] } };
   fs.writeFileSync(hf('.codex/hooks.json'), JSON.stringify(codexOrig));
@@ -235,6 +237,9 @@ run(async () => {
   const grok = JSON.parse(fs.readFileSync(hf('.grok/hooks/sshweb-status.json'), 'utf8'));
   ok(Object.keys(grok.hooks).length === 10 && grok.hooks.PreToolUse[0].matcher === '.*' && grok.hooks.Notification.every((g) => cmdHas(g, 'sh "$HOME/.ssh-web/hook.sh" grok')),
     'Grok：写进自己的 ~/.grok/hooks/sshweb-status.json，10 个事件，工具事件匹配 .*');
+  const pager = fs.readFileSync(hf('.grok/pager.toml'), 'utf8');
+  ok(pager.startsWith(pagerOrig) && pager.includes(`[terminal]  ${TOML_MARK}\nalt_screen = "never"  ${TOML_MARK}\n`),
+    'Grok：顺带在 ~/.grok/pager.toml 设 alt_screen = "never" (原来的设置还在，加的行带标记): ' + JSON.stringify(pager));
   const codex = JSON.parse(fs.readFileSync(hf('.codex/hooks.json'), 'utf8'));
   ok(Object.keys(codex).join() === 'hooks' && codex.hooks.Stop.some((g) => cmdHas(g, 'echo codex-mine')) && codex.hooks.Interrupt[0].hooks[0].timeout === 3
     && codex.hooks.PermissionRequest.some((g) => cmdHas(g, 'sh "$HOME/.ssh-web/hook.sh" codex')) && fs.existsSync(hf('.codex/hooks.json.bak-sshweb')),
@@ -257,6 +262,16 @@ run(async () => {
   // 卸载一个：别的还装着，hook.sh 留着
   await p.click(R('grok') + ' [data-a=uninstall]'); await waitRow('grok', /^未安装$/);
   ok(!fs.existsSync(hf('.grok/hooks/sshweb-status.json')) && fs.existsSync(script), '卸载 Grok：删掉它的钩子文件，别的 Agent 还装着，hook.sh 留着');
+  ok(fs.readFileSync(hf('.grok/pager.toml'), 'utf8') === pagerOrig, '卸载 Grok：pager.toml 去掉加的行，恢复原样');
+  // pager.toml 的各种写法
+  const T = { table: 'terminal', key: 'alt_screen', value: '"never"' };
+  const fresh = tomlSet(null, T);
+  ok(fresh === `[terminal]  ${TOML_MARK}\nalt_screen = "never"  ${TOML_MARK}\n` && tomlUnset(fresh) === '', 'pager.toml 不存在：新建；卸载后空了 (文件删掉)');
+  ok(tomlSet('[terminal]\nalt_screen = "always"\n', T) === null && tomlSet('terminal.alt_screen = "auto"\n', T) === null, '自己写过 alt_screen (节里、点号写法)：不动');
+  ok(tomlSet('[terminal]\nfoo = 1\n[ui]\n', T) === `[terminal]\nalt_screen = "never"  ${TOML_MARK}\nfoo = 1\n[ui]\n`, '已经有 [terminal] 这一节：加在节里');
+  const crlf = tomlSet('[ui]\r\nx = 1\r\n', T);
+  ok(crlf.split('\n').every((l, i, a) => i === a.length - 1 || l.endsWith('\r')) && tomlUnset(crlf) === '[ui]\r\nx = 1\r\n', 'Windows 的 \\r\\n 换行照原样，卸载后恢复原样');
+  ok(tomlUnset('[ui]\n') === null, '没有加过的：卸载不动');
   for (const id of ['codex', 'gemini', 'antigravity', 'opencode']) { await p.click(R(id) + ' [data-a=uninstall]'); await waitRow(id, /^未安装/); }
   ok(JSON.stringify(JSON.parse(fs.readFileSync(hf('.codex/hooks.json'), 'utf8'))) === JSON.stringify(codexOrig)
     && JSON.stringify(JSON.parse(fs.readFileSync(hf('.gemini/settings.json'), 'utf8'))) === JSON.stringify(gemOrig)

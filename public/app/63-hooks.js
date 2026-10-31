@@ -21,6 +21,7 @@
   // 每个 Agent 装好后还要做的事 / 和 Claude Code 不一样的地方
   const HOOK_TIPS = {
     claude: '要权限时安卓通知上能直接「允许 / 拒绝」',
+    grok: '同时在 ~/.grok/pager.toml 设 alt_screen = "never"：照样填满屏幕，聊过的内容进终端历史，历史视图完整',
     codex: '装好后要在 Codex 里输入 /hooks 批准一次才生效',
     gemini: '会先回 {} 给 Gemini（它要求的）',
     antigravity: '用工具前回「ask」：照你自己的权限设置问你，不会自动允许',
@@ -78,6 +79,7 @@
       const { agent, file, name } = row.dataset;
       const ask = what === 'install'
         ? `要在「${host}」上安装 ${name} 的钩子吗？\n会修改 ${file}${agent === 'opencode' || agent === 'grok' ? '' : '（第一次安装前备份为 .bak-sshweb）'}，并写入 ~/.ssh-web/${sname}。`
+          + (agent === 'grok' ? '\n同时在 ~/.grok/pager.toml 里设 alt_screen = "never"（你自己写过就不动），卸载钩子时去掉。' : '')
         : `要从「${host}」上卸载 SSH-WEB 的 ${name} 钩子吗？\n只删 SSH-WEB 加的条目，其他设置不动。`;
       if (!confirm(ask)) return;
       busy = true;
@@ -88,6 +90,7 @@
         if (hooksEl !== el) return;
         msg.textContent = what === 'install'
           ? `${name} 已安装${r.backup ? `（原来的设置备份在 ${r.backup}）` : ''}。新开的 ${name} 生效，已经开着的要退出重开。${agent === 'codex' ? '在 Codex 里输入 /hooks 批准一次。' : ''}`
+            + (r.toml ? (r.toml.state === 'set' ? `${r.toml.file} 已设 ${r.toml.line}。` : `${r.toml.file} 里你自己写过 alt_screen，没有改。`) : '')
           : `${name} 已卸载。已经开着的退出重开后就不再报事件。${r.scriptRemoved ? `别的 Agent 都没装了，${sname} 也删了。` : ''}`;
       } catch (e) {
         if (hooksEl === el) msg.textContent = (what === 'install' ? '安装失败：' : '卸载失败：') + e.message;
