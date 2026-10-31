@@ -82,6 +82,7 @@
     pre.append(f);
     pre.lsText = text; // 复制全部、换算行号用原文
     pre.lsCols = cols;
+    pre._render = () => renderCopy(s, pre, data, text); // 手机上万一被改了内容，照原样重排 (见下面的可编辑模式)
   }
 
   // 把 DOM 里的行号换算成原始文本的行号：显示时长行会被 splitByCells 切成几行，
@@ -294,11 +295,30 @@
   // 默认不显示 (占地方，复制区域变小)：点「诊断」才开始记
   if (isTouch) $('#copyDbgBtn').classList.remove('hidden');
   $('#copyDbgBtn').addEventListener('click', () => { dbgEl.classList.toggle('hidden'); dbgStart(); });
-  // 电脑上点面板外的暗色背景关掉。监听挂在 document 上，不挂在面板上：iPhone 把挂着 mousedown / click 监听的元素
-  // (连同里面的东西) 当成「能点的按钮」，长按里面的字不选词，要长按再拖才选得上 (以前是文本框，不受影响)。
-  // tabindex 同理：手机上不要 (只是电脑上点了以后能用键盘翻)
+  // 电脑上点面板外的暗色背景关掉。监听挂在 document 上，不挂在面板上 (不让面板里的字算成「能点的按钮」)
   document.addEventListener('mousedown', (e) => { if (e.target.id === 'copyPanel') closeCopyPanel(); });
-  if (isTouch) $('#copyText').removeAttribute('tabindex');
+  // 手机上复制面板是「可编辑、但不弹键盘、改不了」的：iPhone 对普通文字 (pre) 长按能选中，但不显示高亮、手柄和「拷贝」菜单，
+  // 看着就是长按没反应 (v1.83.55 ~ 1.83.80；以前是文本框，走输入框那套选字，没这个问题)。可编辑的元素也走那一套。
+  // 改内容的操作 (打字、删除、粘贴、剪切、拖放) 全拦下；万一还是被改了 (外接键盘组字拦不住)，照原样重排
+  if (isTouch) {
+    const pre = $('#copyText');
+    pre.removeAttribute('tabindex');
+    Object.assign(pre, { contentEditable: 'true', inputMode: 'none', spellcheck: false });
+    pre.setAttribute('autocorrect', 'off');
+    pre.setAttribute('autocapitalize', 'off');
+    pre.addEventListener('beforeinput', (e) => e.preventDefault());
+    for (const type of ['paste', 'drop']) pre.addEventListener(type, (e) => e.preventDefault());
+    pre.addEventListener('cut', (e) => { // 当成复制 (同上面的 copy，去掉切长行插进去的换行)
+      e.preventDefault();
+      const text = panelSel();
+      if (text && e.clipboardData) e.clipboardData.setData('text/plain', text);
+    });
+    pre.addEventListener('input', () => {
+      const top = pre.scrollTop;
+      pre._render?.();
+      pre.scrollTop = top;
+    });
+  }
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !$('#copyPanel').classList.contains('hidden')) closeCopyPanel();
   });
