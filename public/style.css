@@ -735,6 +735,9 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 .ls-body { flex: 1; margin: 0; padding: 4px 0 0 6px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;
   scrollbar-gutter: stable; /* 内容放进去之前就留出滚动条的位置：打开时按这个宽度算每行放几格 (见 55-local-scroll.js) */
   overscroll-behavior: contain; -webkit-overflow-scrolling: touch; user-select: text; -webkit-user-select: text; outline: none; }
+/* 手机上历史视图的字不让长按选：长按是打开复制面板 (见 57-touch-scroll.js)，iPhone 同时也会在历史视图里开始选字，
+   之后在复制面板里长按、拖动都去改盖在下面的历史视图里的选区，高亮被面板挡住，看着就是「长按没反应」 */
+@media (pointer: coarse) { .ls-body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; } }
 /* 历史视图里的表情：固定占几格的小格子 (宽度由 55-local-scroll.js 的 fitHtml 写)。顶端对齐、行高照旧，不把这一行撑高；
    表情画得比格子宽也不挤开后面的字 */
 #copyText .ls-c, .ls-body .ls-c { display: inline-block; vertical-align: top; letter-spacing: 0; white-space: pre; }
