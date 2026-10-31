@@ -751,8 +751,8 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 #copyText .ls-tblw, .ls-body .ls-tblw { position: relative; }
 #copyText .ls-tblw:has(> .ls-tbl.more)::after, .ls-body .ls-tblw:has(> .ls-tbl.more)::after {
   content: '›'; position: absolute; right: 4px; top: 50%; transform: translateY(-50%); pointer-events: none;
-  width: 20px; height: 20px; border-radius: 50%; background: rgba(128, 128, 128, .22); color: var(--accent); opacity: .85;
-  font: 700 17px/1 system-ui, sans-serif; display: flex; align-items: center; justify-content: center; }
+  width: 18px; height: 18px; border-radius: 50%; background: rgba(128, 128, 128, .22); color: var(--accent); opacity: .85;
+  font: 700 15px/17px system-ui, sans-serif; text-align: center; }
 .ls-close { position: absolute; bottom: 12px; right: 18px; /* 右上角是主机状态悬浮窗的默认位置 */ z-index: 1; font-size: 12px; padding: 4px 10px; opacity: .92;
   box-shadow: 0 2px 10px var(--shadow); box-sizing: border-box; /* 手机上高度按按键栏的按键设 (见 fitExitBtn) */ }
 .ls-close.tmux-exit { z-index: 25; } /* 直接放在终端上，要高于 xterm 内部图层 */
