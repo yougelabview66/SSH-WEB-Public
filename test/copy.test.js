@@ -54,6 +54,12 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
       if (bad.length || ti != null) clicky.push(`第 ${i} 层 ${bad.join('/')}${ti != null ? ' tabindex' : ''}`);
     }
     ok(clicky.length === 0, `手机：复制面板的文字和外层都不挂点击监听、没有 tabindex，iPhone 长按就能选词 ${clicky.join('；')}`);
+    // 手机上可编辑 (iPhone 才显示选中的高亮和「拷贝」菜单)、不弹键盘、改不了
+    const before = await m.evaluate(() => { const p = document.getElementById('copyText'); p.focus(); return { t: p.textContent, ce: p.isContentEditable, im: p.inputMode }; });
+    await cdp.send('Input.insertText', { text: 'ZZZ' });
+    await m.keyboard.press('Backspace'); await m.keyboard.press('Enter'); await wait(200);
+    const after = await m.evaluate(() => { const p = document.getElementById('copyText'); p.blur(); return p.textContent; });
+    ok(before.ce && before.im === 'none' && after === before.t, `手机：复制面板可编辑 (${before.ce})、不弹键盘 (inputmode=${before.im})，打字 / 删除 / 回车都改不了内容 (${after === before.t ? '没变' : '变了'})`);
     await m.screenshot({ path: shot(`copy-${frac}.png`) });
     await m.tap('#copyClose'); await wait(300);
   }
