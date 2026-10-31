@@ -266,7 +266,8 @@
     dbgEl.textContent = dbgLines.join('\n');
     dbgEl.scrollTop = dbgEl.scrollHeight;
   };
-  const dbgSel = () => { const s = getSelection(); return s?.rangeCount ? `sel=${JSON.stringify(s.toString().slice(0, 12))} 在${dbgDesc(s.anchorNode)}` : 'sel=无'; };
+  const dbgWhere = (n) => { const e = n?.nodeType === 3 ? n.parentElement : n; return e?.closest?.('#copyText') ? '复制面板' : e?.closest?.('.ls-body') ? '历史视图' : '别处'; };
+  const dbgSel = () => { const s = getSelection(); return s?.rangeCount ? `sel=${JSON.stringify(s.toString().slice(0, 12))} 在${dbgWhere(s.anchorNode)} ${dbgDesc(s.anchorNode)}` : 'sel=无'; };
   let dbgT0 = 0;
   // 捕获阶段记事件本身，冒泡到 window 时再记有没有被谁 preventDefault
   for (const type of ['touchstart', 'touchend', 'touchcancel', 'contextmenu', 'selectstart', 'mousedown', 'click', 'focusin', 'focusout']) {

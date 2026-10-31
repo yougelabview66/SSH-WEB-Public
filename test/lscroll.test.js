@@ -373,6 +373,10 @@ const WHEEL_UP = '\x1b[<64;';
   // 复制面板照历史视图的样子排：长行在放得下的地方切开 (同历史视图)，整体不横向滚
   const wrap = await m.evaluate(() => { const p = document.getElementById('copyText'); return { sw: p.scrollWidth, cw: p.clientWidth, wraps: p.querySelectorAll('.ls-wrap').length, longest: Math.max(...p.lsText.split('\n').map((l) => l.length)) }; });
   ok(wrap.sw <= wrap.cw && wrap.wraps > 0, '手机：复制面板里长行在放得下的地方切开 (同历史视图)，整体不横向滚 ' + JSON.stringify(wrap));
+  // 盖在下面的历史视图不能被长按选字：iPhone 长按打开面板的同时会在它里面开始选，之后面板里长按、拖动都改的是它的选区 (被挡住看不见)
+  const us = await m.evaluate(() => { const b = getComputedStyle(document.querySelector('.term.active .ls-body')), p = getComputedStyle(document.getElementById('copyText'));
+    return { hist: b.webkitUserSelect || b.userSelect, panel: p.webkitUserSelect || p.userSelect }; });
+  ok(us.hist === 'none' && us.panel === 'text', `手机：历史视图的字不能长按选 (${us.hist})，复制面板的能 (${us.panel})`);
   // 选中一段 (跨过切开的长行)，点「复制选中」：复制出来是原文 (没有切行插进去的换行)
   await ctx.grantPermissions(['clipboard-read', 'clipboard-write']);
   const picked = await m.evaluate(() => {
