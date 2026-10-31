@@ -14,27 +14,27 @@
   // (这个会话的 tmux pane 里是全屏程序 → busy / 没开 tmux → 终端记录自己在备用屏幕上取不了 → busy)，滚轮照旧交给程序
   const daemonHistory = (s) => !!s.params?.daemonId;
 
-  // Windows 上跑着 Grok (钩子报的)：不开历史视图，往上 / 往下滚换成 PageUp / PageDown 让 Grok 自己翻 (同 Linux 上的全屏 Grok)。
-  // Grok 的全屏界面经过 ConPTY 后，终端历史里是一屏屏重画的碎片，历史视图排不整齐；ConPTY 又不把滚轮转给它
-  // (滚轮上报会被原样当成字打进输入框)，PageUp / PageDown 是它全屏界面翻页的键
-  const grokPaging = (s) => !!s.winHost && s.agent?.id === 'grok';
+  // Windows 上跑着要翻页的 Agent (Grok，见 09-agents.js 的 pageScrollOnWin)：不开历史视图，往上 / 往下滚换成 PageUp / PageDown
+  // 让它自己翻 (同 Linux 上的全屏 Grok)。全屏界面经过 ConPTY 后，终端历史里是一屏屏重画的碎片，历史视图排不整齐；
+  // ConPTY 又不把滚轮转给它 (滚轮上报会被原样当成字打进输入框)，PageUp / PageDown 是它全屏界面翻页的键
+  const pageScrolling = (s) => !!s.winHost && agentDoes(s, 'pageScrollOnWin');
   // 滚动量折成行 (像素按约 17px 一行；手机滑动发的是合成的滚轮，一下代表手指挪了 3 行，见 57-touch-scroll.js)，攒够半屏翻一页
-  function grokPage(s, e) {
+  function pageScroll(s, e) {
     const lines = e.deltaMode === 2 ? e.deltaY * s.term.rows : e.deltaMode === 1 ? e.deltaY * (e.isTrusted ? 1 : 3) : e.deltaY / 17;
-    if (Math.sign(lines) !== Math.sign(s.grokAcc || 0)) s.grokAcc = 0;
-    s.grokAcc = (s.grokAcc || 0) + lines;
+    if (Math.sign(lines) !== Math.sign(s.pageAcc || 0)) s.pageAcc = 0;
+    s.pageAcc = (s.pageAcc || 0) + lines;
     const page = Math.max(3, Math.floor(s.term.rows / 2));
-    while (Math.abs(s.grokAcc) >= page) {
-      const up = s.grokAcc < 0;
+    while (Math.abs(s.pageAcc) >= page) {
+      const up = s.pageAcc < 0;
       send(s, { type: 'data', data: up ? '\x1b[5~' : '\x1b[6~' });
-      s.grokAcc += up ? page : -page;
+      s.pageAcc += up ? page : -page;
     }
   }
 
   function localScrollWheel(s, e) {
     if (s.bypassWheel) return true;
     if (s.scrollView) { scrollViewWheel(s, e.deltaY); return false; }
-    if (grokPaging(s)) { grokPage(s, e); return false; }
+    if (pageScrolling(s)) { pageScroll(s, e); return false; }
     // 刚往下滚回实时画面：这一下滚动剩下的 (滚轮 / 触摸板末尾常带一两格反方向的抖动) 都不算，免得又打开历史视图
     if (s.lsWheelUntil > Date.now()) { s.lsWheelUntil = Date.now() + LS_WHEEL_QUIET; return false; }
     if (s.scrollLoading) { s.heldWheel += e.deltaY < 0 ? 1 : -1; return false; } // 等结果期间的滚动先记下 (往上为正)

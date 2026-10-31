@@ -34,6 +34,7 @@
     s.fit.fit = () => mirrorFit(s, rawFit); // 被别的设备锁住时按它的行列镜像显示 (见 42-owner.js)
     s.term.loadAddon(new WebLinksAddon.WebLinksAddon());
     s.term.open(s.box);
+    agentMouse(s); // 各 Agent 的鼠标处理 (见 09-agents.js)
     // 远端程序通过 OSC 52 设置剪贴板：tmux 开鼠标后拖动选中、松开即复制，vim 等插件的复制也走这里。
     // 只允许写入，不响应读取请求 (同 Windows Terminal)，避免剪贴板内容被远端读走
     s.term.parser.registerOscHandler(52, (data) => {

@@ -12,6 +12,7 @@
   let mousePress = null; // 左键按在终端里：{ x, y, moved, swallow (这一下不交给 tmux), held (扣下的按下上报) }
   let lastPressAt = 0;   // 上一次交给 tmux 的左键按下
   window.addEventListener('mousedown', (e) => {
+    if (!e.isTrusted) return; // 补发的按下 (见 09-agents.js 的 dragSelect) 算在真的那一下里，不当成连点的第二下
     if (e.button !== 0 || !e.target.closest?.('.term-box')) { mousePress = null; return; }
     const now = Date.now();
     mousePress = { x: e.clientX, y: e.clientY, moved: false, swallow: now - lastPressAt < DBL_MS, held: '' };
