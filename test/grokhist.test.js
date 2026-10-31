@@ -18,7 +18,7 @@ const CHAT = [
   L({ type: 'reasoning', summary: [{ type: 'summary_text', text: '先看看系统' }], encrypted_content: 'xx' }),
   L({ type: 'assistant', content: '', tool_calls: [{ id: 'c1', name: 'run_terminal_command', arguments: L({ command: 'uptime', description: '看运行时间' }) }] }),
   L({ type: 'tool_result', tool_call_id: 'c1', content: Array.from({ length: 20 }, (_, i) => `输出第 ${i + 1} 行`).join('\n') }),
-  L({ type: 'assistant', content: '系统正常，已运行 9 小时。' }),
+  L({ type: 'assistant', content: '系统正常，**已运行 9 小时**。\n\n| 项目 | 状态 |\n|---|---|\n| 内存使用 | 充裕 |\n| 磁盘 | 正常 |' }),
   L({ type: 'user', content: [{ type: 'text', text: '<user_query>第二个问题：网络呢</user_query>' }], prompt_index: 1 }),
   L({ type: 'assistant', content: '网络也正常。' }),
 ].join('\n') + '\n';
@@ -28,10 +28,11 @@ fs.writeFileSync(path.join(dir, 'sess-1', 'chat_history.jsonl'), CHAT);
 
 // 排版本身
 const r = history.render(CHAT).replace(/\x1b\[[0-9;]*m/g, '');
-ok(r.includes('❯ 第一个问题：检查系统') && r.includes('◆ 先看看系统') && r.includes('◈ run_terminal_command  看运行时间') && r.includes('$ uptime')
-  && r.includes('输出第 12 行') && !r.includes('输出第 13 行') && r.includes('… 还有 8 行') && r.includes('系统正常，已运行 9 小时。')
+ok(r.includes('❯ 第一个问题：检查系统') && r.includes('◆ 先看看系统') && r.includes('◈ 执行命令  看运行时间') && r.includes('$ uptime')
+  && r.includes('│ 输出第 12 行') && !r.includes('输出第 13 行') && r.includes('… 还有 8 行') && r.includes('系统正常，已运行 9 小时。')
+  && r.includes('│ 内存使用 │ 充裕 │') && r.includes('┌──────────┬──────┐') && r.includes('━━━')
   && r.indexOf('第一个问题') < r.indexOf('第二个问题') && !r.includes('系统提示') && !r.includes('插入的提醒'),
-'会话记录排成对话：你的话、思考、工具 (命令和前 12 行输出)、回答，按顺序；系统提示和插入的提醒不显示');
+'会话记录排成对话：你的话、思考、工具 (中文名、命令和前 12 行输出)、回答 (粗体、表格画成框线、中文对齐)，每轮之间有分隔线；系统提示和插入的提醒不显示');
 
 let got = {};
 const GROK = (r) => '\x1b[?1003h\x1b[?1006h\x1b[H\x1b[2J     ❯ 第二个问题：网络呢\r\n     网络也正常。'
@@ -93,7 +94,8 @@ serve(2251, GROK, true); serve(2252, GROK, false); serve(2253, CLAUDE, true);
   };
 
   const h = await scrollUp('GH', 2251);
-  ok(h && h.includes('❯ 第一个问题：检查系统') && h.includes('◈ run_terminal_command') && h.includes('第二个问题：网络呢'),
+  await m.screenshot({ path: require('./helpers').shot('grokhist.png') });
+  ok(h && h.includes('❯ 第一个问题：检查系统') && h.includes('◈ 执行命令') && h.includes('第二个问题：网络呢'),
     `Grok：往上滚，历史视图里是会话文件里的完整对话 (屏幕上只有最后一问一答) ${JSON.stringify((h || '').slice(0, 60))}`);
   await m.keyboard.press('Escape'); await wait(300);
 
