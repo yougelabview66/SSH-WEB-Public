@@ -65,5 +65,21 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   }
   ok(rows > 10, `终端 ${rows} 行`);
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
+  // 复制面板打开期间不自动放大：iPhone 上聚焦小于 16px 的可编辑区域会放大页面 (只给苹果设备加，安卓上会连双指缩放一起关掉)
+  const vp = (p) => p.evaluate(() => document.querySelector('meta[name=viewport]').content);
+  const android = await vp(m);
+  await m.locator('.mkeys button[data-k=copy]').tap(); await wait(300);
+  ok(!(await vp(m)).includes('maximum-scale') && android === await vp(m), `安卓：打开复制面板不改缩放设置 (${await vp(m)})`);
+  await m.tap('#copyClose');
+  const ictx = await browser.newContext({ ...devices['iPhone 13'] });
+  const ip = await ictx.newPage();
+  await ip.goto(BASE + '/'); await ip.waitForSelector('#app:not(.hidden)');
+  await ip.tap('#btnToggle'); await ip.locator('.host', { hasText: 'C' }).first().tap(); await wait(1500);
+  const base = await vp(ip);
+  await ip.locator('.mkeys button[data-k=copy]').tap(); await wait(300);
+  const open = await vp(ip);
+  await ip.tap('#copyClose'); await wait(200);
+  const closed = await vp(ip);
+  ok(open.includes('maximum-scale=1') && closed === base, `iPhone：复制面板打开时不自动放大 (${open})，关掉后恢复 (${closed})`);
   await browser.close(); process.exit();
 })().catch((e) => { console.error(e); process.exit(1); });

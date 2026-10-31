@@ -58,6 +58,7 @@
     $('#copyPanel').dataset.tab = s.id; // 手机上同性能监控 (见 tabPanels)
     $('#copyPanel').classList.remove('hidden');
     tabPanels(); // 同历史面板：在别的标签上打开过会带着 tab-away
+    noAutoZoom(true);
     renderCopy(s, pre, data, text); // 面板显示出来才量得出宽度
     if (n && line >= 0) scrollToLine(pre, Math.min(line, n - 1), at?.y);
     else { pre._place = null; pre.scrollTop = pre.scrollHeight; } // 定位到最新内容
@@ -182,8 +183,19 @@
     return (range.toString().match(/\n/g) || []).length;
   }
 
+  // 苹果设备上复制面板打开期间不自动放大：手机上它是可编辑的 (见下面)，字是 12px，iPhone 聚焦小于 16px 的可编辑区域
+  // 会把整个页面放大 (第一次长按就放大)。maximum-scale=1 在 iPhone / iPad 上只挡自动放大，双指照样能放大；
+  // 安卓上它会连双指缩放一起关掉，所以只给苹果设备加
+  const viewportMeta = document.querySelector('meta[name=viewport]'), viewportBase = viewportMeta?.content;
+  const appleTouch = isTouch && /iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent);
+  function noAutoZoom(on) {
+    if (!appleTouch || !viewportMeta) return;
+    viewportMeta.content = on ? viewportBase + ', maximum-scale=1' : viewportBase;
+  }
+
   function closeCopyPanel() {
     $('#copyPanel').classList.add('hidden');
+    noAutoZoom(false);
     try { window.getSelection()?.removeAllRanges(); } catch {}
   }
 
