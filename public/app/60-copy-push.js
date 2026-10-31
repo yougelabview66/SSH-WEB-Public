@@ -36,18 +36,19 @@
     if (!s) return;
     const pre = $('#copyText');
     const hist = s.scrollView?.querySelector('.ls-body');
-    let text, line = -1;
+    let text, data, line = -1;
     if (hist) {
       s.scrollView.lsRest(); // 前面的历史还在后台往上补：先补完
       // 优先用原始文本：显示时长行会在 cols 格处被切开 (splitByCells)、插入换行，textContent 不是原文
       text = (s.scrollView.lsText ?? hist.textContent).replace(/\n+$/, '');
+      data = s.scrollView.lsData ?? text;
       const domLine = at ? lineAt(hist, at.x, at.y) : firstVisibleLine(hist);
       // 换回原始文本的行号 (见 domLineToTextLine 的说明)。必须用历史视图切行时的格数 (lsCols)：
       // 它是按历史视图实际宽度量的，比终端列数小 (手机上小好几格)，拿 term.cols 换算会少数显示行、定位偏到后面
       line = domLineToTextLine(text.split('\n'), s.scrollView.lsCols || s.term?.cols || 80, domLine);
     } else {
       const t = terminalText(s, at ? terminalRowAt(s, at.y) : -1);
-      text = t.text;
+      text = data = t.text;
       if (at) line = t.line;
     }
     const n = text ? text.split('\n').length : 0;
@@ -57,16 +58,14 @@
     $('#copyPanel').dataset.tab = s.id; // 手机上同性能监控 (见 tabPanels)
     $('#copyPanel').classList.remove('hidden');
     tabPanels(); // 同历史面板：在别的标签上打开过会带着 tab-away
-    renderCopy(s, pre, text); // 面板显示出来才量得出宽度
+    renderCopy(s, pre, data, text); // 面板显示出来才量得出宽度
     if (n && line >= 0) scrollToLine(pre, Math.min(line, n - 1), at?.y);
     else { pre._place = null; pre.scrollTop = pre.scrollHeight; } // 定位到最新内容
   }
 
   // 复制面板的内容照历史视图的样子排 (同一个 gridView)：每种字补成正好 1 / 2 格，表格竖线对齐，超宽的表格整张左右滑。
-  // 以前是文本框：iPhone 上中文和英文是两种字体，一个中文字不正好是两个英文宽，文本框里没法按字补，表格竖线对不齐。
-  // 不带颜色 (只用去掉 ANSI 的原文)：带颜色的字一层套一层 <span style="color…">，iPhone 上长按很难选中，
-  // 试过一次之后连没颜色的字也选不了 (v1.83.55 ~ 1.83.76)。复制面板是用来选字的，颜色不要
-  function renderCopy(s, pre, text) {
+  // 以前是文本框：iPhone 上中文和英文是两种字体，一个中文字不正好是两个英文宽，文本框里没法按字补，表格竖线对不齐
+  function renderCopy(s, pre, data, text) {
     pre.textContent = '';
     pre.style.paddingBottom = '';
     const fs = 12, lh = Math.round(fs * 1.45);
@@ -77,7 +76,7 @@
     pre.appendChild(probe);
     const cw = probe.getBoundingClientRect().width / 100;
     probe.remove();
-    const { cols, chunks, block } = gridView(pre, text, s.term.cols || 80, cw, termTheme());
+    const { cols, chunks, block } = gridView(pre, data, s.term.cols || 80, cw, termTheme());
     const f = document.createDocumentFragment();
     for (const c of chunks) f.append(block(c));
     pre.append(f);
@@ -247,7 +246,11 @@
     e.preventDefault();
   });
   $('#copyClose').addEventListener('click', closeCopyPanel);
-  $('#copyPanel').addEventListener('mousedown', (e) => { if (e.target.id === 'copyPanel') closeCopyPanel(); });
+  // 电脑上点面板外的暗色背景关掉。监听挂在 document 上，不挂在面板上：iPhone 把挂着 mousedown / click 监听的元素
+  // (连同里面的东西) 当成「能点的按钮」，长按里面的字不选词，要长按再拖才选得上 (以前是文本框，不受影响)。
+  // tabindex 同理：手机上不要 (只是电脑上点了以后能用键盘翻)
+  document.addEventListener('mousedown', (e) => { if (e.target.id === 'copyPanel') closeCopyPanel(); });
+  if (isTouch) $('#copyText').removeAttribute('tabindex');
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !$('#copyPanel').classList.contains('hidden')) closeCopyPanel();
   });
