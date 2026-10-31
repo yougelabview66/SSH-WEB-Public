@@ -59,6 +59,34 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
     await cdp.send('Input.insertText', { text: 'ZZZ' });
     await m.keyboard.press('Backspace'); await m.keyboard.press('Enter'); await wait(200);
     const after = await m.evaluate(() => { const p = document.getElementById('copyText'); p.blur(); return p.textContent; });
+    // 复制完取消选中、退出编辑 (iPhone 上选区和焦点留着，第二次长按就选不上)：「复制选中」按钮和系统菜单的「拷贝」都是
+    await ctx.grantPermissions(['clipboard-read', 'clipboard-write']);
+    const pick = () => m.evaluate(() => { const p = document.getElementById('copyText'); p.focus(); const r = document.createRange(); r.selectNodeContents(p.querySelector('div') || p);
+      const s = getSelection(); s.removeAllRanges(); s.addRange(r); return s.toString().length; });
+    const state = () => m.evaluate(() => ({ sel: getSelection().toString().length, focus: document.activeElement?.id || '' }));
+    const n1 = await pick();
+    await m.locator('#copySel').tap(); await wait(300);
+    const s1 = await state();
+    const n2 = await pick();
+    await m.evaluate(() => document.getElementById('copyText').dispatchEvent(new ClipboardEvent('copy', { clipboardData: new DataTransfer(), bubbles: true, cancelable: true })));
+    await wait(100);
+    const s2 = await state();
+    ok(n1 > 0 && n2 > 0 && !s1.sel && s1.focus !== 'copyText' && !s2.sel && s2.focus !== 'copyText',
+      `手机：复制后取消选中、退出编辑 (按钮：选中 ${s1.sel} 字、焦点 ${s1.focus || '无'}；系统拷贝：选中 ${s2.sel} 字、焦点 ${s2.focus || '无'})`);
+    // 选着字时轻点任何地方都复位 (字上、标题)，复位后照样可编辑；长按、拖动不算轻点
+    const touch = async (sel, ms) => {
+      const b = await m.locator(sel).first().boundingBox(), x = b.x + Math.min(30, b.width / 2), y = b.y + Math.min(20, b.height / 2);
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] }); await wait(ms);
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await wait(150);
+    };
+    const full = () => m.evaluate(() => ({ sel: getSelection().toString().length, focus: document.activeElement?.id || '', ce: document.getElementById('copyText').isContentEditable }));
+    await pick(); await touch('#copyText', 80); const t1 = await full();
+    await pick(); await touch('#copyPanel h3', 80); const t2 = await full();
+    await pick(); await touch('#copyText', 600); const t3 = await full();
+    ok(!t1.sel && t1.focus !== 'copyText' && t1.ce, `手机：选着字轻点字上，取消选中、退出编辑、仍可编辑 ${JSON.stringify(t1)}`);
+    ok(!t2.sel && t2.focus !== 'copyText' && t2.ce, `手机：选着字轻点标题，取消选中、退出编辑 ${JSON.stringify(t2)}`);
+    ok(t3.sel > 0, `手机：长按不算轻点，选中的字还在 (${t3.sel} 字)`);
+    await m.evaluate(() => { getSelection().removeAllRanges(); document.getElementById('copyText').blur(); });
     ok(before.ce && before.im === 'none' && after === before.t, `手机：复制面板可编辑 (${before.ce})、不弹键盘 (inputmode=${before.im})，打字 / 删除 / 回车都改不了内容 (${after === before.t ? '没变' : '变了'})`);
     await m.screenshot({ path: shot(`copy-${frac}.png`) });
     await m.tap('#copyClose'); await wait(300);
