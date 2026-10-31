@@ -12,18 +12,19 @@ const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sshweb-am-')
 fs.mkdirSync(path.join(home, '.ssh-web'));
 fs.writeFileSync(path.join(home, '.ssh-web/watch.ps1'), ''); // 装过钩子：读事件的通道一直开着
 
-let watchCh = null, got = '';
+let watchCh = null, got = '', rows = 0;
 new Server({ hostKeys: [hostKey()] }, (c) => {
   c.on('authentication', (ctx) => ctx.accept());
   c.on('ready', () => c.on('session', (acc) => {
     const s = acc();
-    s.on('pty', (a) => a()); s.on('window-change', (a) => a && a());
+    s.on('pty', (a, r, info) => { rows = info.rows; a(); }); s.on('window-change', (a, r, info) => { rows = info.rows; a && a(); });
     s.on('shell', (a) => {
       const st = a();
       st.on('data', (d) => { got += d; });
       // 全屏界面 + 鼠标：按下 / 松开、按住拖动、所有移动都要 (SGR)
       st.write('\x1b[?1049h\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h\x1b[H\x1b[2J');
       for (let i = 1; i <= 10; i++) st.write(`agent reply line ${i} hello world\r\n`);
+      st.write('\x1b[999;1H\x1b[2A│ > \x1b[999;1HShift+Tab:mode'); // 最下面像 Grok 的输入框 (倒数第三行)
     });
     s.on('exec', (a, r, info) => {
       const ch = a(), cmd = info.command;
@@ -73,10 +74,22 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   await m.mouse.move(b.x + 400, b.y + 200, { steps: 3 }); await wait(300);
   ok(hovers() > 0, `Grok：没选着字时挪鼠标照常上报 (${hovers()} 条)`);
 
+  // 下方输入栏发消息：先点一下 Grok 的输入框 (焦点可能在聊天记录上)，再发字
+  await m.focus('#dInput'); got = '';
+  await m.keyboard.type('hi'); await m.keyboard.press('Enter'); await wait(800);
+  const click = `\x1b[<0;5;${rows - 2}M\x1b[<0;5;${rows - 2}m`;
+  ok(got.includes(click + 'hi') , `Grok：发消息前先点它的输入框 (第 ${rows - 2} 行)，再发字 ${JSON.stringify(got.slice(0, 60))}`);
+  got = '';
+  await m.keyboard.press('Enter'); await wait(500);
+  ok(!got.includes('\x1b[<0;'), `Grok：只发回车 (选菜单项) 时不点 ${JSON.stringify(got)}`);
+
   // ---- Claude Code：照旧
   await as('claude');
   await drag();
   const c2 = await clip(), p2 = presses();
+  await m.focus('#dInput'); got = '';
+  await m.keyboard.type('yo'); await m.keyboard.press('Enter'); await wait(800);
+  ok(got.startsWith('yo') && !got.includes('\x1b[<0;'), `Claude Code：发消息不点输入框 ${JSON.stringify(got.slice(0, 30))}`);
   ok(c2 === 'EMPTY' && p2 === 1, `Claude Code：拖动照旧交给程序 (按下报了 ${p2} 次)，没在终端里选字 (剪贴板：${c2})`);
 
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));

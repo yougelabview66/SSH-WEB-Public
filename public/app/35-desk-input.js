@@ -44,6 +44,7 @@
     if (!s || !s.sid) return;
     leaveTmuxCopyMode(s);
     if (!text) { beginCapture(s); send(s, { type: 'data', data: '\r' }); return; }
+    agentBeforeSend(s); // Grok：先点一下它的输入框 (焦点可能在聊天记录上，见 09-agents.js)
     let data = text.replace(/\r?\n/g, '\r');
     // 多行内容按粘贴发送 (Claude Code 等支持括号粘贴的程序不会把中间的换行当回车)
     if (data.includes('\r') && s.term.modes.bracketedPasteMode) data = '\x1b[200~' + data + '\x1b[201~';
