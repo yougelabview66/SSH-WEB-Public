@@ -17,7 +17,7 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   await m.goto(BASE + '/'); await m.waitForSelector('#app:not(.hidden)');
   await m.tap('#btnToggle'); await m.locator('.host', { hasText: 'K' }).tap(); await wait(1000);
   const labels = () => m.locator('#mobileBar .mkeys button').allTextContents();
-  const DEF = ['历史', 'Esc', 'Tab', 'Shift', 'Ctrl', 'Alt', '↑', '↓', '←', '→', '⌫', 'Home', 'End', 'PgUp', 'PgDn', '|', '/', '-', '~', '^C', '^D', '^Z', '^L', '复制', '粘贴', '⚙'];
+  const DEF = ['历史', '⇄ CLI', 'Esc', 'Tab', 'Shift', 'Ctrl', 'Alt', '↑', '↓', '←', '→', '⌫', 'Home', 'End', 'PgUp', 'PgDn', '|', '/', '-', '~', '^C', '^D', '^Z', '^L', '复制', '粘贴', '⚙'];
   ok(JSON.stringify(await labels()) === JSON.stringify(DEF), '默认按键和顺序与原来一致 (最后多一个 ⚙ 设置)');
 
   // 编辑

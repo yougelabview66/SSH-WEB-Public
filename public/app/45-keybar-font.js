@@ -1,6 +1,6 @@
   // ------------------------------------------------------------ 自定义按键栏
   const KEY_DEFS = {
-    history: { label: '历史', k: 'history' }, esc: { label: 'Esc', k: 'esc' }, tab: { label: 'Tab', k: 'tab' },
+    history: { label: '历史', k: 'history' }, cli: { label: '⇄ CLI', k: 'cli', desc: '光标切到终端，直接打进 CLI 自带的输入框 (同电脑上连按两下 Alt)，再点切回' }, esc: { label: 'Esc', k: 'esc' }, tab: { label: 'Tab', k: 'tab' },
     shift: { label: 'Shift', mod: 'shift' }, ctrl: { label: 'Ctrl', mod: 'ctrl' }, alt: { label: 'Alt', mod: 'alt' },
     up: { label: '↑', k: 'up' }, down: { label: '↓', k: 'down' }, left: { label: '←', k: 'left' }, right: { label: '→', k: 'right' },
     bs: { label: '⌫', k: 'bs' }, home: { label: 'Home', k: 'home' }, end: { label: 'End', k: 'end' },
@@ -23,7 +23,7 @@
     KEY_DEFS['t:' + ch] = { label: ch, t: ch };
   }
   // 默认 = 原来的按键和顺序
-  const DEFAULT_KEYS = ['history', 'esc', 'tab', 'shift', 'ctrl', 'alt', 'up', 'down', 'left', 'right', 'bs',
+  const DEFAULT_KEYS = ['history', 'cli', 'esc', 'tab', 'shift', 'ctrl', 'alt', 'up', 'down', 'left', 'right', 'bs',
     'home', 'end', 'pgup', 'pgdn', 't:|', 't:/', 't:-', 't:~', '^c', '^d', '^z', '^l', 'copy', 'paste'];
   let keybar = { keys: DEFAULT_KEYS.slice(), custom: {} };
 
@@ -45,7 +45,7 @@
       if (!d) continue;
       const b = document.createElement('button');
       b.textContent = d.label;
-      if (d.k) b.dataset.k = d.k;
+      if (d.k) { b.dataset.k = d.k; if (d.k === 'cli') b.classList.toggle('on', !!mDirect); }
       else if (d.t) b.dataset.t = d.t;
       else if (d.mod) { b.dataset.mod = d.mod; b.classList.toggle('on', !!mods[d.mod]); }
       else if (d.seq != null) { b.dataset.seq = decodeSeq(d.seq); b.title = d.seq; }

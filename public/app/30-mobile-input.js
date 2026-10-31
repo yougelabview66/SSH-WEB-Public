@@ -292,6 +292,23 @@
     });
   }
 
+  // 「⇄ CLI」(电脑上的连按两下 Alt)：光标切到终端，键盘打的字直接进 CLI 自带的输入框；再点一下、或点下方输入栏切回。
+  // 手机上终端平时是只读的 (输入法直接打进终端会丢字、重复，所以才有下方输入栏)，切过去时才放开，切回再锁上
+  let mDirect = null; // 光标切到了终端的那个标签
+  function setTermDirect(on) {
+    const s = active;
+    if (mDirect) { mDirect.term.textarea.setAttribute('readonly', 'readonly'); mDirect = null; }
+    $('#mobileBar [data-k=cli]')?.classList.remove('on');
+    if (!on || !s) return;
+    if (isLocked(s)) return fontToast(s, '别的设备正在用这个标签，先点「在本机继续」', 1800);
+    mDirect = s;
+    $('#mobileBar [data-k=cli]')?.classList.add('on');
+    s.term.textarea.removeAttribute('readonly');
+    s.term.focus();
+    fontToast(s, '已切到 CLI 自带的输入框 (中文输入法可能丢字) · 再点 ⇄ CLI 或点下方输入栏切回', 2500);
+  }
+  mInput.addEventListener('focus', () => { if (mDirect) setTermDirect(false); });
+
   // 按钮按下时不抢走输入框焦点，避免键盘收起
   $('#mobileBar').addEventListener('mousedown', (e) => { if (e.target.closest('button')) e.preventDefault(); });
   $('#mobileBar .mkeys').addEventListener('click', (e) => {
@@ -300,12 +317,17 @@
     if (b.dataset.a === 'kset') return openKeysEditor();
     if (b.dataset.k === 'history') return openHistory();
     if (b.dataset.k === 'copy') return openCopyPanel(active);
+    if (b.dataset.k === 'cli') { // 切回：光标回到下方输入栏 (键盘本来就开着，不会多弹一次)
+      if (mDirect === active) { setTermDirect(false); return mInput.focus({ preventScroll: true }); }
+      return setTermDirect(true);
+    }
     // 要改输入框里的字 (编辑、发出去清空)：前后让输入法重新开始 (见 imeRestart)；输入框空着、没在组字就不用
     if (mText() || composing) imeRestart(() => keybarKey(b));
     else keybarKey(b);
   });
   function keybarKey(b) {
     if (b.dataset.mod) return setMod(b.dataset.mod, !mods[b.dataset.mod]);
+    if (b.dataset.t && mDirect === active) return sendKeys(applyMods(b.dataset.t)); // 光标在终端里：直接发给终端
     if (b.dataset.t) {
       // | / - ~ 等字符键：和键盘打字一样先放进输入框
       const t = mods.shift ? b.dataset.t.toUpperCase() : b.dataset.t;

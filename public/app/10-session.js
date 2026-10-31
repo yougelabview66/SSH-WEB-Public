@@ -60,12 +60,12 @@
       // 触屏：xterm 的隐藏输入框在手机输入法下会丢字 / 重复，改用底部输入栏
       s.term.textarea.setAttribute('readonly', 'readonly');
       // 别的设备在用 (锁住，见 42-owner.js)：点终端不弹键盘 (打了也发不出去)，要写字点下面的输入栏
-      s.term.textarea.addEventListener('focus', () => { if (!isLocked(s)) mInput.focus(); });
+      s.term.textarea.addEventListener('focus', () => { if (!isLocked(s) && mDirect !== s) mInput.focus(); }); // 点了「⇄ CLI」就留在终端
       // 点终端上的按钮 (回到实时画面、重连等) 和历史视图不弹键盘：「回到实时画面」点完历史视图已经关了、输入栏刚回来，
       // 这一下 click 冒泡上来再聚焦输入框就会弹出输入法
       s.box.addEventListener('click', (e) => {
         if (s.longPressed) { s.longPressed = false; return; }
-        if (!isLocked(s) && !e.target.closest('button, .lscroll, .tsearch')) mInput.focus(); // 搜索框自己要焦点
+        if (!isLocked(s) && mDirect !== s && !e.target.closest('button, .lscroll, .tsearch')) mInput.focus(); // 搜索框自己要焦点；「⇄ CLI」时留在终端
       });
     } else {
       // 电脑：下方输入框开着时，点终端后光标回到下方输入框；点击本身照常交给 tmux / Claude Code。
