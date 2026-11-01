@@ -730,9 +730,6 @@ body.no-select { user-select: none; -webkit-user-select: none; }
 /* 字体大小 */
 /* tmux 本地快速滚动的历史视图 */
 .lscroll { position: absolute; inset: 0; z-index: 20; display: flex; animation: ls-in .12s ease-out; }
-/* 手机上往下拖着等历史时，顶上露出来那块写「正在取历史…」(见 55-local-scroll.js 的 pullWhileLoading) */
-.ls-pullhint { position: absolute; left: 0; right: 0; top: 0; z-index: 4; display: flex; align-items: center; justify-content: center;
-  overflow: hidden; pointer-events: none; color: var(--muted); font-size: 12px; white-space: nowrap; }
 /* 历史视图盖上来时淡入：盖住第一帧排字的闪烁，和实时画面之间的字形差别也不那么突兀 */
 @keyframes ls-in { from { opacity: 0; } to { opacity: 1; } }
 #app.ls-open #deskBar, #app.ls-open #mobileBar { display: none; } /* 历史视图打开时输入栏让出地方 */

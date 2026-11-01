@@ -29,7 +29,7 @@
     if (s.noTmuxUntil > Date.now()) return true;
     s.scrollLoading = true;
     s.heldWheel = 1;
-    s.lsPull = s.lsRaw = 0;
+    s.lsPull = 0;
     send(s, { type: 'tmux-history', lines: LS_LINES, ...(own && { agent: agentIdOf(s) }) });
     s.lsTimer = setTimeout(() => onTmuxHistory(s, { ok: false, reason: 'timeout' }), 12000); // 慢的主机 (NAS 第一次开通道、扫进程要好几秒) 多等一会儿，服务端那边同样放宽到 10 秒
     return false;
@@ -85,23 +85,14 @@
   }
 
   // 手机：手指在终端上往下滑、正在等历史的时候，实时画面跟着手指往下拖 (以前一动不动，等历史来了再一下跳过去)；
-  // 打开时历史视图正好接在拖到的位置上 (见 openLocalScroll)。
-  // 上面露出来的那块还没有内容 (历史在路上)：带阻力 —— 开头跟手，越拖越拖不动，最多 1/4 屏 (以前跟手拖到半屏，
-  // 远的主机取历史慢，顶上空一大片)；空白里写「正在取历史…」
+  // 打开时历史视图正好接在拖到的位置上 (见 openLocalScroll)。拖得再远也最多拖半屏
   function pullWhileLoading(s, dy) {
-    s.lsRaw = Math.max(0, (s.lsRaw || 0) + dy);
-    const cap = s.box.clientHeight / 4;
-    s.lsPull = cap > 0 ? cap * (1 - 1 / (1 + s.lsRaw / cap)) : 0;
+    s.lsPull = Math.min(s.box.clientHeight / 2, Math.max(0, (s.lsPull || 0) + dy));
     s.term.element.style.translate = s.lsPull ? `0 ${s.lsPull}px` : ''; // 用 translate 不用 transform：锁住时的镜像画面靠 transform 缩放 (见 42-owner.js)，别冲掉
-    let h = s.box.querySelector(':scope > .ls-pullhint');
-    if (!h) { h = document.createElement('div'); h.className = 'ls-pullhint'; h.textContent = '正在取历史…'; s.box.appendChild(h); }
-    h.style.height = s.lsPull + 'px';
-    h.style.opacity = Math.min(1, Math.max(0, (s.lsPull - 16) / 24));
   }
   function resetPull(s) {
-    s.lsPull = s.lsRaw = 0;
+    s.lsPull = 0;
     if (s.term.element) s.term.element.style.translate = '';
-    s.box.querySelector(':scope > .ls-pullhint')?.remove();
   }
   // 手机：历史视图是手指在终端上滑开的，这一次滑动 (连同松手后的惯性) 剩下的部分跟着手指一像素一像素地滚
   // (以前换算成滚轮，一下 3 行地跳)；滑到最底再往上推就回到实时画面
