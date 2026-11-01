@@ -58,7 +58,7 @@
     s.scrollLoading = false;
     clearTimeout(s.lsTimer);
     if (m.ok && s.heldWheel <= 0) return resetPull(s); // 等结果期间又滚回来了 (最后是往下的)，不打开
-    if (m.ok && (m.own || historyMatchesScreen(s, m.data))) return openLocalScroll(s, m.data, Math.max(1, s.heldWheel)); // own：Agent 的会话记录，不是终端画面
+    if (m.ok && (m.own || historyMatchesScreen(s, m.data))) return openLocalScroll(s, m.data, Math.max(1, s.heldWheel), !!m.own); // own：Agent 的会话记录，不是终端画面
     resetPull(s);
     // 用不了：一段时间内不再尝试，把刚才拦下的滚轮补发给程序 (会进入 tmux 自己的复制模式，不弹提示)
     const reason = m.ok ? 'mismatch' : m.reason;
@@ -119,7 +119,7 @@
     requestAnimationFrame(step);
   }
 
-  function openLocalScroll(s, data, up) {
+  function openLocalScroll(s, data, up, own) {
     const theme = termTheme();
     const screen = s.box.querySelector('.xterm-screen');
     const lh = (screen && screen.clientHeight / s.term.rows) || 17;
@@ -140,11 +140,18 @@
       while (last > 0 && !b.getLine(b.viewportY + last)?.translateToString(true).trim()) last--;
       liveBottom = sr.top + (last + 1) * (sr.height / s.term.rows);
     }
-    // 手机上手指拖着实时画面等来的：上面量的已经是拖下去的位置，历史视图直接接上 —— 不再往回滚、不淡入 (淡入时底下的画面弹回去反而会闪)
+    // 手机上手指拖着实时画面等来的：上面量的已经是拖下去的位置，历史视图直接接上，不再往回滚。
+    // 终端画面的历史 (tmux / 常驻会话)：内容和实时画面一样，直接换上、不淡入 (淡入时底下的画面弹回去反而会闪)；
+    // Agent 自己的会话记录 (Grok，own)：排版和实时画面不一样，接不上 —— 照样淡入，底下的画面停在拖到的位置，淡入完了再放回去
     const pulled = s.lsPull > 0;
-    if (pulled) v.style.animation = 'none';
+    if (pulled && !own) v.style.animation = 'none';
     s.box.appendChild(v); // 先放进页面才量得出字宽
-    resetPull(s);
+    if (pulled && own) {
+      s.lsPull = 0;
+      const back = () => { if (!s.scrollLoading && !s.lsPull) resetPull(s); };
+      v.addEventListener('animationend', back, { once: true });
+      setTimeout(back, 300); // 动画没跑 (省电模式等) 也要放回去
+    } else resetPull(s);
     const text = data.replace(/\n+$/, '');
     const cw = screen && screen.clientWidth / s.term.cols; // 实时画面一格多宽
     const tc = s.term.cols || 80;
@@ -157,11 +164,20 @@
       pre.prepend(el);
       const d = ref.getBoundingClientRect().top - y0;
       if (d) pre.scrollTop += d;
+      selfTop = pre.scrollTop; // 这是补内容自己挪的 (含浏览器的 scroll anchoring)，不算在滑
     };
+    // 往上补一次就要整个重新排版 (手机上一次几十到上百毫秒)：正在滑的时候先不补 (以前一打开就一直补，头两三秒滑起来一卡一卡)，
+    // 停下来 250ms 再补；离已有内容的顶上不到一屏了才边滑边补。一次做几块合成一批放进去，只排一次版
+    let busyUntil = 0, selfTop = -1;
+    pre.addEventListener('scroll', () => { if (pre.scrollTop !== selfTop) busyUntil = performance.now() + 250; }, { passive: true });
     const fill = () => {
-      if (s.scrollView !== v) return;
-      for (const t0 = performance.now(); next >= 0 && performance.now() - t0 < 10;) addAbove(block(chunks[next--]));
-      if (next >= 0) setTimeout(fill);
+      if (s.scrollView !== v || next < 0) return;
+      const near = pre.scrollTop < pre.clientHeight;
+      if (!near && performance.now() < busyUntil) { setTimeout(fill, 100); return; }
+      const f = document.createDocumentFragment();
+      for (const t0 = performance.now(); next >= 0 && performance.now() - t0 < 8;) f.prepend(block(chunks[next--]));
+      addAbove(f);
+      if (next >= 0) setTimeout(fill, near ? 0 : 30);
     };
     // 复制面板要整段历史：剩下的一次补完
     v.lsRest = () => {
