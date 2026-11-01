@@ -86,8 +86,10 @@
 
   // 手机：手指在终端上往下滑、正在等历史的时候，画面不动，只记下手指滑了多远；历史来了再用很快的动画补上这段 (见 openLocalScroll)。
   // 试过等的时候把实时画面跟着手指往下拖 (v1.84.24~30)：上面露出来的那块还没有内容，远的主机取历史慢，顶上空一大片，用户不要
+  // 等的时候又往上推回去了 (推过了开始等时的位置)：不打开了，同滚轮滚回来 (heldWheel)
   function pullWhileLoading(s, dy) {
     s.lsPull = Math.min(s.box.clientHeight, Math.max(0, (s.lsPull || 0) + dy));
+    s.heldWheel = s.lsPull > 0 || dy > 0 ? Math.max(1, s.heldWheel) : 0;
   }
   function resetPull(s) {
     s.lsPull = 0;
@@ -138,10 +140,10 @@
       while (last > 0 && !b.getLine(b.viewportY + last)?.translateToString(true).trim()) last--;
       liveBottom = sr.top + (last + 1) * (sr.height / s.term.rows);
     }
-    // 手机上手指滑着等来的：等的时候手指滑了多远，打开后就往回补多远 (不是按滚轮格数)。
+    // 手机上手指滑着等来的：等的时候手指滑了多远，打开后就往回补多远 (见下面的 smoothBack)。
     // 终端画面的历史 (tmux / 常驻会话)：内容和实时画面一样、位置对齐，直接换上、不淡入；
     // Agent 自己的会话记录 (Grok，own)、锁住时缩小的镜像画面 (mirror，见 42-owner.js)：排版 / 大小和实时画面不一样，接不上，照样淡入
-    const pulled = s.lsPull, soft = own || s.mine === false;
+    const pulled = s.lsPull || 0, soft = own || s.mine === false;
     if (pulled && !soft) v.style.animation = 'none';
     s.box.appendChild(v); // 先放进页面才量得出字宽
     resetPull(s);
@@ -205,7 +207,8 @@
     // 历史不到一屏 (滚不到那么下面)：上面补一段空白，最后一行照样停在那个高度
     if (want < 0) pre.style.paddingTop = parseFloat(getComputedStyle(pre).paddingTop) - want + 'px';
     pre.scrollTop = Math.max(0, want);
-    smoothBack(pre, pulled || up * 3 * lh); // 和滚轮一样往回看几行 / 补上等的时候手指滑的距离
+    // 和滚轮一样往回看 up 下 (手指滑够 3 行才发出第一下滚轮，正好是这一下的距离) + 等的时候手指又滑的距离：内容回到手指底下
+    smoothBack(pre, pulled + up * 3 * lh);
     // 输入框藏起来了，焦点放这里：PageUp / PageDown / Home / 方向键直接滚历史。
     // 是搜索打开的 (光标在搜索框里) 就不抢：手机上输入法会弹出来又收起
     if (!document.activeElement?.closest?.('.tsearch')) pre.focus({ preventScroll: true });

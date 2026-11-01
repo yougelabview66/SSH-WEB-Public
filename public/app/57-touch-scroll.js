@@ -59,7 +59,7 @@
     // dy > 0: 手指下滑 = 往回看
     const scrollPx = (dy) => {
       if (s.scrollView) return touchScrollView(s, dy); // 历史视图已经打开：跟着手指滚 (见 55-local-scroll.js)
-      if (s.scrollLoading) return pullWhileLoading(s, dy); // 正在等历史：画面跟着手指往下拖
+      if (s.scrollLoading) return pullWhileLoading(s, dy); // 正在等历史：画面不动，记下手指滑了多远 (历史来了补上)
       if (Math.sign(dy) !== Math.sign(acc)) acc = 0;
       acc += dy;
       if (wheelMode()) {
