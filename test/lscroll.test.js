@@ -333,6 +333,8 @@ const WHEEL_UP = '\x1b[<64;';
   ok(!!mv && !got.includes(WHEEL_UP), '手机：在终端上往下滑 → 打开本地历史视图，滑动没有发给 tmux');
   ok(await m.isHidden('#mobileBar'), '手机：历史视图打开时输入栏 (连同按键栏) 藏起来');
   await m.screenshot({ path: shot('lscroll-mobile.png') });
+  // 前面的历史停下来才往上补 (滑动时不补)：等补完再量，免得量到一半又补进来一块
+  await waitFor(m, () => document.querySelector('.term.active .ls-body')?.textContent.startsWith('line 1 普通输出'), null, 8000).catch(() => {});
   // 在历史视图里长按复制：复制的是历史 (不是终端当前那一屏)，按住的那一行在复制面板里就在手指底下
   // 有折行的长行、有中文 (后备字体行更高)：按文字找到第 1501 行，把它滚到历史视图最上面
   const seen = await m.evaluate(() => {

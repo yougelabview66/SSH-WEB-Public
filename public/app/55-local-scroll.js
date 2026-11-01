@@ -88,11 +88,11 @@
   // 打开时历史视图正好接在拖到的位置上 (见 openLocalScroll)。拖得再远也最多拖半屏
   function pullWhileLoading(s, dy) {
     s.lsPull = Math.min(s.box.clientHeight / 2, Math.max(0, (s.lsPull || 0) + dy));
-    s.term.element.style.transform = s.lsPull ? `translateY(${s.lsPull}px)` : '';
+    s.term.element.style.translate = s.lsPull ? `0 ${s.lsPull}px` : ''; // 用 translate 不用 transform：锁住时的镜像画面靠 transform 缩放 (见 42-owner.js)，别冲掉
   }
   function resetPull(s) {
     s.lsPull = 0;
-    if (s.term.element) s.term.element.style.transform = '';
+    if (s.term.element) s.term.element.style.translate = '';
   }
   // 手机：历史视图是手指在终端上滑开的，这一次滑动 (连同松手后的惯性) 剩下的部分跟着手指一像素一像素地滚
   // (以前换算成滚轮，一下 3 行地跳)；滑到最底再往上推就回到实时画面
@@ -142,11 +142,12 @@
     }
     // 手机上手指拖着实时画面等来的：上面量的已经是拖下去的位置，历史视图直接接上，不再往回滚。
     // 终端画面的历史 (tmux / 常驻会话)：内容和实时画面一样，直接换上、不淡入 (淡入时底下的画面弹回去反而会闪)；
-    // Agent 自己的会话记录 (Grok，own)：排版和实时画面不一样，接不上 —— 照样淡入，底下的画面停在拖到的位置，淡入完了再放回去
-    const pulled = s.lsPull > 0;
-    if (pulled && !own) v.style.animation = 'none';
+    // Agent 自己的会话记录 (Grok，own)、锁住时缩小的镜像画面 (mirror，见 42-owner.js)：排版 / 大小和实时画面不一样，接不上 ——
+    // 照样淡入，底下的画面停在拖到的位置，淡入完了再放回去
+    const pulled = s.lsPull > 0, soft = own || s.mine === false;
+    if (pulled && !soft) v.style.animation = 'none';
     s.box.appendChild(v); // 先放进页面才量得出字宽
-    if (pulled && own) {
+    if (pulled && soft) {
       s.lsPull = 0;
       const back = () => { if (!s.scrollLoading && !s.lsPull) resetPull(s); };
       v.addEventListener('animationend', back, { once: true });
@@ -162,13 +163,15 @@
     const addAbove = (el) => {
       const ref = pre.firstChild, y0 = ref.getBoundingClientRect().top;
       pre.prepend(el);
-      const d = ref.getBoundingClientRect().top - y0;
-      if (d) pre.scrollTop += d;
+      // scrollTop 只认整 (设备) 像素：零头留着下次一起补，补很多次也不会一点点漂开
+      const want = pre.scrollTop + ref.getBoundingClientRect().top - y0 + frac;
+      pre.scrollTop = want;
+      frac = want - pre.scrollTop;
       selfTop = pre.scrollTop; // 这是补内容自己挪的 (含浏览器的 scroll anchoring)，不算在滑
     };
     // 往上补一次就要整个重新排版 (手机上一次几十到上百毫秒)：正在滑的时候先不补 (以前一打开就一直补，头两三秒滑起来一卡一卡)，
     // 停下来 250ms 再补；离已有内容的顶上不到一屏了才边滑边补。一次做几块合成一批放进去，只排一次版
-    let busyUntil = 0, selfTop = -1;
+    let busyUntil = 0, selfTop = -1, frac = 0;
     pre.addEventListener('scroll', () => { if (pre.scrollTop !== selfTop) busyUntil = performance.now() + 250; }, { passive: true });
     const fill = () => {
       if (s.scrollView !== v || next < 0) return;
