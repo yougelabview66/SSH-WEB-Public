@@ -263,8 +263,25 @@
   // 以前这里按按键栏按钮的高度 (约 32px) 设，手指够不准；高度统一交给 CSS 后不用再量，也不再需要 mkeyH
 
   // 历史视图打开时把输入栏 (电脑输入框 / 手机输入栏) 藏起来，多出来的地方给历史视图
+  // 手机：输入栏不是一下子消失 (以前 display: none，历史视图底下突然长出一截，看着卡一下)，而是 0.2 秒往下滑出屏幕，
+  // 历史视图的下边跟着往下伸 (输入栏高度收到 0、里面的东西贴着上边，被屏幕底边挡住 = 看着是整条往下滑走)。
+  // 关的时候直接出来：输入栏一点点长回来，终端每一帧都要跟着重排、给远端发改大小
+  let barAnim = null;
   function syncLsBars() {
-    $('#app').classList.toggle('ls-open', !!active?.scrollView);
+    const app = $('#app'), open = !!active?.scrollView, bar = $('#mobileBar');
+    if (barAnim) { barAnim.cancel(); barAnim = null; bar.style.overflow = bar.style.boxSizing = ''; }
+    if (open && !app.classList.contains('ls-open') && !bar.classList.contains('hidden') && bar.offsetHeight && bar.animate
+      && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      const cs = getComputedStyle(bar);
+      Object.assign(bar.style, { overflow: 'hidden', boxSizing: 'border-box' });
+      const a = barAnim = bar.animate([
+        { height: bar.offsetHeight + 'px', paddingBottom: cs.paddingBottom, borderTopWidth: cs.borderTopWidth },
+        { height: '0px', paddingBottom: '0px', borderTopWidth: '0px' },
+      ], { duration: 200, easing: 'cubic-bezier(.2,.6,.3,1)', fill: 'forwards' });
+      a.onfinish = () => { if (barAnim !== a) return; barAnim = null; app.classList.add('ls-open'); a.cancel(); bar.style.overflow = bar.style.boxSizing = ''; };
+      return;
+    }
+    app.classList.toggle('ls-open', open);
   }
 
   const atBottom = (el) => el.scrollTop + el.clientHeight >= el.scrollHeight - 2;
