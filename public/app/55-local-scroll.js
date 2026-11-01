@@ -158,7 +158,10 @@
     const tc = s.term.cols || 80;
     const { cols, chunks, block } = gridView(pre, text, tc, cw, theme);
     let next = chunks.length - 1;
-    for (let n = 0; next >= 0 && n < s.term.rows * 2 + up * 3; n += LS_CHUNK) pre.prepend(block(chunks[next--]));
+    // 先放最后几块，够两屏多：按每块实际的行数算 (遇到连在一起的框线行切块会往前挪，最后一块可能只有几行 ——
+    // 以前一块当 100 行算，放进去的不够一屏，下面又当成「历史不到一屏」在顶上补了一段空白，等后台补上来才被顶走)
+    const lineCount = (c) => (c.n ??= c.t.split('\n').length);
+    for (let n = 0; next >= 0 && n < s.term.rows * 2 + up * 3;) { n += lineCount(chunks[next]); pre.prepend(block(chunks[next--])); }
     // 补到上面时正在看的内容不动：浏览器自己会保持 (scroll anchoring)，已经滚到最顶上 / 不支持的浏览器手动补上多出来的高度
     const addAbove = (el) => {
       const ref = pre.firstChild, y0 = ref.getBoundingClientRect().top;
@@ -202,8 +205,11 @@
     // 以前直接滚到最底再跳 up 下 —— 底下的留白 (style.css 的 .ls-body) 露出来、手机上输入栏收起，整个画面往上 / 往下跳一截，看着割裂
     const pr = pre.getBoundingClientRect(), lastBlock = pre.lastElementChild;
     // 最后一行的底边 (在历史视图内容里的位置)：量最后一块的底边 —— 不到一屏时 scrollHeight 是画面的高度，不是内容的
-    const end = lastBlock ? lastBlock.getBoundingClientRect().bottom - pr.top - pre.clientTop + pre.scrollTop : pre.scrollHeight;
-    const want = liveBottom == null ? end - pre.clientHeight : end - (liveBottom - pr.top - pre.clientTop);
+    const endAt = () => lastBlock ? lastBlock.getBoundingClientRect().bottom - pr.top - pre.clientTop + pre.scrollTop : pre.scrollHeight;
+    const wantAt = () => liveBottom == null ? endAt() - pre.clientHeight : endAt() - (liveBottom - pr.top - pre.clientTop);
+    let want = wantAt();
+    // 放进去的还不够把那个高度以上填满 (很宽的终端、折行少)：前面还有就先接着放，真的没有了才算历史不到一屏
+    while (want < 0 && next >= 0) { pre.prepend(block(chunks[next--])); want = wantAt(); }
     // 历史不到一屏 (滚不到那么下面)：上面补一段空白，最后一行照样停在那个高度
     if (want < 0) pre.style.paddingTop = parseFloat(getComputedStyle(pre).paddingTop) - want + 'px';
     pre.scrollTop = Math.max(0, want);
