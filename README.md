@@ -4,7 +4,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-A lightweight, self-hosted web SSH terminal built for running AI coding agents (Claude Code, Codex, Gemini …) on remote machines from any device. Runs in a single Docker container — ideal for a NAS. The interface is currently in Chinese.
+A lightweight, self-hosted web SSH terminal built for running AI coding agents (Claude Code, Codex, Grok …) on remote machines from any device. Runs in a single Docker container — ideal for a NAS. The interface is currently in Chinese.
 
 <p align="center">
   <img src="docs/images/desktop.png" alt="Desktop: tabs, agent status card and project side bar" width="100%">
@@ -34,7 +34,7 @@ Most web SSH clients are a terminal in a browser tab: close the tab and the sess
 
 ## Use cases
 
-- **Run Claude Code (or Codex, Gemini …) on a home server, NAS or cloud VM** and keep an eye on it from your phone — get notified when it finishes or needs approval, answer, and put the phone away.
+- **Run Claude Code (or Codex, Grok …) on a home server, NAS or cloud VM** and keep an eye on it from your phone — get notified when it finishes or needs approval, answer, and put the phone away.
 - **One dashboard for all your machines.** NAS, VPS, GPU box and the Windows PC in one tab bar, with a status card showing which ones are busy, done or waiting.
 - **Long-running jobs** such as model training, builds or backups: start them, close the browser, get a notification when they end.
 - **Reach your homelab from anywhere**, including a borrowed or locked-down computer with no SSH client, through HTTPS or a Cloudflare Tunnel.

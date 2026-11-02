@@ -142,11 +142,11 @@ run(async () => {
     const fake = path.join(home, 'fakeprofile');
     const runPs = (args, json) => execFileSync(pwsh, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ps1, ...args], { input: json, env: { ...process.env, USERPROFILE: fake, LC_SSHWEB: 'tab-9' } }).toString();
     const o1 = runPs([], '{"hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"echo \\"中文\\" && dir C:\\\\x"},"cwd":"D:\\\\proj"}');
-    const o2 = runPs(['gemini'], '{"hook_event_name":"AfterAgent","prompt_response":"全部完成"}');
+    const o2 = runPs(['antigravity', 'Stop'], '{"fullyIdle":true}');
     const lines = fs.readFileSync(path.join(fake, '.cache/ssh-web/hook.log'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
     ok(o1 === '' && lines[0].tabs === 'tab-9' && lines[0].command === 'echo "中文" && dir C:\\x' && lines[0].cwd === 'D:\\proj',
       'hook.ps1：不往外打印，中文 / 引号 / 反斜杠原样保留: ' + JSON.stringify(lines[0]));
-    ok(o2.trim() === '{}' && lines[1].agent === 'gemini' && lines[1].last_assistant_message === '全部完成', 'hook.ps1：Gemini 先回 {}');
+    ok(o2.trim() === '{"decision":""}' && lines[1].agent === 'antigravity' && lines[1].hook_event_name === 'Stop', 'hook.ps1：Antigravity 的 Stop 回 {"decision":""}，事件名从命令里来');
   } else console.log('  (本机没有 PowerShell，跳过 hook.ps1 实跑；设 SSHWEB_PWSH=路径 可以跑)');
 
   // ---- 卸载：hook.sh / hook.ps1 / watch.ps1 都删掉

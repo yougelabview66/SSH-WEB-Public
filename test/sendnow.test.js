@@ -1,6 +1,6 @@
 'use strict';
 // 按键栏「立即发送」(Claude Code 的 Ctrl+X Ctrl+S)：按钩子报的这个标签里在跑的 Agent 决定发不发 ——
-// 没收到过钩子事件 (不知道是什么)、Claude Code：发；别的 Agent (Gemini 的 Ctrl+X 开编辑器、Ctrl+S 切鼠标模式)、
+// 没收到过钩子事件 (不知道是什么)、Claude Code：发；别的 Agent (Ctrl+X / Ctrl+S 另有用处)、
 // Agent 已退出 (普通终端里 Ctrl+S 让画面卡住)：不发，提示一下
 const { Server } = require('ssh2');
 const { BASE, ok, wait, run, launch, devices, hostKey } = require('./helpers');
@@ -42,15 +42,15 @@ run(async () => {
   await emit({ agent: 'claude', hook_event_name: 'UserPromptSubmit', session_id: 'c1', prompt: '干活' });
   await press();
   ok(got === '\x18\x13', 'Claude Code：发');
-  await emit({ agent: 'gemini', hook_event_name: 'BeforeAgent', session_id: 'g1', prompt: '干活' });
+  await emit({ agent: 'codex', hook_event_name: 'UserPromptSubmit', session_id: 'g1', prompt: '干活' });
   await press();
   const t1 = await toast();
-  ok(got === '' && /只支持 Claude Code.*Gemini/.test(t1), 'Gemini：不发，提示只支持 Claude Code: ' + JSON.stringify([got, t1]));
+  ok(got === '' && /只支持 Claude Code.*Codex/.test(t1), 'Codex：不发，提示只支持 Claude Code: ' + JSON.stringify([got, t1]));
   // 输入框里有字：不发，字也留着 (不先把字发进终端)
   await m.fill('#mInput', 'abc'); await m.evaluate(() => document.getElementById('mInput').dispatchEvent(new Event('input')));
   await press();
   const kept = await m.evaluate(() => document.getElementById('mInput').value.replace(/​/g, ''));
-  ok(got === '' && kept === 'abc', 'Gemini 时输入框有字：不发，字留在输入框里: ' + JSON.stringify([got, kept]));
+  ok(got === '' && kept === 'abc', 'Codex 时输入框有字：不发，字留在输入框里: ' + JSON.stringify([got, kept]));
   await m.fill('#mInput', ''); await m.evaluate(() => document.getElementById('mInput').dispatchEvent(new Event('input')));
   await emit({ agent: 'claude', hook_event_name: 'SessionStart', session_id: 'c2', source: 'startup' });
   await emit({ agent: 'claude', hook_event_name: 'SessionEnd', session_id: 'c2' });

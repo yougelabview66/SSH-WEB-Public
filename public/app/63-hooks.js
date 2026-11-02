@@ -1,5 +1,5 @@
   // ------------------------------------------------------------ Agent 钩子通知 (服务端见 lib/hooks.js、lib/session/hooks.js)
-  // 「⋯ 更多」里打开：给当前标签的主机按 Agent 安装 / 卸载钩子 (Claude Code / Grok / Codex / Gemini CLI / Antigravity / OpenCode)。
+  // 「⋯ 更多」里打开：给当前标签的主机按 Agent 安装 / 卸载钩子 (Claude Code / Grok / Codex / Antigravity / OpenCode)。
   // 装上后状态更准、推送写得出具体内容，Claude Code 要权限时安卓通知上能直接「允许 / 拒绝」
   let hooksEl = null;
 
@@ -23,7 +23,6 @@
     claude: '要权限时安卓通知上能直接「允许 / 拒绝」',
     grok: '同时在 ~/.grok/pager.toml 设 alt_screen = "never"：照样填满屏幕，聊过的内容进终端历史，历史视图完整',
     codex: '装好后要在 Codex 里输入 /hooks 批准一次才生效',
-    gemini: '会先回 {} 给 Gemini（它要求的）',
     antigravity: '用工具前回「ask」：照你自己的权限设置问你，不会自动允许',
     opencode: '装的是插件（plugins 目录里的 sshweb-status.js）',
   };

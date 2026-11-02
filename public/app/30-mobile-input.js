@@ -338,7 +338,7 @@
     }
     const k = b.dataset.k;
     // 立即发送 (Claude Code 的 Ctrl+X Ctrl+S)：钩子说这个标签里是不认这两个键的 Agent (见 09-agents.js 的 sendNow)、或 Agent 已退出就不发 ——
-    // Gemini 的 Ctrl+X 打开外部编辑器、Ctrl+S 切鼠标模式；普通终端里 Ctrl+S 让画面卡住。不知道是什么 (没装钩子) 照旧发
+    // 别的 Agent 里 Ctrl+X / Ctrl+S 另有用处；普通终端里 Ctrl+S 让画面卡住。不知道是什么 (没装钩子) 照旧发
     const ag = active?.agent;
     if (k === 'sendnow' && ag && !agentDoes(active, 'sendNow')) {
       clearMods();

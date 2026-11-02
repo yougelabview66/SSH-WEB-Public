@@ -4,7 +4,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-轻量的自托管 Web SSH 终端，专为在远程主机上跑 AI 编程助手（Claude Code、Codex、Gemini 等）设计，手机、电脑都能用。一个 Docker 容器就能跑，适合部署在 NAS 上。
+轻量的自托管 Web SSH 终端，专为在远程主机上跑 AI 编程助手（Claude Code、Codex、Grok 等）设计，手机、电脑都能用。一个 Docker 容器就能跑，适合部署在 NAS 上。
 
 <p align="center">
   <img src="docs/images/desktop.png" alt="电脑：多标签、Agent 状态卡片、右边栏项目文件" width="100%">
@@ -34,7 +34,7 @@
 
 ## 使用场景
 
-- **在家里的服务器、NAS 或云主机上跑 Claude Code（或 Codex、Gemini 等）**，用手机盯着：做完或要确认时收到通知，回复一下就可以放下手机。
+- **在家里的服务器、NAS 或云主机上跑 Claude Code（或 Codex、Grok 等）**，用手机盯着：做完或要确认时收到通知，回复一下就可以放下手机。
 - **所有机器一个面板**：NAS、VPS、GPU 服务器、Windows 电脑都在一排标签里，状态卡片一眼看出哪台在忙、做完了、在等你。
 - **长时间任务**：模型训练、编译、备份，启动后关掉浏览器，结束时收到通知。
 - **在任何地方访问家里的机器**：哪怕是借来的、不能装 SSH 客户端的电脑，通过 HTTPS 或 Cloudflare 隧道就能用。

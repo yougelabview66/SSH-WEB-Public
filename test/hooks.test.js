@@ -1,5 +1,5 @@
 'use strict';
-// Agent 钩子通知 (Claude Code / Grok / Codex / Gemini / Antigravity / OpenCode)：钩子脚本 (sh) 把事件写成一行 JSON；在网页上安装 / 卸载 (原来的设置和自己的钩子都保留、有备份、
+// Agent 钩子通知 (Claude Code / Grok / Codex / Antigravity / OpenCode)：钩子脚本 (sh) 把事件写成一行 JSON；在网页上安装 / 卸载 (原来的设置和自己的钩子都保留、有备份、
 // 格式不对不动)；事件按标签交给会话 —— 状态以钩子为准，推送写具体内容，要权限时通知带「允许 / 拒绝」；
 // 点了只在还是那一次、确认框还在时才发按键 (tmux 里直接发给事件所在的 pane)
 // @env PUSH_ALLOW_ANY_ENDPOINT=true NODE_TLS_REJECT_UNAUTHORIZED=0
@@ -127,8 +127,6 @@ run(async () => {
   ok(o === '' && l.agent === 'grok' && l.hook_event_name === 'PreToolUse' && l.tool_name === 'run_command' && l.command === 'ls -la', 'Grok：驼峰写法的字段 (hookEventName / toolName) 也认得出，不往外打印: ' + JSON.stringify(l));
   o = runA(['codex'], '{"hook_event_name":"PostToolUse","tool_name":"Bash","agent_id":"child-1"}');
   ok(o === '' && lastLine().agent === 'codex' && lastLine().child === true, 'Codex：子 Agent 的事件标上 child (不算主会话的状态)');
-  o = runA(['gemini'], '{"hook_event_name":"AfterAgent","prompt_response":"全部完成"}');
-  ok(o === '{}\n' && lastLine().last_assistant_message === '全部完成', 'Gemini：先回 {} (它要求的)，回复 prompt_response 当成最后的回复');
   o = runA(['antigravity', 'PreToolUse'], '{"toolCall":{"name":"run_command","args":{"CommandLine":"make"}}}');
   l = lastLine();
   ok(o === '{"decision":"ask"}\n' && l.hook_event_name === 'PreToolUse' && l.tool_name === 'run_command' && l.command === 'make', 'Antigravity：用工具前回 {"decision":"ask"} (不回当成拒绝)，事件名从命令参数来: ' + JSON.stringify(l));
@@ -220,19 +218,19 @@ run(async () => {
   const codexOrig = { hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo codex-mine' }] }] } };
   fs.writeFileSync(hf('.codex/hooks.json'), JSON.stringify(codexOrig));
   fs.mkdirSync(hf('.gemini/config'), { recursive: true });
-  const gemOrig = { theme: 'Default', hooks: { AfterAgent: [{ hooks: [{ type: 'command', command: 'echo gem-mine' }] }] } };
+  const gemOrig = { theme: 'Default' }; // Gemini CLI 已去掉：它的 settings.json 不再碰
   fs.writeFileSync(hf('.gemini/settings.json'), JSON.stringify(gemOrig));
   const agyOrig = { mine: { Stop: [{ type: 'command', command: 'echo agy-mine' }] } };
   fs.writeFileSync(hf('.gemini/config/hooks.json'), JSON.stringify(agyOrig));
   await p.keyboard.press('Escape'); await wait(200);
   await p.click('#btnMore'); await p.click('#btnHooks'); await waitRow('grok', /未安装/);
   const rowsInfo = await p.evaluate(() => [...document.querySelectorAll('.hooksp .hk-row')].map((r) => [r.dataset.agent, !!r.querySelector('.hk-tag'), r.classList.contains('absent')]));
-  ok(rowsInfo.length === 6 && rowsInfo[0][0] === 'claude' && rowsInfo.every(([id, tag]) => tag === !['claude', 'grok'].includes(id))
+  ok(rowsInfo.length === 5 && !rowsInfo.some(([id]) => id === 'gemini') && rowsInfo[0][0] === 'claude' && rowsInfo.every(([id, tag]) => tag === !['claude', 'grok'].includes(id))
     && rowsInfo.find(([id]) => id === 'opencode')[2] && !rowsInfo.find(([id]) => id === 'grok')[2],
-  '面板：6 个 Agent 各一行，Claude Code 在第一个，除了实测过的 Claude Code 和 Grok 都标「未实测」，主机上没找到的变淡排后面: ' + JSON.stringify(rowsInfo));
+  '面板：5 个 Agent 各一行 (没有 Gemini CLI)，Claude Code 在第一个，除了实测过的 Claude Code 和 Grok 都标「未实测」，主机上没找到的变淡排后面: ' + JSON.stringify(rowsInfo));
   await p.screenshot({ path: shot('hooks-agents.png') });
-  for (const id of ['grok', 'codex', 'gemini', 'antigravity', 'opencode']) { await p.click(R(id) + ' [data-a=install]'); await waitRow(id, /已安装/); }
-  ok((await Promise.all(['grok', 'codex', 'gemini', 'antigravity', 'opencode'].map(rowState))).every((t) => t === '✅ 已安装'), '每个 Agent 点「安装」后都显示已安装');
+  for (const id of ['grok', 'codex', 'antigravity', 'opencode']) { await p.click(R(id) + ' [data-a=install]'); await waitRow(id, /已安装/); }
+  ok((await Promise.all(['grok', 'codex', 'antigravity', 'opencode'].map(rowState))).every((t) => t === '✅ 已安装'), '每个 Agent 点「安装」后都显示已安装');
   const cmdHas = (g, want) => (g.hooks ? g.hooks : [g]).some((h) => h.command === want);
   const grok = JSON.parse(fs.readFileSync(hf('.grok/hooks/sshweb-status.json'), 'utf8'));
   ok(Object.keys(grok.hooks).length === 10 && grok.hooks.PreToolUse[0].matcher === '.*' && grok.hooks.Notification.every((g) => cmdHas(g, 'sh "$HOME/.ssh-web/hook.sh" grok')),
@@ -244,10 +242,7 @@ run(async () => {
   ok(Object.keys(codex).join() === 'hooks' && codex.hooks.Stop.some((g) => cmdHas(g, 'echo codex-mine')) && codex.hooks.Interrupt[0].hooks[0].timeout === 3
     && codex.hooks.PermissionRequest.some((g) => cmdHas(g, 'sh "$HOME/.ssh-web/hook.sh" codex')) && fs.existsSync(hf('.codex/hooks.json.bak-sshweb')),
   'Codex：合并进 ~/.codex/hooks.json (自己的钩子还在、顶层只有 hooks)，Interrupt 超时 3 秒，先备份');
-  const gem = JSON.parse(fs.readFileSync(hf('.gemini/settings.json'), 'utf8'));
-  ok(gem.theme === 'Default' && gem.hooks.AfterAgent.some((g) => cmdHas(g, 'echo gem-mine')) && gem.hooks.BeforeTool[0].hooks[0].timeout === 10000
-    && ['BeforeAgent', 'AfterAgent', 'BeforeTool', 'AfterTool', 'Notification'].every((e) => gem.hooks[e].some((g) => cmdHas(g, 'sh "$HOME/.ssh-web/hook.sh" gemini'))),
-  'Gemini：合并进 ~/.gemini/settings.json，原来的设置还在，超时按毫秒写 10000');
+  ok(fs.readFileSync(hf('.gemini/settings.json'), 'utf8') === JSON.stringify(gemOrig), '装 Antigravity 不碰 ~/.gemini/settings.json (Gemini CLI 已去掉)');
   const agy = JSON.parse(fs.readFileSync(hf('.gemini/config/hooks.json'), 'utf8'));
   const b = agy['sshweb-status'];
   ok(JSON.stringify(agy.mine) === JSON.stringify(agyOrig.mine) && b.Stop[0].command === 'sh "$HOME/.ssh-web/hook.sh" antigravity Stop' && b.Stop[0].type === 'command'
@@ -272,7 +267,7 @@ run(async () => {
   const crlf = tomlSet('[ui]\r\nx = 1\r\n', T);
   ok(crlf.split('\n').every((l, i, a) => i === a.length - 1 || l.endsWith('\r')) && tomlUnset(crlf) === '[ui]\r\nx = 1\r\n', 'Windows 的 \\r\\n 换行照原样，卸载后恢复原样');
   ok(tomlUnset('[ui]\n') === null, '没有加过的：卸载不动');
-  for (const id of ['codex', 'gemini', 'antigravity', 'opencode']) { await p.click(R(id) + ' [data-a=uninstall]'); await waitRow(id, /^未安装/); }
+  for (const id of ['codex', 'antigravity', 'opencode']) { await p.click(R(id) + ' [data-a=uninstall]'); await waitRow(id, /^未安装/); }
   ok(JSON.stringify(JSON.parse(fs.readFileSync(hf('.codex/hooks.json'), 'utf8'))) === JSON.stringify(codexOrig)
     && JSON.stringify(JSON.parse(fs.readFileSync(hf('.gemini/settings.json'), 'utf8'))) === JSON.stringify(gemOrig)
     && JSON.stringify(JSON.parse(fs.readFileSync(hf('.gemini/config/hooks.json'), 'utf8'))) === JSON.stringify(agyOrig)
@@ -459,9 +454,9 @@ run(async () => {
   ok(r.status === 409, '别的 Agent 的确认不能从通知上回答');
   emit({ agent: 'antigravity', hook_event_name: 'Stop', busy: true }); await wait(500);
   ok(lastState() === '运行中', 'Antigravity 步骤之间的 Stop：还是运行中');
-  emit({ agent: 'gemini', hook_event_name: 'AfterAgent', last_assistant_message: 'Gemini 做完了这件事' });
+  emit({ agent: 'antigravity', hook_event_name: 'Stop', last_assistant_message: 'Antigravity 做完了这件事' });
   await until(() => lastPush()?.title === 'HK2-1 · 完成', 5000);
-  ok(lastState() === '完成' && lastPush().body === 'Gemini · 做完了：Gemini 做完了这件事' && lastDetail() === 'Gemini · 做完了：Gemini 做完了这件事', 'Gemini 做完 (AfterAgent)：完成，推送和状态都写上 Gemini 和回复');
+  ok(lastState() === '完成' && lastPush().body === 'Antigravity · 做完了：Antigravity 做完了这件事' && lastDetail() === 'Antigravity · 做完了：Antigravity 做完了这件事', 'Antigravity 真的做完 (Stop)：完成，推送和状态都写上 Antigravity 和回复');
   ws.send(JSON.stringify({ type: 'data', data: 'b' })); await wait(500);
   emit({ agent: 'codex', hook_event_name: 'UserPromptSubmit', prompt: '再来' }); await wait(300);
   emit({ agent: 'codex', hook_event_name: 'Interrupt' }); await wait(500);

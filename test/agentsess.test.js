@@ -1,5 +1,5 @@
 'use strict';
-// Agent 会话历史：「⋯ 更多 → 会话历史」列出目标主机上 Claude Code / Grok / Codex / Gemini / OpenCode 以前的会话 (标题、第一句话、目录、时间)，
+// Agent 会话历史：「⋯ 更多 → 会话历史」列出目标主机上 Claude Code / Grok / Codex / OpenCode 以前的会话 (标题、第一句话、目录、时间)，
 // 打字筛选、回车搜全部内容，「继续」在当前终端执行恢复命令 (cd 到原来的目录 && claude --resume <id>)，「复制」复制命令。
 // 模拟的 SSH 服务器收到命令就在本机用 sh 真的跑 (HOME 指向放着各家会话文件的临时目录)，测的是真的脚本
 const fs = require('fs');
@@ -45,9 +45,6 @@ put('.codex/sessions/2026/10/20/rollout-2026-10-20T10-00-00-0199b3c4-aaaa-bbbb-c
   J({ type: 'event_msg', payload: { type: 'user_message', message: 'Codex 帮我写测试' } }),
 ].join('\n') + '\n', 40);
 put('.codex/session_index.jsonl', J({ id: '0199b3c4-aaaa-bbbb-cccc-123456789abc', thread_name: 'Codex 写测试' }) + '\n', 40);
-// Gemini (格式化过的整个 JSON)
-put('.gemini/tmp/abc123/chats/session-2026-10-20T10-00-1a2b3c.json', JSON.stringify({ sessionId: 'gem-0001', projectHash: 'abc123', messages: [{ type: 'user', content: 'Gemini 你好' }, { type: 'gemini', content: '你好' }] }, null, 2), 50);
-put('.gemini/tmp/abc123/.project_root', '/srv/gem\n', 50);
 // OpenCode：子会话 (有 parentID) 不列
 put('.local/share/opencode/storage/session/proj1/ses_main1.json', J({ id: 'ses_main1', title: 'OpenCode 会话', directory: '/srv/oc', time: { created: 1, updated: 2 } }), 60);
 put('.local/share/opencode/storage/session/proj1/ses_kid1.json', J({ id: 'ses_kid1', parentID: 'ses_main1', title: '子会话', directory: '/srv/oc' }), 59);
@@ -99,7 +96,7 @@ run(async () => {
   ok(r.sessions.length === 1 && r.sessions[0].title === 'Codex 写测试' && r.sessions[0].prompt === 'Codex 帮我写测试' && r.sessions[0].cmd === "cd '/srv/c' && codex resume 0199b3c4-aaaa-bbbb-cccc-123456789abc",
     'Codex：id 和目录在第一行，起的名字在 session_index，第一句话是 user_message: ' + J(r.sessions[0]));
   r = await api('gemini');
-  ok(r.sessions.length === 1 && r.sessions[0].prompt === 'Gemini 你好' && r.sessions[0].cmd === "cd '/srv/gem' && gemini --resume gem-0001", 'Gemini：sessionId、第一句话、.project_root 里的目录: ' + J(r.sessions[0]));
+  ok(!!r.error, 'Gemini CLI 已去掉：当成不认识的 Agent');
   r = await api('opencode');
   ok(r.sessions.length === 1 && r.sessions[0].title === 'OpenCode 会话' && r.sessions[0].cmd === "cd '/srv/oc' && opencode --session ses_main1", 'OpenCode：标题和目录，子会话不列: ' + J(r.sessions));
   r = await api('nope');
