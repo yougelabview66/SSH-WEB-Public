@@ -42,8 +42,12 @@
   // 会话历史部件：返回 { el, focus }。done = 点了「继续」以后关掉外面的面板
   function agentSessionsView(s, done) {
     const el = document.createElement('div');
-    let agent = (() => { try { return localStorage.getItem('sshweb.asAgent') || 'claude'; } catch { return 'claude'; } })();
-    if (!AS_AGENTS.some(([id]) => id === agent)) agent = 'claude';
+    // 打开时先切到这个标签里正在跑的 Agent (屏幕上认得出的、钩子报的，见 09-agents.js 的 agentIdOf)；没在跑 Agent 才用上次点的选项卡。
+    // 自动切过去的不记：记住的只是你自己点的
+    const has = (id) => AS_AGENTS.some(([x]) => x === id);
+    const cur = agentIdOf(s);
+    let agent = has(cur) ? cur : (() => { try { return localStorage.getItem('sshweb.asAgent') || 'claude'; } catch { return 'claude'; } })();
+    if (!has(agent)) agent = 'claude';
     let items = [], q = '', seq = 0;
     el.className = 'as-view';
     el.innerHTML = `<div class="as-tabs">${AS_AGENTS.map(([id, n]) => `<button type="button" data-agent="${id}">${n}</button>`).join('')}</div>

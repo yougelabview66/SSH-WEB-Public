@@ -116,12 +116,13 @@ put('.pi/agent/sessions/--srv-pi2--/2026-11-01T01-00-00-000Z_02b2c3d4-0000-4000-
 ].join('\n') + '\n', 49);
 
 let got = '';
+let shellSt = null; // 模拟主机的终端：往屏幕上写字 (假装里面跑着某个 Agent)
 new Server({ hostKeys: [hostKey()] }, (c) => {
   c.on('authentication', (ctx) => ctx.accept());
   c.on('ready', () => c.on('session', (acc) => {
     const s = acc();
     s.on('pty', (a) => a()); s.on('window-change', (a) => a && a());
-    s.on('shell', (a) => { const st = a(); st.write('$ '); st.on('data', (d) => { got += d; }); });
+    s.on('shell', (a) => { const st = a(); shellSt = st; st.write('$ '); st.on('data', (d) => { got += d; }); });
     s.on('exec', (a, r, info) => {
       const ch = a();
       if (info.command.includes('hook.log') || info.command === 'sh') return; // 读钩子事件、常驻通道：不管
@@ -228,6 +229,15 @@ run(async () => {
   ok(!(await p.$('.agentsp')), 'Esc 关掉');
   await p.click('#btnMore'); await p.click('#btnSessions'); await wait(1500);
   ok(await p.evaluate(() => document.querySelector('.agentsp .as-tabs .on')?.dataset.agent) === 'grok', '再打开：还是上次选的 Grok');
+  // 标签里正在跑 Agent：打开时先切到它的选项卡 (屏幕最下面是 OpenCode 的「ctrl+p commands」)；自动切的不记，Agent 退出后又是上次点的
+  await p.keyboard.press('Escape'); await wait(200);
+  shellSt.write('\x1b[2J\x1b[H┃ 问点什么\x1b[999;1H  ctrl+p commands'); await wait(800);
+  await p.click('#btnMore'); await p.click('#btnSessions'); await wait(1500);
+  ok(await p.evaluate(() => document.querySelector('.agentsp .as-tabs .on')?.dataset.agent) === 'opencode', '标签里在跑 OpenCode：打开会话历史先切到 OpenCode');
+  await p.keyboard.press('Escape'); await wait(200);
+  shellSt.write('\x1b[2J\x1b[H$ '); await wait(800);
+  await p.click('#btnMore'); await p.click('#btnSessions'); await wait(1500);
+  ok(await p.evaluate(() => document.querySelector('.agentsp .as-tabs .on')?.dataset.agent) === 'grok', 'OpenCode 退出了：又是上次自己点的 Grok (自动切的没记住)');
   // 再打开：先显示上次读到的列表 (接口故意慢 1.5 秒)，后台刷新
   await p.keyboard.press('Escape'); await wait(200);
   await p.route('**/api/agent-sessions', async (rt) => { await new Promise((r) => setTimeout(r, 1500)); rt.continue(); });
