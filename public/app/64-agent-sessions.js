@@ -4,7 +4,7 @@
   // 打字筛选列出来的 (标题、第一句话、目录)，回车或点「搜索」在全部会话内容里搜；「继续」在当前终端执行恢复命令，「复制」复制这条命令；
 // 「删除」点两下：服务端先查有没有 Agent 在用 (钩子报的、主机上的进程、文件刚写过)，在用就问要不要强制，会话文件移到主机的 ~/.ssh-web/trash/
   let asEl = null;
-  const AS_AGENTS = [['claude', 'Claude'], ['grok', 'Grok'], ['codex', 'Codex'], ['antigravity', 'Antigravity'], ['opencode', 'OpenCode'], ['pi', 'pi']];
+  const AS_AGENTS = [['claude', 'Claude'], ['grok', 'Grok'], ['codex', 'Codex'], ['antigravity', 'Antigravity'], ['opencode', 'OpenCode'], ['pi', 'Pi']];
   // 上次读到的会话列表 (主机 + Agent → { items, info })：再打开时先显示它，后台再刷新
   const asCache = new Map();
 

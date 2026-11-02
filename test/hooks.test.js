@@ -295,7 +295,7 @@ run(async () => {
   dialogs.length = 0;
   for (const id of ['grok', 'codex', 'antigravity', 'opencode', 'pi']) { await p.click(R(id) + ' [data-a=install]'); await waitRow(id, /已安装/); }
   ok((await Promise.all(['grok', 'codex', 'antigravity', 'opencode', 'pi'].map(rowState))).every((t) => t === '✅ 已安装'), '每个 Agent 点「安装」后都显示已安装');
-  const piAsk = dialogs.find((m) => m.includes('pi 的钩子')) || '', codexAsk = dialogs.find((m) => m.includes('Codex 的钩子')) || '';
+  const piAsk = dialogs.find((m) => m.includes('Pi 的钩子')) || '', codexAsk = dialogs.find((m) => m.includes('Codex 的钩子')) || '';
   ok(piAsk.includes('settings.json 里设 "tuiMode": "regular"') && !piAsk.includes('bak-sshweb') && codexAsk.includes('[tui] 里设 alternate_screen = "never"') && codexAsk.includes('bak-sshweb')
     && /已设 "tuiMode": "regular"/.test(await p.textContent('.hooksp .hk-msg')),
   '确认框里写出顺带改的配置、会不会备份 (服务端给的，网页上不按 Agent 写死): ' + JSON.stringify([piAsk, codexAsk]));
