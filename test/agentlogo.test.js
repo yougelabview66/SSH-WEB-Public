@@ -34,5 +34,43 @@ const oc = require('../lib/agents/opencode');
   ok(cmds.join('|') === 'opencode session list --format json -n 30|opencode export ses_other', '对话号不像样不拼进命令；目录对不上用最近的: ' + JSON.stringify(cmds));
   const bad = await oc.history.read({ sid: '', cwd: '', exec: async () => '[]', win: true }).then(() => 'ok', (e) => e.message);
   ok(bad === '没有对话', '一个对话都没有算失败 (网页把滚轮交回 OpenCode): ' + bad);
+
+  // Windows 主机优先 SFTP 拷数据库到服务器上读 (不启动 opencode 命令，快)：主库没变不重拷，刚聊的在 -wal 里每次都拷
+  const os = require('os');
+  const { DatabaseSync } = require('node:sqlite');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sshweb-ocwin-'));
+  const dbf = path.join(home, '.local/share/opencode/opencode.db');
+  fs.mkdirSync(path.dirname(dbf), { recursive: true });
+  const db = new DatabaseSync(dbf);
+  db.exec(`pragma journal_mode=wal; pragma wal_autocheckpoint=0;
+    create table session (id text primary key, parent_id text, directory text, title text, time_updated integer, time_archived integer);
+    create table message (id text primary key, session_id text, time_created integer, data text);
+    create table part (id text primary key, message_id text, session_id text, time_created integer, data text);`);
+  const add = (sid, dir, t, mid, role, text) => {
+    db.prepare('insert or replace into session values (?,?,?,?,?,null)').run(sid, null, dir, 't', t);
+    db.prepare('insert into message values (?,?,?,?)').run(mid, sid, t, JSON.stringify({ role }));
+    db.prepare('insert into part values (?,?,?,?,?)').run(mid + 'p', mid, sid, t, JSON.stringify({ type: 'text', text }));
+  };
+  add('ses_a', 'C:\\Users\\Me', 1, 'm1', 'user', '数据库里的问题');
+  add('ses_b', 'D:\\other', 2, 'm2', 'user', '别的目录');
+  db.exec('pragma wal_checkpoint(truncate)');
+  const gets = [];
+  const sftp = { stat: (f, cb) => fs.stat(f, (e, st) => cb(e, st && { size: st.size, mtime: Math.floor(st.mtimeMs / 1000) })),
+    fastGet: (from, to, cb) => { gets.push(path.basename(from)); fs.copyFile(from, to, cb); } };
+  const noExec = async (c) => { throw new Error('不该启动 opencode：' + c); };
+  t = plain(await oc.history.read({ sftp, home, sid: '', cwd: 'c:/users/me', exec: noExec, win: true }));
+  ok(t.includes('数据库里的问题') && !t.includes('别的目录') && gets.join() === 'opencode.db,opencode.db-wal', 'Windows：拷数据库在服务器上读，按目录挑出对话，不启动 opencode: ' + JSON.stringify(gets));
+  add('ses_a', 'C:\\Users\\Me', 3, 'm3', 'assistant', '刚刚的回答'); // 只写进 -wal
+  gets.length = 0;
+  t = plain(await oc.history.read({ sftp, home, sid: 'ses_a', cwd: '', exec: noExec, win: true }));
+  ok(t.includes('数据库里的问题') && t.includes('刚刚的回答') && gets.join() === 'opencode.db-wal', '再读：主库没变不重拷，只拷 -wal，刚聊的也读得到: ' + JSON.stringify(gets));
+  t = plain(await oc.history.read({ sftp, home, sid: 'ses_a', cwd: '', exec: noExec, win: true }));
+  ok(t.includes('刚刚的回答'), '连着读几次都对 (查询用另一份拷贝，缓存的 -wal 没被并掉)');
+  db.close();
+  fs.rmSync(dbf); fs.rmSync(dbf + '-wal', { force: true }); fs.rmSync(dbf + '-shm', { force: true });
+  cmds.length = 0;
+  await oc.history.read({ sftp, home, sid: 'ses_known', cwd: '', exec, win: true });
+  ok(cmds.join('|') === 'opencode export ses_known', '没有数据库再用 opencode export: ' + JSON.stringify(cmds));
+  fs.rmSync(home, { recursive: true, force: true });
   process.exit();
 })().catch((e) => { console.error(e); process.exit(1); });
