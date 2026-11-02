@@ -287,9 +287,10 @@ run(async () => {
   await p.keyboard.press('Escape'); await wait(200);
   await p.click('#btnMore'); await p.click('#btnHooks'); await waitRow('grok', /未安装/);
   const rowsInfo = await p.evaluate(() => [...document.querySelectorAll('.hooksp .hk-row')].map((r) => [r.dataset.agent, !!r.querySelector('.hk-tag'), r.classList.contains('absent')]));
-  ok(rowsInfo.length === 6 && !rowsInfo.some(([id]) => id === 'gemini') && rowsInfo[0][0] === 'claude' && rowsInfo.every(([id, tag]) => tag === !['claude', 'grok', 'antigravity', 'opencode'].includes(id))
+  ok(rowsInfo.length === 6 && !rowsInfo.some(([id]) => id === 'gemini') && rowsInfo[0][0] === 'claude' && rowsInfo.every(([, tag]) => !tag)
     && rowsInfo.find(([id]) => id === 'opencode')[2] && !rowsInfo.find(([id]) => id === 'grok')[2],
-  '面板：6 个 Agent 各一行 (没有 Gemini CLI)，Claude Code 在第一个，除了实测过的 Claude Code、Grok、Antigravity、OpenCode 都标「未实测」，主机上没找到的变淡排后面: ' + JSON.stringify(rowsInfo));
+  '面板：6 个 Agent 各一行 (没有 Gemini CLI)，Claude Code 在第一个，都实测过了，没有「未实测」，主机上没找到的变淡排后面: ' + JSON.stringify(rowsInfo));
+  ok(await p.evaluate(() => document.querySelector('.hooksp .hk-untested').hidden) && !/未实测/.test(await p.innerText('.hooksp .hk-note')), '都实测过了：说明里不显示「标未实测的…」这句');
   await p.screenshot({ path: shot('hooks-agents.png') });
   dialogs.length = 0;
   for (const id of ['grok', 'codex', 'antigravity', 'opencode', 'pi']) { await p.click(R(id) + ' [data-a=install]'); await waitRow(id, /已安装/); }
@@ -557,7 +558,7 @@ run(async () => {
   ok(lastState() === '运行中', 'Antigravity 用工具前 (PreToolUse)：运行中');
   n0 = pushed.length;
   shellSt.write('\x1b[2J\x1b[HRequesting permission for:\r\n   echo 测试\r\nRun this command?\r\n> 1. Yes, run command\r\n  4. No, cancel\r\n');
-  await until(() => pushed.length > n0, 5000);
+  await until(() => pushed.length > n0 && lastState() === '待选择', 5000); // 推送和状态消息谁先到不一定
   ok(lastState() === '待选择' && lastPush().body === 'Antigravity · 要执行命令：echo 测试' && !lastPush().actions, 'Antigravity 屏幕上弹出确认框：待选择，推送写出命令，不带按钮: ' + JSON.stringify(lastPush()));
   shellSt.write('\x1b[2J\x1b[H测试\r\n'); await wait(1200);
   ok(lastState() === '运行中' && pushed.length === n0 + 1, 'Antigravity 确认框没了 (点过了)：回到运行中，不再推送');

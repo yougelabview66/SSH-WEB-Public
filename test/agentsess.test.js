@@ -222,7 +222,7 @@ run(async () => {
   await p.click('.agentsp .as-tabs [data-agent=grok]'); await wait(1500);
   ok(J(await titles()) === J(['Grok 修 bug']), '切到 Grok：列出 Grok 的会话');
   await p.click('.agentsp .as-tabs [data-agent=codex]'); await wait(1500);
-  ok(/未实测/.test(await p.textContent('.agentsp .as-info')), '没实测过的 Agent 标「未实测」');
+  ok(!/未实测/.test(await p.textContent('.agentsp .as-info')), '实测过的 Agent 不标「未实测」 (现在都实测过了)');
   await p.click('.agentsp .as-tabs [data-agent=grok]'); await wait(1000);
   await p.keyboard.press('Escape'); await wait(200);
   ok(!(await p.$('.agentsp')), 'Esc 关掉');

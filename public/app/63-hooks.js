@@ -34,8 +34,8 @@
       <div class="hint hk-note">装上后，Agent 开始干活、要权限、问问题、做完、出错时会直接告诉 SSH-WEB：主机状态更准，
         推送写得出具体内容（比如「要执行命令：npm test」「做完了：……」）。<br>
         会改这台主机上对应 Agent 的设置（原来的设置和你自己的钩子都保留，第一次安装前备份为 <code>…bak-sshweb</code>），
-        并写入 <code class="hk-sname">~/.ssh-web/hook.sh</code>。装好后新开的 Agent 才生效，已经开着的要退出重开。<br>
-        标「未实测」的还没在真的 Agent 上试过，有问题把 <code>~/.cache/ssh-web/hook.log</code> 发给我。</div>
+        并写入 <code class="hk-sname">~/.ssh-web/hook.sh</code>。装好后新开的 Agent 才生效，已经开着的要退出重开。<span class="hk-untested" hidden><br>
+        标「未实测」的还没在真的 Agent 上试过，有问题把 <code>~/.cache/ssh-web/hook.log</code> 发给我。</span></div>
       <div class="hk-rows"></div>
       <div class="hk-msg"></div>
     </div>`;
@@ -47,6 +47,7 @@
         const r = await api('POST', '/api/hooks/status', { sid: s.sid });
         if (hooksEl !== el) return;
         sname = r.win ? 'hook.ps1' : 'hook.sh';
+        $('.hk-untested', el).hidden = r.agents.every((a) => a.tested); // 都实测过了就不显示「标未实测的…」这句
         $('.hk-sname', el).textContent = `~/.ssh-web/${sname}`;
         scriptEl.textContent = !r.scriptOk ? '还没装钩子脚本' : r.outdated ? '钩子脚本有更新' : '钩子脚本已装好';
         // 主机上有的 Agent 排前面 (Claude Code 一直在第一个)
