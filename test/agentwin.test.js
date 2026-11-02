@@ -29,6 +29,12 @@ put(`.claude/projects/D--proj-x/${ID}.jsonl`, [
 ].join('\n') + '\n', 5);
 put('.grok/sessions/D%3A%5Cg/gk-01/summary.json', J({ info: { id: 'gk-01', cwd: 'D:\\g' }, generated_title: 'Grok 在 Windows' }), 9);
 put('.grok/sessions/D%3A%5Cg/gk-01/chat_history.jsonl', J({ type: 'user', content: '<user_query>Grok 你好</user_query>' }) + '\n', 9);
+// pi：第一行 session 给 id 和目录，名字是最后一条 session_info (在文件结尾读)
+put('.pi/agent/sessions/--D--pi--/2026-11-02T05-45-23-290Z_0aaa1111-0000-4000-8000-000000000001.jsonl', [
+  J({ type: 'session', version: 3, id: '0aaa1111-0000-4000-8000-000000000001', cwd: 'D:\\pi' }),
+  J({ type: 'message', id: 'a1', parentId: null, message: { role: 'user', content: [{ type: 'text', text: 'pi 在 Windows' }] } }),
+  J({ type: 'session_info', id: 'k1', parentId: 'a1', name: 'Windows 上的 pi' }),
+].join('\n') + '\n', 8);
 
 // shell：SSH 默认的命令行 (单独开通道执行命令时)；prompt：终端屏幕上的提示符 (终端里可能又进了别的 shell)
 function server(port, shell, prompt) {
@@ -97,6 +103,9 @@ run(async () => {
   ok(r.sessions.length === 0, '搜不到的词：没有结果');
   r = await api('AWC', 'grok');
   ok(r.sessions.length === 1 && r.sessions[0].title === 'Grok 在 Windows' && r.sessions[0].prompt === 'Grok 你好' && r.sessions[0].cmd === 'cd /d "D:\\g" && grok --resume gk-01', 'Grok 会话也读得到: ' + J(r.sessions[0]));
+  r = await api('AWC', 'pi');
+  ok(r.sessions.length === 1 && r.sessions[0].title === 'Windows 上的 pi' && r.sessions[0].prompt === 'pi 在 Windows' && r.sessions[0].cmd === 'cd /d "D:\\pi" && pi --session 0aaa1111-0000-4000-8000-000000000001',
+    'pi (SFTP)：名字、第一句话、目录，恢复命令按 cmd 写: ' + JSON.stringify(r.sessions));
   r = await api('AWPS', 'claude');
   ok(r.sessions[0]?.cmd === `cd 'D:\\proj x'; claude --resume ${ID}`, "PowerShell：恢复命令 cd 'D:\\目录'; claude --resume (PowerShell 5 没有 &&): " + r.sessions[0]?.cmd);
   r = await api('AWMIX', 'claude');

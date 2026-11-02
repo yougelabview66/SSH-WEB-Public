@@ -66,6 +66,21 @@ put(`${AGY}/history.jsonl`, [
 // OpenCode：子会话 (有 parentID) 不列
 put('.local/share/opencode/storage/session/proj1/ses_main1.json', J({ id: 'ses_main1', title: 'OpenCode 会话', directory: '/srv/oc', time: { created: 1, updated: 2 } }), 60);
 put('.local/share/opencode/storage/session/proj1/ses_kid1.json', J({ id: 'ses_kid1', parentID: 'ses_main1', title: '子会话', directory: '/srv/oc' }), 59);
+// pi：~/.pi/agent/sessions/--<目录>--/<时间>_<id>.jsonl；第一行 session 给 id 和目录，名字是最后一条 session_info (格式照 pi 1.4.0 真实文件)
+const PI = '.pi/agent/sessions/--srv-pi--';
+put(`${PI}/2026-11-02T05-45-23-290Z_01a19aca-7a59-7439-81e4-edc2763b9dde.jsonl`, [
+  J({ type: 'session', version: 3, id: '01a19aca-7a59-7439-81e4-edc2763b9dde', timestamp: '2026-11-02T05:45:23.290Z', cwd: '/srv/pi' }),
+  J({ type: 'model_change', id: '6bd306cb', parentId: null, provider: 'fake', modelId: 'fake-1' }),
+  J({ type: 'message', id: '20c3b1d0', parentId: '6bd306cb', message: { role: 'system', content: '', sections: { preamble: 'You are an expert coding assistant... {"role":"user"}' } } }),
+  J({ type: 'message', id: 'be695751', parentId: '20c3b1d0', message: { role: 'user', content: [{ type: 'text', text: 'pi 帮我打个招呼' }], timestamp: 1 } }),
+  J({ type: 'session_info', id: 'k1', parentId: 'be695751', name: '旧名字' }),
+  J({ type: 'session_info', id: 'k2', parentId: 'k1', name: '打招呼测试' }),
+].join('\n') + '\n', 48);
+// 第一句话特别长 (超过一行读的上限，JSON 截断了)、content 是字符串的旧写法
+put('.pi/agent/sessions/--srv-pi2--/2026-11-01T01-00-00-000Z_02b2c3d4-0000-4000-8000-000000000002.jsonl', [
+  J({ type: 'session', version: 3, id: '02b2c3d4-0000-4000-8000-000000000002', cwd: '/srv/pi2' }),
+  J({ type: 'message', id: 'a1', parentId: null, message: { role: 'user', content: '很长的需求\n' + '字'.repeat(30000) } }),
+].join('\n') + '\n', 49);
 
 let got = '';
 new Server({ hostKeys: [hostKey()] }, (c) => {
@@ -126,6 +141,11 @@ run(async () => {
   ok(!!r.error, 'Gemini CLI 已去掉：当成不认识的 Agent');
   r = await api('opencode');
   ok(r.sessions.length === 1 && r.sessions[0].title === 'OpenCode 会话' && r.sessions[0].cmd === "cd '/srv/oc' && opencode --session ses_main1", 'OpenCode：标题和目录，子会话不列: ' + J(r.sessions));
+  r = await api('pi');
+  ok(r.sessions.length === 2 && r.sessions[0].title === '打招呼测试' && r.sessions[0].prompt === 'pi 帮我打个招呼'
+    && r.sessions[0].cmd === "cd '/srv/pi' && pi --session 01a19aca-7a59-7439-81e4-edc2763b9dde"
+    && r.sessions[1].prompt.startsWith('很长的需求 字字') && r.sessions[1].cwd === '/srv/pi2' && r.sessions[1].title === '',
+  'pi：id 和目录在第一行，名字用最后一条 session_info，第一句话不会认成系统提示里的 "role":"user"，太长截断了也取得出来: ' + J(r.sessions.map((x) => [x.title, x.prompt.slice(0, 20), x.cwd, x.cmd])));
   r = await api('nope');
   ok(!!r.error, '不认识的 Agent：报错');
 

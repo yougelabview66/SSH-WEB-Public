@@ -1,5 +1,5 @@
 'use strict';
-// Agent 钩子通知 (Claude Code / Grok / Codex / Antigravity / OpenCode)：钩子脚本 (sh) 把事件写成一行 JSON；在网页上安装 / 卸载 (原来的设置和自己的钩子都保留、有备份、
+// Agent 钩子通知 (Claude Code / Grok / Codex / Antigravity / OpenCode / pi)：钩子脚本 (sh) 把事件写成一行 JSON；在网页上安装 / 卸载 (原来的设置和自己的钩子都保留、有备份、
 // 格式不对不动)；事件按标签交给会话 —— 状态以钩子为准，推送写具体内容，要权限时通知带「允许 / 拒绝」；
 // 点了只在还是那一次、确认框还在时才发按键 (tmux 里直接发给事件所在的 pane)
 // @env PUSH_ALLOW_ANY_ENDPOINT=true NODE_TLS_REJECT_UNAUTHORIZED=0
@@ -14,7 +14,7 @@ const WebSocket = require('ws');
 const { BASE, ok, wait, run, launch, shot, hostKey, addHost } = require('./helpers');
 // 等测试这边的条件成立 (最多 ms 毫秒)
 const until = async (fn, ms) => { for (const end = Date.now() + ms; !fn() && Date.now() < end;) await wait(100); };
-const { HOOK_SH, HOOK_EVENTS, OPENCODE_PLUGIN, tomlSet, tomlUnset, TOML_MARK } = require('../lib/hooks');
+const { HOOK_SH, HOOK_EVENTS, OPENCODE_PLUGIN, PI_EXTENSION, tomlSet, tomlUnset, TOML_MARK, jsonSet, jsonUnset } = require('../lib/hooks');
 
 const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sshweb-hk-')));
 const settingsF = path.join(home, '.claude', 'settings.json');
@@ -162,6 +162,46 @@ run(async () => {
   ok(oc.every((x) => x.agent === 'opencode' && x.tabs === 'tab-oc') && JSON.stringify(ocEv) === JSON.stringify(wantEv),
     'OpenCode 插件：开始干活 / 你说的话 / 用工具 / 要权限 / 问问题 / 做完 (带最后的回复) 都交给 hook.sh，子会话的不算，做完只报一次: ' + JSON.stringify(ocEv));
 
+  // pi 扩展：真的用 node 加载 (扩展是不带类型的 TS，就是 JS)，假装 pi 发事件，看交给 hook.sh 的是什么
+  const piExt = path.join(home, 'sshweb-status-pi.mjs'); fs.writeFileSync(piExt, PI_EXTENSION);
+  const n2 = fs.readFileSync(path.join(fakeHome, '.cache/ssh-web/hook.log'), 'utf8').trim().split('\n').length;
+  execFileSync(process.execPath, ['--input-type=module', '-e', `
+    const { default: ext } = await import(${JSON.stringify('file://' + piExt)});
+    const on = {};
+    ext({ on: (n, f) => { (on[n] ||= []).push(f); } });
+    const ctx = { sessionManager: { getSessionId: () => 'pi-sess-1' } };
+    const e = async (n, ev) => { for (const f of on[n] || []) await f(ev, ctx); };
+    await e('session_start', { reason: 'resume' });
+    await e('before_agent_start', { messageType: 'user', prompt: '修复登录页' });
+    await e('tool_call', { toolName: 'bash', toolCallId: 'c1', input: { command: 'npm test' } });
+    await e('tool_call', { toolName: 'bash', toolCallId: 'c1/1', parentToolCallId: 'c1', input: { command: 'nested' } });
+    await e('ui_prompt_start', { reason: 'ui_prompt', kind: 'confirm', title: '允许删除 dist？' });
+    await e('ui_prompt_end', { reason: 'ui_prompt', kind: 'confirm' });
+    await e('message_end', { message: { role: 'user', content: '不算' } });
+    await e('message_end', { message: { role: 'assistant', content: [{ type: 'text', text: '改好了' }], stopReason: 'stop' } });
+    await e('agent_end', { messages: [] });
+    await e('agent_settled', { aborted: false });
+    await e('agent_settled', { aborted: false });
+    await e('before_agent_start', { messageType: 'user', prompt: '再来' });
+    await e('message_end', { message: { role: 'assistant', content: [], stopReason: 'error', errorMessage: '额度用完了' } });
+    await e('agent_settled', { aborted: false });
+    await e('before_agent_start', { messageType: 'user', prompt: '第三次' });
+    await e('agent_settled', { aborted: true });
+    await e('session_shutdown', {});
+    await new Promise((r) => setTimeout(r, 1500));
+  `], { env: { HOME: fakeHome, PATH: process.env.PATH, LC_SSHWEB: 'tab-pi' } });
+  const pe = fs.readFileSync(path.join(fakeHome, '.cache/ssh-web/hook.log'), 'utf8').trim().split('\n').slice(n2).map((x) => JSON.parse(x));
+  const peEv = pe.map((x) => [x.hook_event_name, x.prompt || x.command || x.last_assistant_message || x.error || x.source || ''].join(':')).sort();
+  const peWant = ['SessionStart:resume', 'UserPromptSubmit:修复登录页', 'PreToolUse:npm test', 'PermissionRequest:允许删除 dist？', 'PostToolUse:', 'Stop:改好了',
+    'UserPromptSubmit:再来', 'StopFailure:额度用完了', 'UserPromptSubmit:第三次', 'Interrupt:', 'SessionEnd:'].sort();
+  ok(pe.every((x) => x.agent === 'pi' && x.tabs === 'tab-pi' && x.session_id === 'pi-sess-1') && JSON.stringify(peEv) === JSON.stringify(peWant),
+    'pi 扩展：开会话 (恢复的标 resume) / 你说的话 / 用工具 / 确认框 / 做完 (agent_settled，只报一次，带最后的回复) / 出错 / 中断 / 退出都交给 hook.sh，带对话号；工具里嵌套调的不算: ' + JSON.stringify(peEv));
+  const PJ = { key: 'tuiMode', value: 'regular' };
+  ok(JSON.stringify(jsonSet({ theme: 'dark' }, PJ)) === '{"theme":"dark","tuiMode":"regular"}' && jsonSet({ tuiMode: 'fullscreen' }, PJ) === null
+    && JSON.stringify(jsonUnset({ theme: 'dark', tuiMode: 'regular' }, PJ, true)) === '{"theme":"dark"}'
+    && jsonUnset({ tuiMode: 'fullscreen' }, PJ, true) === null && jsonUnset({ tuiMode: 'regular' }, PJ, false) === null,
+  'pi 的 settings.json：没有 tuiMode 才加；卸载只去掉加过、现在还是 regular 的 (后来自己改了、或者本来就有的不动)');
+
   // ---- 2. 网页上安装 / 卸载
   await addHost('HK', 2293);
   fs.mkdirSync(path.dirname(settingsF), { recursive: true });
@@ -224,15 +264,28 @@ run(async () => {
   fs.writeFileSync(hf('.gemini/settings.json'), JSON.stringify(gemOrig));
   const agyOrig = { mine: { Stop: [{ type: 'command', command: 'echo agy-mine' }] } };
   fs.writeFileSync(hf('.gemini/config/hooks.json'), JSON.stringify(agyOrig));
+  fs.mkdirSync(hf('.pi/agent'), { recursive: true });
+  const piOrig = { theme: 'dark', lastChangelogVersion: '1.4.0' };
+  fs.writeFileSync(hf('.pi/agent/settings.json'), JSON.stringify(piOrig));
   await p.keyboard.press('Escape'); await wait(200);
   await p.click('#btnMore'); await p.click('#btnHooks'); await waitRow('grok', /未安装/);
   const rowsInfo = await p.evaluate(() => [...document.querySelectorAll('.hooksp .hk-row')].map((r) => [r.dataset.agent, !!r.querySelector('.hk-tag'), r.classList.contains('absent')]));
-  ok(rowsInfo.length === 5 && !rowsInfo.some(([id]) => id === 'gemini') && rowsInfo[0][0] === 'claude' && rowsInfo.every(([id, tag]) => tag === !['claude', 'grok'].includes(id))
+  ok(rowsInfo.length === 6 && !rowsInfo.some(([id]) => id === 'gemini') && rowsInfo[0][0] === 'claude' && rowsInfo.every(([id, tag]) => tag === !['claude', 'grok'].includes(id))
     && rowsInfo.find(([id]) => id === 'opencode')[2] && !rowsInfo.find(([id]) => id === 'grok')[2],
-  '面板：5 个 Agent 各一行 (没有 Gemini CLI)，Claude Code 在第一个，除了实测过的 Claude Code 和 Grok 都标「未实测」，主机上没找到的变淡排后面: ' + JSON.stringify(rowsInfo));
+  '面板：6 个 Agent 各一行 (没有 Gemini CLI)，Claude Code 在第一个，除了实测过的 Claude Code 和 Grok 都标「未实测」，主机上没找到的变淡排后面: ' + JSON.stringify(rowsInfo));
   await p.screenshot({ path: shot('hooks-agents.png') });
-  for (const id of ['grok', 'codex', 'antigravity', 'opencode']) { await p.click(R(id) + ' [data-a=install]'); await waitRow(id, /已安装/); }
-  ok((await Promise.all(['grok', 'codex', 'antigravity', 'opencode'].map(rowState))).every((t) => t === '✅ 已安装'), '每个 Agent 点「安装」后都显示已安装');
+  dialogs.length = 0;
+  for (const id of ['grok', 'codex', 'antigravity', 'opencode', 'pi']) { await p.click(R(id) + ' [data-a=install]'); await waitRow(id, /已安装/); }
+  ok((await Promise.all(['grok', 'codex', 'antigravity', 'opencode', 'pi'].map(rowState))).every((t) => t === '✅ 已安装'), '每个 Agent 点「安装」后都显示已安装');
+  const piAsk = dialogs.find((m) => m.includes('pi 的钩子')) || '', codexAsk = dialogs.find((m) => m.includes('Codex 的钩子')) || '';
+  ok(piAsk.includes('settings.json 里设 "tuiMode": "regular"') && !piAsk.includes('bak-sshweb') && codexAsk.includes('[tui] 里设 alternate_screen = "never"') && codexAsk.includes('bak-sshweb')
+    && /已设 "tuiMode": "regular"/.test(await p.textContent('.hooksp .hk-msg')),
+  '确认框里写出顺带改的配置、会不会备份 (服务端给的，网页上不按 Agent 写死): ' + JSON.stringify([piAsk, codexAsk]));
+  ok(fs.readFileSync(hf('.pi/agent/extensions/sshweb-status.ts'), 'utf8') === PI_EXTENSION
+    && JSON.stringify(JSON.parse(fs.readFileSync(hf('.pi/agent/settings.json'), 'utf8'))) === JSON.stringify({ ...piOrig, tuiMode: 'regular' }) && fs.existsSync(hf('.ssh-web/pi-settings.json')),
+  'pi：扩展写进 ~/.pi/agent/extensions/sshweb-status.ts，settings.json 加上 "tuiMode": "regular" (原来的项还在)，~/.ssh-web 里记下是 SSH-WEB 加的');
+  const piRow = await p.textContent(R('pi') + ' .hk-tip');
+  ok(piRow.includes('sshweb-status.ts') && piRow.includes('tuiMode'), '面板上 pi 那一行写着装的扩展和顺带改的设置: ' + piRow);
   const cmdHas = (g, want) => (g.hooks ? g.hooks : [g]).some((h) => h.command === want);
   const grok = JSON.parse(fs.readFileSync(hf('.grok/hooks/sshweb-status.json'), 'utf8'));
   ok(Object.keys(grok.hooks).length === 10 && grok.hooks.PreToolUse[0].matcher === '.*' && grok.hooks.Notification.every((g) => cmdHas(g, 'sh "$HOME/.ssh-web/hook.sh" grok')),
@@ -275,6 +328,16 @@ run(async () => {
   const C = { table: 'tui', key: 'alternate_screen', value: '"never"' };
   ok(tomlSet('[tui]\nscreen_reader_detection_done = true\n', C) === `[tui]\nalternate_screen = "never"  ${TOML_MARK}\nscreen_reader_detection_done = true\n`
     && tomlSet('[tui]\nalternate_screen = "always"\n', C) === null, 'Codex 的 config.toml 已经有 [tui]：加在节里；自己写过 alternate_screen 不动');
+  // pi 自己写过 tuiMode：卸载后再装不动它，告诉你
+  await p.click(R('pi') + ' [data-a=uninstall]'); await waitRow('pi', /^未安装/);
+  ok(JSON.stringify(JSON.parse(fs.readFileSync(hf('.pi/agent/settings.json'), 'utf8'))) === JSON.stringify(piOrig) && !fs.existsSync(hf('.ssh-web/pi-settings.json'))
+    && !fs.existsSync(hf('.pi/agent/extensions/sshweb-status.ts')), '卸载 pi：删掉扩展，settings.json 去掉加的 tuiMode，回到原来的样子');
+  fs.writeFileSync(hf('.pi/agent/settings.json'), JSON.stringify({ ...piOrig, tuiMode: 'fullscreen' }));
+  await p.click(R('pi') + ' [data-a=install]'); await waitRow('pi', /已安装/);
+  ok(JSON.parse(fs.readFileSync(hf('.pi/agent/settings.json'), 'utf8')).tuiMode === 'fullscreen' && /你自己写过 tuiMode，没有改/.test(await p.textContent('.hooksp .hk-msg')),
+    'pi 的 settings.json 里自己写过 tuiMode：不改，说一声');
+  await p.click(R('pi') + ' [data-a=uninstall]'); await waitRow('pi', /^未安装/);
+  ok(JSON.parse(fs.readFileSync(hf('.pi/agent/settings.json'), 'utf8')).tuiMode === 'fullscreen', '自己写的 tuiMode：卸载也不动');
   for (const id of ['codex', 'antigravity', 'opencode']) { await p.click(R(id) + ' [data-a=uninstall]'); await waitRow(id, /^未安装/); }
   ok(JSON.stringify(JSON.parse(fs.readFileSync(hf('.codex/hooks.json'), 'utf8'))) === JSON.stringify(codexOrig)
     && fs.readFileSync(hf('.codex/config.toml'), 'utf8') === codexTomlOrig

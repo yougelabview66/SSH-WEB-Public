@@ -1,5 +1,5 @@
   // ------------------------------------------------------------ Agent 钩子通知 (服务端见 lib/hooks.js、lib/session/hooks.js)
-  // 「⋯ 更多」里打开：给当前标签的主机按 Agent 安装 / 卸载钩子 (Claude Code / Grok / Codex / Antigravity / OpenCode)。
+  // 「⋯ 更多」里打开：给当前标签的主机按 Agent 安装 / 卸载钩子 (Claude Code / Grok / Codex / Antigravity / OpenCode / pi)。
   // 装上后状态更准、推送写得出具体内容，Claude Code 要权限时安卓通知上能直接「允许 / 拒绝」
   let hooksEl = null;
 
@@ -18,20 +18,9 @@
     closeHooks();
   }
 
-  // 每个 Agent 装好后还要做的事 / 和 Claude Code 不一样的地方
-  const HOOK_TIPS = {
-    claude: '要权限时安卓通知上能直接「允许 / 拒绝」',
-    grok: '同时在 ~/.grok/pager.toml 设 alt_screen = "never"：照样填满屏幕，聊过的内容进终端历史，历史视图完整',
-    codex: '装好后要在 Codex 里输入 /hooks 批准一次才生效；同时在 ~/.codex/config.toml 设 alternate_screen = "never"：聊过的内容进终端历史，能进历史视图',
-    antigravity: '用工具前回「ask」：照你自己的权限设置问你，不会自动允许',
-    opencode: '装的是插件（plugins 目录里的 sshweb-status.js）',
-  };
-
-  // 装钩子时顺带改的 TOML 配置 (服务端见 lib/agents/ 里各自 hooks.toml)：不用备用屏幕，聊过的内容进终端历史
-  const HOOK_TOML = {
-    grok: '~/.grok/pager.toml 里设 alt_screen = "never"',
-    codex: '~/.codex/config.toml 的 [tui] 里设 alternate_screen = "never"',
-  };
+  // 各 Agent 的说明、装好后要做的事、顺带改的配置、会不会备份都由服务端给 (写在 lib/agents/ 里各自的 hooks 一节，见 lib/hooks.js 的 agentStatus)，
+  // 这里不按 Agent 写死：加 Agent 不用改这个文件
+  let hookInfo = {};
 
   async function openHooks(s) {
     closeHooks();
@@ -61,6 +50,7 @@
         $('.hk-sname', el).textContent = `~/.ssh-web/${sname}`;
         scriptEl.textContent = !r.scriptOk ? '还没装钩子脚本' : r.outdated ? '钩子脚本有更新' : '钩子脚本已装好';
         // 主机上有的 Agent 排前面 (Claude Code 一直在第一个)
+        hookInfo = Object.fromEntries(r.agents.map((a) => [a.id, a]));
         const list = [...r.agents].sort((a, b) => (b.id === 'claude') - (a.id === 'claude') || b.present - a.present);
         rows.innerHTML = list.map((a) => {
           const on = a.installed || a.partial;
@@ -70,7 +60,7 @@
           return `<div class="hk-row${a.present || on ? '' : ' absent'}" data-agent="${esc(a.id)}" data-file="${esc(a.file)}" data-name="${esc(a.name)}">
             <div class="hk-info"><div><b>${esc(a.name)}</b>${a.tested ? '' : '<span class="hk-tag">未实测</span>'}</div>
               <div class="hk-state">${esc(state)}</div>
-              <div class="hk-tip">${esc(a.file)}${HOOK_TIPS[a.id] ? ' · ' + esc(HOOK_TIPS[a.id]) : ''}</div></div>
+              <div class="hk-tip">${esc(a.file)}${a.tip ? ' · ' + esc(a.tip) : ''}</div></div>
             <div class="hk-btns">${on ? '<button type="button" data-a="uninstall">卸载</button>' : ''}
               <button type="button" data-a="install"${on ? '' : ' class="primary"'}>${on ? '重新安装' : '安装'}</button></div>
           </div>`;
@@ -82,9 +72,10 @@
     const run = async (what, row) => {
       if (busy) return;
       const { agent, file, name } = row.dataset;
+      const info = hookInfo[agent] || {};
       const ask = what === 'install'
-        ? `要在「${host}」上安装 ${name} 的钩子吗？\n会修改 ${file}${agent === 'opencode' || agent === 'grok' ? '' : '（第一次安装前备份为 .bak-sshweb）'}，并写入 ~/.ssh-web/${sname}。`
-          + (HOOK_TOML[agent] ? `\n同时在 ${HOOK_TOML[agent]}（你自己写过就不动），卸载钩子时去掉。` : '')
+        ? `要在「${host}」上安装 ${name} 的钩子吗？\n会修改 ${file}${info.backup ? '（第一次安装前备份为 .bak-sshweb）' : ''}，并写入 ~/.ssh-web/${sname}。`
+          + (info.also ? `\n同时在 ${info.also}（你自己写过就不动），卸载钩子时去掉。` : '')
         : `要从「${host}」上卸载 SSH-WEB 的 ${name} 钩子吗？\n只删 SSH-WEB 加的条目，其他设置不动。`;
       if (!confirm(ask)) return;
       busy = true;
@@ -94,8 +85,8 @@
         const r = await api('POST', `/api/hooks/${what}`, { sid: s.sid, agent });
         if (hooksEl !== el) return;
         msg.textContent = what === 'install'
-          ? `${name} 已安装${r.backup ? `（原来的设置备份在 ${r.backup}）` : ''}。新开的 ${name} 生效，已经开着的要退出重开。${agent === 'codex' ? '在 Codex 里输入 /hooks 批准一次。' : ''}`
-            + (r.toml ? (r.toml.state === 'set' ? `${r.toml.file} 已设 ${r.toml.line}。` : `${r.toml.file} 里你自己写过 ${r.toml.line.split(' =')[0]}，没有改。`) : '')
+          ? `${name} 已安装${r.backup ? `（原来的设置备份在 ${r.backup}）` : ''}。新开的 ${name} 生效，已经开着的要退出重开。${info.after || ''}`
+            + (r.toml ? (r.toml.state === 'set' ? `${r.toml.file} 已设 ${r.toml.line}。` : `${r.toml.file} 里你自己写过 ${r.toml.key || r.toml.line.split(' =')[0]}，没有改。`) : '')
           : `${name} 已卸载。已经开着的退出重开后就不再报事件。${r.scriptRemoved ? `别的 Agent 都没装了，${sname} 也删了。` : ''}`;
       } catch (e) {
         if (hooksEl === el) msg.textContent = (what === 'install' ? '安装失败：' : '卸载失败：') + e.message;
