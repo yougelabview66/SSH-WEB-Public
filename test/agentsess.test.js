@@ -1,5 +1,5 @@
 'use strict';
-// Agent 会话历史：「⋯ 更多 → 会话历史」列出目标主机上 Claude Code / Grok / Codex / OpenCode 以前的会话 (标题、第一句话、目录、时间)，
+// Agent 会话历史：「⋯ 更多 → 会话历史」列出目标主机上 Claude Code / Grok / Codex / Antigravity / OpenCode 以前的会话 (标题、第一句话、目录、时间)，
 // 打字筛选、回车搜全部内容，「继续」在当前终端执行恢复命令 (cd 到原来的目录 && claude --resume <id>)，「复制」复制命令。
 // 模拟的 SSH 服务器收到命令就在本机用 sh 真的跑 (HOME 指向放着各家会话文件的临时目录)，测的是真的脚本
 const fs = require('fs');
@@ -45,6 +45,24 @@ put('.codex/sessions/2026/10/20/rollout-2026-10-20T10-00-00-0199b3c4-aaaa-bbbb-c
   J({ type: 'event_msg', payload: { type: 'user_message', message: 'Codex 帮我写测试' } }),
 ].join('\n') + '\n', 40);
 put('.codex/session_index.jsonl', J({ id: '0199b3c4-aaaa-bbbb-cccc-123456789abc', thread_name: 'Codex 写测试' }) + '\n', 40);
+// Codex 新版 (实测 0.166)：没有 user_message，你说的话在 item_completed 的 UserMessage 里
+put('.codex/sessions/2026/11/01/rollout-2026-11-01T17-59-08-01a199fb-56a9-7962-9e6f-32a31aafc584.jsonl', [
+  J({ timestamp: '2026-11-02T01:59:09Z', ordinal: 0, type: 'session_meta', payload: { session_id: '01a199fb-56a9-7962-9e6f-32a31aafc584', id: '01a199fb-56a9-7962-9e6f-32a31aafc584', cwd: '/srv/c2' } }),
+  J({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '<environment_context>...</environment_context>' }] } }),
+  J({ type: 'event_msg', payload: { type: 'item_completed', item: { type: 'UserMessage', id: 'u1', content: [{ type: 'text', text: '新版 Codex 你好', text_elements: [] }] } } }),
+].join('\n') + '\n', 35);
+// Antigravity CLI (agy)：brain/<对话号>/.system_generated/logs/transcript.jsonl；索引 history.jsonl 给目录 (和压缩掉的第一句话)；子 Agent 不列
+const AGY = '.gemini/antigravity-cli';
+put(`${AGY}/brain/aaaa1111-0000-4000-8000-000000000001/.system_generated/logs/transcript.jsonl`, [
+  J({ step_index: 0, source: 'SYSTEM', type: 'CONVERSATION_HISTORY' }),
+  J({ step_index: 1, source: 'USER_EXPLICIT', type: 'USER_INPUT', content: '<USER_REQUEST>\nagy 帮我修登录页\n</USER_REQUEST>\n<ADDITIONAL_METADATA>x</ADDITIONAL_METADATA>' }),
+].join('\n') + '\n', 46);
+put(`${AGY}/brain/bbbb2222-0000-4000-8000-000000000002/.system_generated/logs/transcript.jsonl`, J({ step_index: 40, source: 'SYSTEM', type: 'CHECKPOINT', content: 'summary' }) + '\n', 47);
+put(`${AGY}/brain/cccc3333-0000-4000-8000-000000000003/.system_generated/logs/transcript.jsonl`, J({ type: 'SYSTEM_MESSAGE', content: '<subagent_reminder>id: aaaa1111</subagent_reminder>' }) + '\n', 45);
+put(`${AGY}/history.jsonl`, [
+  J({ display: 'agy 帮我修登录页', timestamp: 1, workspace: '/srv/agy', conversationId: 'aaaa1111-0000-4000-8000-000000000001' }),
+  J({ display: '压缩前的第一句', timestamp: 2, workspace: '/srv/agy2', conversationId: 'bbbb2222-0000-4000-8000-000000000002' }),
+].join('\n') + '\n', 45);
 // OpenCode：子会话 (有 parentID) 不列
 put('.local/share/opencode/storage/session/proj1/ses_main1.json', J({ id: 'ses_main1', title: 'OpenCode 会话', directory: '/srv/oc', time: { created: 1, updated: 2 } }), 60);
 put('.local/share/opencode/storage/session/proj1/ses_kid1.json', J({ id: 'ses_kid1', parentID: 'ses_main1', title: '子会话', directory: '/srv/oc' }), 59);
@@ -93,8 +111,17 @@ run(async () => {
   ok(r.sessions.length === 1 && r.sessions[0].title === 'Grok 修 bug' && r.sessions[0].prompt === '帮我修复 Grok 那边的问题' && r.sessions[0].cmd === "cd '/srv/g' && grok --resume 0198a-grok-id",
     'Grok：summary.json 的标题和目录，第一句话从 <user_query> 里取: ' + J(r.sessions[0]));
   r = await api('codex');
+  const cx2 = r.sessions.shift();
+  ok(cx2?.prompt === '新版 Codex 你好' && cx2.cmd === "cd '/srv/c2' && codex resume 01a199fb-56a9-7962-9e6f-32a31aafc584", 'Codex 新版：第一句话从 UserMessage 里取: ' + J(cx2));
   ok(r.sessions.length === 1 && r.sessions[0].title === 'Codex 写测试' && r.sessions[0].prompt === 'Codex 帮我写测试' && r.sessions[0].cmd === "cd '/srv/c' && codex resume 0199b3c4-aaaa-bbbb-cccc-123456789abc",
     'Codex：id 和目录在第一行，起的名字在 session_index，第一句话是 user_message: ' + J(r.sessions[0]));
+  r = await api('antigravity');
+  ok(r.sessions.length === 2 && r.sessions[0].prompt === 'agy 帮我修登录页' && r.sessions[0].cmd === "cd '/srv/agy' && agy --conversation aaaa1111-0000-4000-8000-000000000001"
+    && r.sessions[1].prompt === '压缩前的第一句' && r.sessions[1].cwd === '/srv/agy2',
+  'Antigravity：第一句话从 <USER_REQUEST> 里取 (压缩掉了就用索引的)，目录用索引的，子 Agent 不列: ' + J(r.sessions));
+  const agyItems = require('../lib/agents/antigravity').sessions.items('/h/.gemini/antigravity-cli/brain/ID/.system_generated/logs/transcript.jsonl', 'ID');
+  ok(J(agyItems) === J(['/h/.gemini/antigravity-cli/brain/ID', '/h/.gemini/antigravity-cli/conversations/ID.db', '/h/.gemini/antigravity-cli/conversations/ID.db-wal', '/h/.gemini/antigravity-cli/conversations/ID.db-shm']),
+    'Antigravity 删除时移走：整个对话目录和 conversations/<对话号>.db: ' + J(agyItems));
   r = await api('gemini');
   ok(!!r.error, 'Gemini CLI 已去掉：当成不认识的 Agent');
   r = await api('opencode');

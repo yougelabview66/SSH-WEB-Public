@@ -1,10 +1,10 @@
   // ------------------------------------------------------------ Agent 会话历史 (服务端见 lib/agent-sessions.js)
   // 「⋯ 更多 → 会话历史」弹窗，和「历史」面板里的「💬 会话历史」选项卡 (见 50-history.js) 用的是同一个部件 (agentSessionsView)：
-  // 这台主机上 Claude Code / Grok / Codex / OpenCode 以前的会话，按最近排；
+  // 这台主机上 Claude Code / Grok / Codex / Antigravity / OpenCode 以前的会话，按最近排；
   // 打字筛选列出来的 (标题、第一句话、目录)，回车或点「搜索」在全部会话内容里搜；「继续」在当前终端执行恢复命令，「复制」复制这条命令；
 // 「删除」点两下：服务端先查有没有 Agent 在用 (钩子报的、主机上的进程、文件刚写过)，在用就问要不要强制，会话文件移到主机的 ~/.ssh-web/trash/
   let asEl = null;
-  const AS_AGENTS = [['claude', 'Claude'], ['grok', 'Grok'], ['codex', 'Codex'], ['opencode', 'OpenCode']];
+  const AS_AGENTS = [['claude', 'Claude'], ['grok', 'Grok'], ['codex', 'Codex'], ['antigravity', 'Antigravity'], ['opencode', 'OpenCode']];
   const AS_TESTED = ['claude', 'grok'];
   // 上次读到的会话列表 (主机 + Agent → { items, info })：再打开时先显示它，后台再刷新
   const asCache = new Map();
