@@ -26,7 +26,9 @@
     const own = agentDoes(s, 'ownHistory');
     if (e.deltaY >= 0 || !s.sid || (!own && s.term.modes.mouseTrackingMode === 'none' && !daemonHistory(s))) return true;
     if (!own && s.winHost && !daemonHistory(s)) return true;
-    if (s.noTmuxUntil > Date.now()) return true;
+    // 上次失败后的冷却：换了 Agent (这个标签里退出一个、开了另一个) 不算，马上重试 —— 以前冷却 30 秒到 5 分钟，
+    // 期间换了 Agent 也一直不试，在几个 Agent 之间切几次就像是进不了历史画面
+    if (s.noTmuxUntil > Date.now() && s.noTmuxAgent === agentIdOf(s)) return true;
     s.scrollLoading = true;
     s.heldWheel = 1;
     s.lsPull = 0;
@@ -62,7 +64,8 @@
     resetPull(s);
     // 用不了：一段时间内不再尝试，把刚才拦下的滚轮补发给程序 (会进入 tmux 自己的复制模式，不弹提示)
     const reason = m.ok ? 'mismatch' : m.reason;
-    s.noTmuxUntil = Date.now() + ({ 'no-tmux': 300000, busy: 5000, 'in-mode': 3000 }[reason] || 30000);
+    s.noTmuxUntil = Date.now() + ({ 'no-tmux': 300000, busy: 5000, 'in-mode': 3000, 'no-agent-history': 3000 }[reason] || 30000);
+    s.noTmuxAgent = agentIdOf(s);
     if (m.win) s.winHost = true;
     // 超时：提示一次原因 (真机上没法看，方便找问题)；Windows 主机没开常驻会话本来就没有历史，不提示
     if (reason === 'timeout' && !s.winHost && !s.winToastDone) {

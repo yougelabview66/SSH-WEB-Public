@@ -17,20 +17,27 @@
     grok: { dragSelect: true, keepSelOnHover: true, noFocusReport: true, ownHistory: true, promptLine: /^(\s*[│┃|]?\s*)[>❯›]/, screen: /Ctrl\+x:shortcuts/ },
     // 全屏界面 (没有关掉的设置)：历史视图从它的数据库读完整对话 (lib/agents/opencode.js 的 history)。
     // 屏幕最下面一直有「ctrl+p commands」：还没跟它说话 (插件没报过事件) 也认得出
-    opencode: { ownHistory: true, screen: /ctrl\+p\s+commands/ },
+    // altScreen：一直是全屏界面 —— 终端不在备用屏幕上就是它已经退出了 (OpenCode 退出时不报事件，钩子报的还停在它)
+    opencode: { ownHistory: true, altScreen: true, screen: /ctrl\+p\s+commands/ },
   };
   // 这个标签里在跑的 Agent：屏幕上明明白白是它 (各 Agent 的 screen) 就是它；屏幕上认不出才用钩子报的 (s.agent.id，见 10-session.js 的
   // 'agent' 消息)。屏幕优先：钩子报的可能是这个标签里以前跑过的、或者记错标签的 Agent (同一台主机上 Claude Code 和 Grok 都开着)，
   // 也可能还没报 (没装钩子、SSH-WEB 重启后 Agent 还没发过事件 —— Grok 里中文发不出去就一直等不到事件)
+  // 屏幕最下面的 6 行指的是最后 6 行有字的：同一个终端同时开在两台设备上时，终端按小的那边的大小画，
+  // 大的这边屏幕底下空着几行，只看最后 6 行就一个字都没有，认不出 (OpenCode 还没说话时就进不了历史画面)
   function agentIdOf(s) {
     const b = s?.term?.buffer.active;
     if (b) {
       const tail = [];
-      for (let y = s.term.rows - 1; y >= Math.max(0, s.term.rows - 6); y--) tail.push(b.getLine(b.baseY + y)?.translateToString(true) || '');
+      for (let y = s.term.rows - 1; y >= 0 && tail.length < 6; y--) {
+        const t = b.getLine(b.baseY + y)?.translateToString(true) || '';
+        if (t.trim()) tail.push(t);
+      }
       const text = tail.join('\n');
       for (const [id, a] of Object.entries(AGENTS)) if (a.screen?.test(text)) return id;
     }
-    return s?.agent?.id || null;
+    const id = s?.agent?.id || null;
+    return AGENTS[id]?.altScreen && b && b.type !== 'alternate' ? null : id;
   }
   const agentDoes = (s, what) => !!AGENTS[agentIdOf(s)]?.[what];
   // Agent 的标志 (常驻会话选择框里名字前面画，服务端告诉是哪个 Agent，见 lib/agents/index.js 的 agentLabel)。
