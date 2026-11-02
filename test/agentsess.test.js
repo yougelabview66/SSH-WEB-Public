@@ -37,7 +37,12 @@ put('.claude/projects/-srv-other/33333333-3333-3333-3333-333333333333.jsonl', J(
 put('.claude/projects/-srv-other/22222222-2222-2222-2222-222222222222/subagents/agent-a1.jsonl', J({ type: 'user', message: { role: 'user', content: '子 Agent' } }) + '\n', 1);
 // Grok
 put('.grok/sessions/%2Fsrv%2Fg/0198a-grok-id/summary.json', J({ info: { id: '0198a-grok-id', cwd: '/srv/g' }, generated_title: 'Grok 修 bug', updated_at: '2026-10-20T10:00:00Z' }), 20);
-put('.grok/sessions/%2Fsrv%2Fg/0198a-grok-id/chat_history.jsonl', J({ type: 'user', content: '<user_info>os</user_info>' }) + '\n' + J({ type: 'user', content: '<user_query>帮我修复 Grok 那边的问题</user_query>' }) + '\n', 20);
+// 系统提示里也提到 <user_query>：只认内容以它开头的 (实测 Grok 1.0.70 的格式：text 里带换行，有 prompt_index)
+put('.grok/sessions/%2Fsrv%2Fg/0198a-grok-id/chat_history.jsonl', [J({ type: 'system', content: 'The user message is wrapped in a <user_query> tag. <dangerous_actions> ...' }),
+  J({ type: 'user', content: '<user_info>os</user_info>' }), J({ type: 'user', content: [{ type: 'text', text: '<user_query>\n帮我修复 Grok 那边的问题\n</user_query>' }], prompt_index: 0 })].join('\n') + '\n', 20);
+// 开了没说过话就退出的：不列
+put('.grok/sessions/%2Fsrv%2Fg/0198b-empty/summary.json', J({ info: { id: '0198b-empty', cwd: '/srv/g' } }), 19);
+put('.grok/sessions/%2Fsrv%2Fg/0198b-empty/chat_history.jsonl', J({ type: 'system', content: 'mentions <user_query> here' }) + '\n', 19);
 // Codex
 put('.codex/sessions/2026/10/20/rollout-2026-10-20T10-00-00-0199b3c4-aaaa-bbbb-cccc-123456789abc.jsonl', [
   J({ timestamp: '2026-10-20T10:00:00Z', type: 'session_meta', payload: { id: '0199b3c4-aaaa-bbbb-cccc-123456789abc', cwd: '/srv/c', base_instructions: { text: 'x'.repeat(5000) } } }),
@@ -78,6 +83,22 @@ put(`${AGY}/history.jsonl`, [
 // OpenCode：子会话 (有 parentID) 不列
 put('.local/share/opencode/storage/session/proj1/ses_main1.json', J({ id: 'ses_main1', title: 'OpenCode 会话', directory: '/srv/oc', time: { created: 1, updated: 2 } }), 60);
 put('.local/share/opencode/storage/session/proj1/ses_kid1.json', J({ id: 'ses_kid1', parentID: 'ses_main1', title: '子会话', directory: '/srv/oc' }), 59);
+// OpenCode 新版 (实测 1.19.5)：SQLite 数据库 opencode.db (session / message / part)，用主机上的 python3 读
+require('child_process').execFileSync('python3', ['-I', '-c', `
+import sqlite3, json, sys
+c = sqlite3.connect(sys.argv[1])
+c.executescript('''create table session (id text primary key, project_id text, parent_id text, slug text, directory text, title text, version text, time_created integer, time_updated integer, time_archived integer);
+create table message (id text primary key, session_id text, time_created integer, time_updated integer, data text);
+create table part (id text primary key, message_id text, session_id text, time_created integer, time_updated integer, data text);''')
+c.execute("insert into session values ('ses_db1','global',null,'s','/srv/ocdb','数据库里的会话','1',1,1793600000000,null)")
+c.execute("insert into session values ('ses_dbkid','global','ses_db1','s','/srv/ocdb','子会话','1',1,1793600000001,null)")
+c.execute("insert into message values ('m1','ses_db1',1,1,?)", (json.dumps({'role': 'user'}),))
+c.execute("insert into part values ('p0','m1','ses_db1',1,1,?)", (json.dumps({'type': 'text', 'text': '系统加的', 'synthetic': True}),))
+c.execute("insert into part values ('p1','m1','ses_db1',2,2,?)", (json.dumps({'type': 'text', 'text': '新版 OpenCode 帮我改代码'}, ensure_ascii=False),))
+c.execute("insert into message values ('m2','ses_db1',3,3,?)", (json.dumps({'role': 'assistant'}),))
+c.execute("insert into part values ('p2','m2','ses_db1',4,4,?)", (json.dumps({'type': 'text', 'text': '改好了 NEEDLE-OC'}),))
+c.commit()
+`, path.join(home, '.local/share/opencode/opencode.db')]);
 // pi：~/.pi/agent/sessions/--<目录>--/<时间>_<id>.jsonl；第一行 session 给 id 和目录，名字是最后一条 session_info (格式照 pi 1.4.0 真实文件)
 const PI = '.pi/agent/sessions/--srv-pi--';
 put(`${PI}/2026-11-02T05-45-23-290Z_01a19aca-7a59-7439-81e4-edc2763b9dde.jsonl`, [
@@ -157,7 +178,13 @@ run(async () => {
   r = await api('gemini');
   ok(!!r.error, 'Gemini CLI 已去掉：当成不认识的 Agent');
   r = await api('opencode');
-  ok(r.sessions.length === 1 && r.sessions[0].title === 'OpenCode 会话' && r.sessions[0].cmd === "cd '/srv/oc' && opencode --session ses_main1", 'OpenCode：标题和目录，子会话不列: ' + J(r.sessions));
+  const ocDb = r.sessions.find((x) => x.id === 'ses_db1');
+  ok(ocDb && ocDb.title === '数据库里的会话' && ocDb.prompt === '新版 OpenCode 帮我改代码' && ocDb.cwd === '/srv/ocdb' && !r.sessions.some((x) => x.id === 'ses_dbkid'),
+    'OpenCode 新版 (SQLite)：标题、第一句话 (系统加的不算)、目录，子会话不列: ' + J(ocDb));
+  r.sessions = r.sessions.filter((x) => !x.id.startsWith('ses_db'));
+  ok(r.sessions.length === 1 && r.sessions[0].title === 'OpenCode 会话' && r.sessions[0].cmd === "cd '/srv/oc' && opencode --session ses_main1", 'OpenCode 旧版 (JSON 文件)：标题和目录，子会话不列: ' + J(r.sessions));
+  r = await api('opencode', 'needle-oc');
+  ok(r.sessions.length === 1 && r.sessions[0].id === 'ses_db1', 'OpenCode 新版搜索：搜得到回复里的词 (英文不分大小写): ' + J(r.sessions.map((x) => x.id)));
   r = await api('pi');
   ok(r.sessions.length === 2 && r.sessions[0].title === '打招呼测试' && r.sessions[0].prompt === 'pi 帮我打个招呼'
     && r.sessions[0].cmd === "cd '/srv/pi' && pi --session 01a19aca-7a59-7439-81e4-edc2763b9dde"

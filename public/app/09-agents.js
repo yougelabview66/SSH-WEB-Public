@@ -8,13 +8,14 @@
   //    鼠标一动终端就上报一次，上报算用户输入，xterm 会把选中清掉 (松开鼠标一挪，刚选的字就没了)
   //  - promptLine：它的输入框那一行长什么样 (以 > / ❯ 开头，前面可能有边框)。下方输入栏发消息前先替你点一下这里 (见 agentBeforeSend)
   //  - screen：屏幕最下面几行有这个就认作是它 (Grok 底下一直有「Ctrl+x:shortcuts」)
-  //  - ownHistory：历史视图看它会话文件里的完整对话 (服务端读，见 lib/agents/grok.js 的 history)，不抓终端历史 ——
+  //  - ownHistory：历史视图看它会话文件里的完整对话 (服务端读，见 lib/agents/ 里各自的 history)，不抓终端历史 ——
   //    Grok 的全屏 (填充) 界面把对话放在自己的界面里滚动，终端历史里只有每次重画留下的一屏
   //  - noFocusReport：不把终端「获得 / 失去焦点」的通知 (ESC [I / ESC [O) 转给它 —— Grok 一收到就清屏、整屏重画，
   //    刚拖出来的选区立刻被冲掉 (实测 Grok 1.0.70；Hermes 的网页终端也是这样，见 hermes-inputbar 的 patch18)
   const AGENTS = {
     claude: { sendNow: true },
     grok: { dragSelect: true, keepSelOnHover: true, noFocusReport: true, ownHistory: true, promptLine: /^(\s*[│┃|]?\s*)[>❯›]/, screen: /Ctrl\+x:shortcuts/ },
+    opencode: { ownHistory: true }, // 全屏界面 (没有关掉的设置)：历史视图从它的数据库读完整对话 (lib/agents/opencode.js 的 history)
   };
   // 这个标签里在跑的 Agent：屏幕上明明白白是它 (各 Agent 的 screen) 就是它；屏幕上认不出才用钩子报的 (s.agent.id，见 10-session.js 的
   // 'agent' 消息)。屏幕优先：钩子报的可能是这个标签里以前跑过的、或者记错标签的 Agent (同一台主机上 Claude Code 和 Grok 都开着)，

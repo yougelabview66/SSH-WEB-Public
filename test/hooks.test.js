@@ -141,13 +141,20 @@ run(async () => {
   runA(['antigravity', 'Stop'], JSON.stringify({ terminationReason: 'USER_CANCELED', error: '', fullyIdle: true, conversationId: 'c1', cwd: '/x' }));
   l = lastLine();
   ok(l.reason === 'USER_CANCELED' && l.cwd === '/x', 'Antigravity：Stop 的 terminationReason 记成 reason；有 cwd 就不用 workspacePaths: ' + JSON.stringify(l));
+  // Stop 不带回复：从记录文件 (transcriptPath) 里取最后一条模型回复
+  const tp = path.join(fakeHome, 'transcript_full.jsonl');
+  fs.writeFileSync(tp, [JSON.stringify({ type: 'USER_INPUT', content: '<USER_REQUEST>x</USER_REQUEST>' }), JSON.stringify({ source: 'MODEL', type: 'PLANNER_RESPONSE', content: '先回的' }),
+    JSON.stringify({ source: 'MODEL', type: 'PLANNER_RESPONSE', status: 'DONE', content: '最后的回复："完成"' })].join('\n') + '\n');
+  runA(['antigravity', 'Stop'], JSON.stringify({ terminationReason: 'NO_TOOL_CALL', fullyIdle: true, conversationId: 'c1', transcriptPath: tp }));
+  l = lastLine();
+  ok(l.last_assistant_message === '最后的回复："完成"', 'Antigravity：Stop 时从 transcriptPath 取最后一条回复: ' + JSON.stringify(l));
   // OpenCode 插件：真的用 node 加载，喂它 OpenCode 的事件，看交给 hook.sh 的是什么
   fs.mkdirSync(path.join(fakeHome, '.ssh-web'), { recursive: true }); fs.writeFileSync(path.join(fakeHome, '.ssh-web/hook.sh'), HOOK_SH);
   const plug = path.join(home, 'sshweb-status.mjs'); fs.writeFileSync(plug, OPENCODE_PLUGIN);
   const n1 = fs.readFileSync(path.join(fakeHome, '.cache/ssh-web/hook.log'), 'utf8').trim().split('\n').length;
   execFileSync(process.execPath, ['--input-type=module', '-e', `
     const { SshWebStatus } = await import(${JSON.stringify('file://' + plug)});
-    const h = await SshWebStatus(undefined);
+    const h = await SshWebStatus({ directory: '/srv/oc' });
     const e = (type, properties) => h.event({ event: { type, properties } });
     await e('session.created', { info: { id: 'kid', parentID: 'root' } });
     await e('session.status', { sessionID: 'root', status: { type: 'busy' } });
@@ -161,13 +168,16 @@ run(async () => {
     await e('message.part.updated', { part: { type: 'text', text: '改好了', messageID: 'm2', sessionID: 'root' } });
     await e('session.status', { sessionID: 'root', status: { type: 'idle' } });
     await e('session.idle', { sessionID: 'root' });
+    await e('session.status', { sessionID: 'root', status: { type: 'busy' } });
+    await e('session.error', { sessionID: 'root', error: { name: 'MessageAbortedError' } });
+    await e('session.status', { sessionID: 'root', status: { type: 'idle' } });
     await new Promise((r) => setTimeout(r, 1500));
   `], { env: { HOME: fakeHome, PATH: process.env.PATH, LC_SSHWEB: 'tab-oc' } });
   const oc = fs.readFileSync(path.join(fakeHome, '.cache/ssh-web/hook.log'), 'utf8').trim().split('\n').slice(n1).map((x) => JSON.parse(x));
   const ocEv = oc.map((x) => [x.hook_event_name, x.prompt || x.command || x.question || x.last_assistant_message || ''].join(':')).sort();
-  const wantEv = ['UserPromptSubmit:', 'UserPromptSubmit:修复登录页', 'PreToolUse:npm test', 'PermissionRequest:rm -rf x', 'PreToolUse:用哪个库？', 'Stop:改好了'].sort();
-  ok(oc.every((x) => x.agent === 'opencode' && x.tabs === 'tab-oc') && JSON.stringify(ocEv) === JSON.stringify(wantEv),
-    'OpenCode 插件：开始干活 / 你说的话 / 用工具 / 要权限 / 问问题 / 做完 (带最后的回复) 都交给 hook.sh，子会话的不算，做完只报一次: ' + JSON.stringify(ocEv));
+  const wantEv = ['UserPromptSubmit:', 'UserPromptSubmit:修复登录页', 'PreToolUse:npm test', 'PermissionRequest:rm -rf x', 'PreToolUse:用哪个库？', 'Stop:改好了', 'UserPromptSubmit:', 'Interrupt:'].sort();
+  ok(oc.every((x) => x.agent === 'opencode' && x.tabs === 'tab-oc' && x.session_id === 'root' && x.cwd === '/srv/oc') && JSON.stringify(ocEv) === JSON.stringify(wantEv),
+    'OpenCode 插件：开始干活 / 你说的话 / 用工具 / 要权限 / 问问题 / 做完 (带最后的回复) / 被打断 (MessageAbortedError) 都交给 hook.sh，带上对话号和目录，子会话的不算，做完只报一次: ' + JSON.stringify(ocEv));
 
   // pi 扩展：真的用 node 加载 (扩展是不带类型的 TS，就是 JS)，假装 pi 发事件，看交给 hook.sh 的是什么
   const piExt = path.join(home, 'sshweb-status-pi.mjs'); fs.writeFileSync(piExt, PI_EXTENSION);
@@ -277,9 +287,9 @@ run(async () => {
   await p.keyboard.press('Escape'); await wait(200);
   await p.click('#btnMore'); await p.click('#btnHooks'); await waitRow('grok', /未安装/);
   const rowsInfo = await p.evaluate(() => [...document.querySelectorAll('.hooksp .hk-row')].map((r) => [r.dataset.agent, !!r.querySelector('.hk-tag'), r.classList.contains('absent')]));
-  ok(rowsInfo.length === 6 && !rowsInfo.some(([id]) => id === 'gemini') && rowsInfo[0][0] === 'claude' && rowsInfo.every(([id, tag]) => tag === !['claude', 'grok', 'antigravity'].includes(id))
+  ok(rowsInfo.length === 6 && !rowsInfo.some(([id]) => id === 'gemini') && rowsInfo[0][0] === 'claude' && rowsInfo.every(([id, tag]) => tag === !['claude', 'grok', 'antigravity', 'opencode'].includes(id))
     && rowsInfo.find(([id]) => id === 'opencode')[2] && !rowsInfo.find(([id]) => id === 'grok')[2],
-  '面板：6 个 Agent 各一行 (没有 Gemini CLI)，Claude Code 在第一个，除了实测过的 Claude Code、Grok、Antigravity 都标「未实测」，主机上没找到的变淡排后面: ' + JSON.stringify(rowsInfo));
+  '面板：6 个 Agent 各一行 (没有 Gemini CLI)，Claude Code 在第一个，除了实测过的 Claude Code、Grok、Antigravity、OpenCode 都标「未实测」，主机上没找到的变淡排后面: ' + JSON.stringify(rowsInfo));
   await p.screenshot({ path: shot('hooks-agents.png') });
   dialogs.length = 0;
   for (const id of ['grok', 'codex', 'antigravity', 'opencode', 'pi']) { await p.click(R(id) + ' [data-a=install]'); await waitRow(id, /已安装/); }
@@ -556,6 +566,14 @@ run(async () => {
   emit({ agent: 'antigravity', hook_event_name: 'PreInvocation', prompt: '再来' }); await wait(300);
   emit({ agent: 'antigravity', hook_event_name: 'Stop', reason: 'ERROR', error: 'quota exceeded' }); await wait(500);
   ok(lastState() === '报错' && lastDetail() === 'Antigravity · quota exceeded', 'Antigravity 出错结束 (terminationReason=ERROR)：报错，写出原因: ' + lastDetail());
+  // 按 Esc 打断时 agy 一个事件都不报：钩子说在跑、屏幕最下面回到空闲的「? for shortcuts」就算已中断
+  ws.send(JSON.stringify({ type: 'data', data: 'd' })); await wait(300);
+  shellSt.write('\x1b[2J\x1b[H> 写一篇长文\r\nesc to cancel\r\n'); await wait(300);
+  emit({ agent: 'antigravity', hook_event_name: 'PreInvocation', prompt: '写一篇长文' }); await wait(2000);
+  ok(lastState() === '运行中', 'Antigravity 在跑 (底部是 esc to cancel)：运行中');
+  shellSt.write('\x1b[2J\x1b[H> \r\n? for shortcuts                Gemini 3.8 Flash · low\r\n');
+  await until(() => lastState() === '完成', 5000);
+  ok(lastState() === '完成' && lastDetail() === 'Antigravity · 已中断', 'Antigravity 底部回到「? for shortcuts」(被 Esc 打断，没报事件)：已中断: ' + lastDetail());
 
   // 钩子不是在网页上装的 (主机上已经有 hook.sh)：重新连上这台主机时认出来，同样只按钩子推送
   await J('POST', '/api/hooks/uninstall', { sid });
