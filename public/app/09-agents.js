@@ -15,7 +15,9 @@
   const AGENTS = {
     claude: { sendNow: true },
     grok: { dragSelect: true, keepSelOnHover: true, noFocusReport: true, ownHistory: true, promptLine: /^(\s*[│┃|]?\s*)[>❯›]/, screen: /Ctrl\+x:shortcuts/ },
-    opencode: { ownHistory: true }, // 全屏界面 (没有关掉的设置)：历史视图从它的数据库读完整对话 (lib/agents/opencode.js 的 history)
+    // 全屏界面 (没有关掉的设置)：历史视图从它的数据库读完整对话 (lib/agents/opencode.js 的 history)。
+    // 屏幕最下面一直有「ctrl+p commands」：还没跟它说话 (插件没报过事件) 也认得出
+    opencode: { ownHistory: true, screen: /ctrl\+p\s+commands/ },
   };
   // 这个标签里在跑的 Agent：屏幕上明明白白是它 (各 Agent 的 screen) 就是它；屏幕上认不出才用钩子报的 (s.agent.id，见 10-session.js 的
   // 'agent' 消息)。屏幕优先：钩子报的可能是这个标签里以前跑过的、或者记错标签的 Agent (同一台主机上 Claude Code 和 Grok 都开着)，
