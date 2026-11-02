@@ -14,6 +14,21 @@ ok(sid({ id: 'g1', agent: 'grok' }, 'opencode') === '', '换成了别的 Agent (
 ok(sid({ id: 'old' }, 'opencode') === 'old', '旧记录不知道是谁的：照旧用');
 ok(sid(null, 'pi', (a) => (a === 'pi' ? 'p1' : '')) === 'p1' && sid(null, 'pi', (a) => (a === 'grok' ? 'g' : '')) === '', '标签刚接上常驻会话：用会话记着的、同一个 Agent 的对话号');
 
+// ---- 服务端：退出时不报事件的 Agent (Codex / Antigravity / OpenCode)，回到 shell 提示符就当退出了
+const fakeSess = (agent, lines, type = 'normal') => {
+  const calls = [];
+  const s = { hookAgent: agent, hook: { kind: 'done' }, hookSid: { id: 'x', agent }, termPending: 0, freshAgentCwd: () => false,
+    term: { rows: lines.length, buffer: { active: { type, baseY: 0, cursorY: lines.length - 1, getLine: (y) => ({ translateToString: () => lines[y] ?? '' }) } } },
+    promptShell: () => null, noteDaemonAgent: (i) => calls.push(['note', i]), setAgentCwd: (d) => calls.push(['cwd', d]), updateState: () => calls.push(['state']),
+    setHookAgent(a) { this.hookAgent = a; calls.push(['agent', a]); } };
+  SessionHooks.prototype.checkAgentGone.call(s);
+  return { gone: s.hookAgent === '' && s.hookSid === null && s.hook === null, calls };
+};
+ok(fakeSess('codex', ['Disconnected from this task.', 'root@host:~/proj# ']).gone, 'Codex 退出了 (不报事件)：光标那行是 shell 提示符 → 当它退出了，不再当它在跑');
+ok(!fakeSess('codex', ['› 问点什么', '', '  gpt-5.6 · 80% context left']).gone, 'Codex 还开着 (光标在它的输入行 ›、下面是状态行)：不动');
+ok(!fakeSess('opencode', ['root@host:~# '], 'alternate').gone, 'OpenCode 全屏界面还在 (备用屏幕)：不动');
+ok(!fakeSess('claude', ['root@host:~# ']).gone && !fakeSess('pi', ['root@host:~# ']).gone, 'Claude Code、Pi 退出时自己报事件：不用猜，不动');
+
 // ---- 网页：认这个标签里在跑哪个 Agent
 const src = fs.readFileSync(path.join(__dirname, '../public/app/09-agents.js'), 'utf8');
 const { agentIdOf } = vm.runInNewContext(src + '\n;({ agentIdOf })', { isTouch: false, send: () => {}, window: {}, document: {} });

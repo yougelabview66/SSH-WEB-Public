@@ -4,7 +4,7 @@
 const { ok } = require('./helpers');
 const { Terminal } = require('@xterm/headless');
 const { cellWidth, useCellWidth } = require('../public/cellwidth');
-const { dropVs16Pad } = require('../lib/session/remote');
+const { dropVs16Pad, tmuxPadsVs16 } = require('../lib/session/remote');
 
 const write = (t, s) => new Promise((r) => t.write(s, r));
 const term = () => { const t = new Terminal({ cols: 40, rows: 10, allowProposedApi: true }); useCellWidth(t); return t; };
@@ -38,6 +38,8 @@ const borders = (t, n) => [...Array(n).keys()].map((y) => {
   // tmux 抓的历史：⚠️ 后面补的空格子去掉 (中间夹着颜色也行)；✅️ 这种本来就两格的、后面不是空格的不动
   ok(dropVs16Pad('82% ⚠\ufe0f      │') === '82% ⚠\ufe0f     │', '抓的历史：⚠️ 后面补的空格去掉一个');
   ok(dropVs16Pad('\x1b[1m⚠\ufe0f\x1b[22m 偏满') === '\x1b[1m⚠\ufe0f\x1b[22m偏满', '中间夹着颜色也去掉');
+  ok(!tmuxPadsVs16('tmux 3.3a') && !tmuxPadsVs16('tmux 2.9') && tmuxPadsVs16('tmux 3.4') && tmuxPadsVs16('tmux next-3.5') && tmuxPadsVs16(''),
+    'tmux 3.4 起才有 ⚠️ 后面的空格子：3.3a 以下不去掉 (后面的空格是真的)，认不出版本按新版');
   ok(dropVs16Pad('✅\ufe0f  x') === '✅\ufe0f  x' && dropVs16Pad('⚠\ufe0fx') === '⚠\ufe0fx', '本来就两格的 / 后面不是空格的不动');
 
   // 不用这份规则 (xterm 默认) 就是原来的样子：✅ 那行缩进去一格 —— 证明上面的断言测到了

@@ -35,6 +35,14 @@
     s.term.loadAddon(new WebLinksAddon.WebLinksAddon());
     s.term.open(s.box);
     agentMouse(s); // 各 Agent 的鼠标处理 (见 09-agents.js)
+    // 程序退出时的终端型号询问 (DA，ESC [ c) 不回答：Codex 退出时先弹出键盘增强设置 (ESC [ < u，只有退出时才发)、关掉括号粘贴等，
+    // 接着问一次终端型号就退出了，不等回答 (实测 Codex 0.166)。回答 (ESC [ ? 1 ; 2 c) 晚到一点就落进 shell：
+    // 提示符后面多出「1;2c」，紧接着打的命令被拼坏 (「1;2cclear」)。弹出键盘设置后 300 毫秒内的这种询问算退出时的，不回答
+    s.term.parser.registerCsiHandler({ prefix: '<', final: 'u' }, () => { s.kbdPopAt = Date.now(); return false; });
+    s.term.parser.registerCsiHandler({ final: 'c' }, (params) => {
+      if (s.kbdPopAt && Date.now() - s.kbdPopAt < 300 && params.length <= 1 && !(params[0] > 0)) { s.kbdPopAt = 0; return true; }
+      return false;
+    });
     // 远端程序通过 OSC 52 设置剪贴板：tmux 开鼠标后拖动选中、松开即复制，vim 等插件的复制也走这里。
     // 只允许写入，不响应读取请求 (同 Windows Terminal)，避免剪贴板内容被远端读走
     s.term.parser.registerOscHandler(52, (data) => {
