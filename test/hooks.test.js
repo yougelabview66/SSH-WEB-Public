@@ -217,6 +217,8 @@ run(async () => {
   fs.mkdirSync(hf('.codex'), { recursive: true });
   const codexOrig = { hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo codex-mine' }] }] } };
   fs.writeFileSync(hf('.codex/hooks.json'), JSON.stringify(codexOrig));
+  const codexTomlOrig = 'model = "gpt-5.6-luna"\n\n[projects."/srv/c"]\ntrust_level = "trusted"\n';
+  fs.writeFileSync(hf('.codex/config.toml'), codexTomlOrig);
   fs.mkdirSync(hf('.gemini/config'), { recursive: true });
   const gemOrig = { theme: 'Default' }; // Gemini CLI 已去掉：它的 settings.json 不再碰
   fs.writeFileSync(hf('.gemini/settings.json'), JSON.stringify(gemOrig));
@@ -242,6 +244,9 @@ run(async () => {
   ok(Object.keys(codex).join() === 'hooks' && codex.hooks.Stop.some((g) => cmdHas(g, 'echo codex-mine')) && codex.hooks.Interrupt[0].hooks[0].timeout === 3
     && codex.hooks.PermissionRequest.some((g) => cmdHas(g, 'sh "$HOME/.ssh-web/hook.sh" codex')) && fs.existsSync(hf('.codex/hooks.json.bak-sshweb')),
   'Codex：合并进 ~/.codex/hooks.json (自己的钩子还在、顶层只有 hooks)，Interrupt 超时 3 秒，先备份');
+  const codexToml = fs.readFileSync(hf('.codex/config.toml'), 'utf8');
+  ok(codexToml === `${codexTomlOrig}\n[tui]  ${TOML_MARK}\nalternate_screen = "never"  ${TOML_MARK}\n`,
+    'Codex：顺带在 ~/.codex/config.toml 加 [tui] alternate_screen = "never" (加在末尾，顶层的 model 和别的节不动): ' + JSON.stringify(codexToml));
   ok(fs.readFileSync(hf('.gemini/settings.json'), 'utf8') === JSON.stringify(gemOrig), '装 Antigravity 不碰 ~/.gemini/settings.json (Gemini CLI 已去掉)');
   const agy = JSON.parse(fs.readFileSync(hf('.gemini/config/hooks.json'), 'utf8'));
   const b = agy['sshweb-status'];
@@ -267,8 +272,12 @@ run(async () => {
   const crlf = tomlSet('[ui]\r\nx = 1\r\n', T);
   ok(crlf.split('\n').every((l, i, a) => i === a.length - 1 || l.endsWith('\r')) && tomlUnset(crlf) === '[ui]\r\nx = 1\r\n', 'Windows 的 \\r\\n 换行照原样，卸载后恢复原样');
   ok(tomlUnset('[ui]\n') === null, '没有加过的：卸载不动');
+  const C = { table: 'tui', key: 'alternate_screen', value: '"never"' };
+  ok(tomlSet('[tui]\nscreen_reader_detection_done = true\n', C) === `[tui]\nalternate_screen = "never"  ${TOML_MARK}\nscreen_reader_detection_done = true\n`
+    && tomlSet('[tui]\nalternate_screen = "always"\n', C) === null, 'Codex 的 config.toml 已经有 [tui]：加在节里；自己写过 alternate_screen 不动');
   for (const id of ['codex', 'antigravity', 'opencode']) { await p.click(R(id) + ' [data-a=uninstall]'); await waitRow(id, /^未安装/); }
   ok(JSON.stringify(JSON.parse(fs.readFileSync(hf('.codex/hooks.json'), 'utf8'))) === JSON.stringify(codexOrig)
+    && fs.readFileSync(hf('.codex/config.toml'), 'utf8') === codexTomlOrig
     && JSON.stringify(JSON.parse(fs.readFileSync(hf('.gemini/settings.json'), 'utf8'))) === JSON.stringify(gemOrig)
     && JSON.stringify(JSON.parse(fs.readFileSync(hf('.gemini/config/hooks.json'), 'utf8'))) === JSON.stringify(agyOrig)
     && !fs.existsSync(hf('.config/opencode/plugins/sshweb-status.js')) && !fs.existsSync(script),
