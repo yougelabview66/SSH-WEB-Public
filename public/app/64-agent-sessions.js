@@ -5,7 +5,6 @@
 // 「删除」点两下：服务端先查有没有 Agent 在用 (钩子报的、主机上的进程、文件刚写过)，在用就问要不要强制，会话文件移到主机的 ~/.ssh-web/trash/
   let asEl = null;
   const AS_AGENTS = [['claude', 'Claude'], ['grok', 'Grok'], ['codex', 'Codex'], ['antigravity', 'Antigravity'], ['opencode', 'OpenCode'], ['pi', 'pi']];
-  const AS_TESTED = ['claude', 'grok'];
   // 上次读到的会话列表 (主机 + Agent → { items, info })：再打开时先显示它，后台再刷新
   const asCache = new Map();
 
@@ -88,7 +87,7 @@
         if (my !== seq) return;
         items = r.sessions;
         info.textContent = `${host} · ${q ? `含「${q}」的 ` : '最近 '}${items.length} 个会话${r.more ? '（只列最近的）' : ''}${r.partial ? '（搜索超时，只搜了最近的一部分）' : ''}`
-          + (AS_TESTED.includes(agent) ? '' : ' · 未实测：还没在真的 Agent 上试过，有问题告诉我');
+          + (r.tested ? '' : ' · 未实测：还没在真的 Agent 上试过，有问题告诉我');
         if (!q) asCache.set(key, { items, info: info.textContent });
         render();
       } catch (e) {

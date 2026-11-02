@@ -134,6 +134,13 @@ run(async () => {
   ok(o === '{"decision":""}\n' && lastLine().busy === true, 'Antigravity：步骤之间的 Stop (fullyIdle=false) 标上 busy');
   o = runA(['antigravity', 'PostInvocation'], '');
   ok(o === '{}\n' && lastLine().hook_event_name === 'PostInvocation', 'Antigravity：没有内容的事件也记下来');
+  // agy 1.4.12 真实传来的字段 (驼峰)：对话号 conversationId、你说的话 lastUserInput、目录 workspacePaths (数组)、Stop 的 terminationReason
+  runA(['antigravity', 'PreInvocation'], JSON.stringify({ conversationId: '622b6e19-c54d', invocationNum: 0, lastUserInput: '执行 echo "测试"', workspacePaths: ['/srv/a b', '/srv/c'], modelName: 'gemini-3.8-flash-low' }));
+  l = lastLine();
+  ok(l.session_id === '622b6e19-c54d' && l.prompt === '执行 echo "测试"' && l.cwd === '/srv/a b', 'Antigravity：对话号、你说的话、目录 (workspacePaths 的第一个) 都取得到: ' + JSON.stringify(l));
+  runA(['antigravity', 'Stop'], JSON.stringify({ terminationReason: 'USER_CANCELED', error: '', fullyIdle: true, conversationId: 'c1', cwd: '/x' }));
+  l = lastLine();
+  ok(l.reason === 'USER_CANCELED' && l.cwd === '/x', 'Antigravity：Stop 的 terminationReason 记成 reason；有 cwd 就不用 workspacePaths: ' + JSON.stringify(l));
   // OpenCode 插件：真的用 node 加载，喂它 OpenCode 的事件，看交给 hook.sh 的是什么
   fs.mkdirSync(path.join(fakeHome, '.ssh-web'), { recursive: true }); fs.writeFileSync(path.join(fakeHome, '.ssh-web/hook.sh'), HOOK_SH);
   const plug = path.join(home, 'sshweb-status.mjs'); fs.writeFileSync(plug, OPENCODE_PLUGIN);
@@ -270,9 +277,9 @@ run(async () => {
   await p.keyboard.press('Escape'); await wait(200);
   await p.click('#btnMore'); await p.click('#btnHooks'); await waitRow('grok', /未安装/);
   const rowsInfo = await p.evaluate(() => [...document.querySelectorAll('.hooksp .hk-row')].map((r) => [r.dataset.agent, !!r.querySelector('.hk-tag'), r.classList.contains('absent')]));
-  ok(rowsInfo.length === 6 && !rowsInfo.some(([id]) => id === 'gemini') && rowsInfo[0][0] === 'claude' && rowsInfo.every(([id, tag]) => tag === !['claude', 'grok'].includes(id))
+  ok(rowsInfo.length === 6 && !rowsInfo.some(([id]) => id === 'gemini') && rowsInfo[0][0] === 'claude' && rowsInfo.every(([id, tag]) => tag === !['claude', 'grok', 'antigravity'].includes(id))
     && rowsInfo.find(([id]) => id === 'opencode')[2] && !rowsInfo.find(([id]) => id === 'grok')[2],
-  '面板：6 个 Agent 各一行 (没有 Gemini CLI)，Claude Code 在第一个，除了实测过的 Claude Code 和 Grok 都标「未实测」，主机上没找到的变淡排后面: ' + JSON.stringify(rowsInfo));
+  '面板：6 个 Agent 各一行 (没有 Gemini CLI)，Claude Code 在第一个，除了实测过的 Claude Code、Grok、Antigravity 都标「未实测」，主机上没找到的变淡排后面: ' + JSON.stringify(rowsInfo));
   await p.screenshot({ path: shot('hooks-agents.png') });
   dialogs.length = 0;
   for (const id of ['grok', 'codex', 'antigravity', 'opencode', 'pi']) { await p.click(R(id) + ' [data-a=install]'); await waitRow(id, /已安装/); }
@@ -304,7 +311,7 @@ run(async () => {
   const agy = JSON.parse(fs.readFileSync(hf('.gemini/config/hooks.json'), 'utf8'));
   const b = agy['sshweb-status'];
   ok(JSON.stringify(agy.mine) === JSON.stringify(agyOrig.mine) && b.Stop[0].command === 'sh "$HOME/.ssh-web/hook.sh" antigravity Stop' && b.Stop[0].type === 'command'
-    && b.PreToolUse[0].matcher === '*' && b.PreToolUse[0].hooks[0].command.endsWith('antigravity PreToolUse'),
+    && b.PreToolUse[0].matcher === '*' && b.PreToolUse[0].hooks[0].command.endsWith('antigravity PreToolUse') && b.SessionStart[0].command.endsWith('antigravity SessionStart'),
   'Antigravity：~/.gemini/config/hooks.json 里加一个 sshweb-status 分组 (别的分组不动)，命令带上事件名: ' + JSON.stringify(b.Stop));
   ok(fs.readFileSync(hf('.config/opencode/plugins/sshweb-status.js'), 'utf8') === OPENCODE_PLUGIN, 'OpenCode：插件写进 ~/.config/opencode/plugins/sshweb-status.js');
   // Codex 的 hooks.json 有别的顶层内容：Codex 会整个文件不认，不改
@@ -533,6 +540,22 @@ run(async () => {
   emit({ agent: 'codex', hook_event_name: 'UserPromptSubmit', prompt: '再来' }); await wait(300);
   emit({ agent: 'codex', hook_event_name: 'Interrupt' }); await wait(500);
   ok(lastState() === '完成' && lastDetail() === 'Codex · 已中断', 'Codex 被打断 (Interrupt)：显示已中断');
+  // Antigravity 没有「要权限」事件：钩子说在跑、屏幕上出现它的确认框就算待选择，推送写出命令；确认框没了回到运行中
+  ws.send(JSON.stringify({ type: 'data', data: 'c' })); await wait(300);
+  emit({ agent: 'antigravity', hook_event_name: 'PreInvocation', prompt: '执行一下测试' }); await wait(300);
+  emit({ agent: 'antigravity', hook_event_name: 'PreToolUse', tool_name: 'run_command', command: 'echo 测试' }); await wait(500);
+  ok(lastState() === '运行中', 'Antigravity 用工具前 (PreToolUse)：运行中');
+  n0 = pushed.length;
+  shellSt.write('\x1b[2J\x1b[HRequesting permission for:\r\n   echo 测试\r\nRun this command?\r\n> 1. Yes, run command\r\n  4. No, cancel\r\n');
+  await until(() => pushed.length > n0, 5000);
+  ok(lastState() === '待选择' && lastPush().body === 'Antigravity · 要执行命令：echo 测试' && !lastPush().actions, 'Antigravity 屏幕上弹出确认框：待选择，推送写出命令，不带按钮: ' + JSON.stringify(lastPush()));
+  shellSt.write('\x1b[2J\x1b[H测试\r\n'); await wait(1200);
+  ok(lastState() === '运行中' && pushed.length === n0 + 1, 'Antigravity 确认框没了 (点过了)：回到运行中，不再推送');
+  emit({ agent: 'antigravity', hook_event_name: 'Stop', reason: 'USER_CANCELED' }); await wait(500);
+  ok(lastState() === '完成' && lastDetail() === 'Antigravity · 已中断', 'Antigravity 被你打断 (terminationReason=USER_CANCELED)：已中断');
+  emit({ agent: 'antigravity', hook_event_name: 'PreInvocation', prompt: '再来' }); await wait(300);
+  emit({ agent: 'antigravity', hook_event_name: 'Stop', reason: 'ERROR', error: 'quota exceeded' }); await wait(500);
+  ok(lastState() === '报错' && lastDetail() === 'Antigravity · quota exceeded', 'Antigravity 出错结束 (terminationReason=ERROR)：报错，写出原因: ' + lastDetail());
 
   // 钩子不是在网页上装的 (主机上已经有 hook.sh)：重新连上这台主机时认出来，同样只按钩子推送
   await J('POST', '/api/hooks/uninstall', { sid });

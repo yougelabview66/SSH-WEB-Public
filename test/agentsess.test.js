@@ -59,9 +59,21 @@ put(`${AGY}/brain/aaaa1111-0000-4000-8000-000000000001/.system_generated/logs/tr
 ].join('\n') + '\n', 46);
 put(`${AGY}/brain/bbbb2222-0000-4000-8000-000000000002/.system_generated/logs/transcript.jsonl`, J({ step_index: 40, source: 'SYSTEM', type: 'CHECKPOINT', content: 'summary' }) + '\n', 47);
 put(`${AGY}/brain/cccc3333-0000-4000-8000-000000000003/.system_generated/logs/transcript.jsonl`, J({ type: 'SYSTEM_MESSAGE', content: '<subagent_reminder>id: aaaa1111</subagent_reminder>' }) + '\n', 45);
+// agy 1.4.12 实测：索引里没有 conversationId，按第一句话的时间 (created_at) 对；标题在 annotations/<对话号>.pbtxt (中文是八进制转义)；
+// cache/last_conversations.json 是「目录 → 最近一个对话」
+put(`${AGY}/brain/dddd4444-0000-4000-8000-000000000004/.system_generated/logs/transcript.jsonl`, [
+  J({ step_index: 0, source: 'USER_EXPLICIT', type: 'USER_INPUT', status: 'DONE', created_at: '2026-11-02T05:54:01Z', content: '<USER_REQUEST>\n用终端执行命令 echo 测试\n</USER_REQUEST>\n<ADDITIONAL_METADATA>\nThe current local time is: x\n</ADDITIONAL_METADATA>' }),
+  J({ step_index: 1, source: 'MODEL', type: 'PLANNER_RESPONSE', status: 'DONE', content: '好的' }),
+].join('\n') + '\n', 44);
+put(`${AGY}/annotations/dddd4444-0000-4000-8000-000000000004.pbtxt`, 'title:"\\346\\211\\247\\350\\241\\214 echo \\"\\346\\265\\213\\350\\257\\225\\""', 44);
+put(`${AGY}/brain/eeee5555-0000-4000-8000-000000000005/.system_generated/logs/transcript.jsonl`,
+  J({ step_index: 0, source: 'USER_EXPLICIT', type: 'USER_INPUT', created_at: '2026-10-01T00:00:00Z', content: '<USER_REQUEST>\n索引里找不到的\n</USER_REQUEST>' }) + '\n', 43);
+put(`${AGY}/cache/last_conversations.json`, '{\n  "/srv/last": "eeee5555-0000-4000-8000-000000000005"\n}', 43);
 put(`${AGY}/history.jsonl`, [
   J({ display: 'agy 帮我修登录页', timestamp: 1, workspace: '/srv/agy', conversationId: 'aaaa1111-0000-4000-8000-000000000001' }),
   J({ display: '压缩前的第一句', timestamp: 2, workspace: '/srv/agy2', conversationId: 'bbbb2222-0000-4000-8000-000000000002' }),
+  J({ display: '别的对话里同一时间说的', timestamp: Date.parse('2026-11-02T05:54:05Z'), workspace: '/srv/wrong' }),
+  J({ display: '用终端执行命令 echo 测试', timestamp: Date.parse('2026-11-02T05:54:00.976Z'), workspace: '/srv/agy3' }),
 ].join('\n') + '\n', 45);
 // OpenCode：子会话 (有 parentID) 不列
 put('.local/share/opencode/storage/session/proj1/ses_main1.json', J({ id: 'ses_main1', title: 'OpenCode 会话', directory: '/srv/oc', time: { created: 1, updated: 2 } }), 60);
@@ -131,6 +143,11 @@ run(async () => {
   ok(r.sessions.length === 1 && r.sessions[0].title === 'Codex 写测试' && r.sessions[0].prompt === 'Codex 帮我写测试' && r.sessions[0].cmd === "cd '/srv/c' && codex resume 0199b3c4-aaaa-bbbb-cccc-123456789abc",
     'Codex：id 和目录在第一行，起的名字在 session_index，第一句话是 user_message: ' + J(r.sessions[0]));
   r = await api('antigravity');
+  const agyNew = ['dddd', 'eeee'].map((k) => r.sessions.find((x) => x.id.startsWith(k)) || {});
+  ok(agyNew[0].title === '执行 echo "测试"' && agyNew[0].prompt === '用终端执行命令 echo 测试' && agyNew[0].cwd === '/srv/agy3'
+    && agyNew[1].cwd === '/srv/last' && agyNew[1].title === '',
+  'Antigravity (1.4.12 实测格式)：索引没有对话号时按第一句话的时间和文字对出目录 (同一时间别的话不算)，标题从 annotations 里读 (中文八进制转义解得出)，last_conversations.json 也能给目录: ' + J(agyNew.map((x) => [x.title, x.prompt, x.cwd])));
+  r.sessions = r.sessions.filter((x) => !/^(dddd|eeee)/.test(x.id));
   ok(r.sessions.length === 2 && r.sessions[0].prompt === 'agy 帮我修登录页' && r.sessions[0].cmd === "cd '/srv/agy' && agy --conversation aaaa1111-0000-4000-8000-000000000001"
     && r.sessions[1].prompt === '压缩前的第一句' && r.sessions[1].cwd === '/srv/agy2',
   'Antigravity：第一句话从 <USER_REQUEST> 里取 (压缩掉了就用索引的)，目录用索引的，子 Agent 不列: ' + J(r.sessions));
