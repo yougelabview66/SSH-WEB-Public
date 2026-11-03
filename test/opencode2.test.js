@@ -155,6 +155,14 @@ const b64 = (x) => Buffer.from(x).toString('base64');
   done2();
 })();
 function done2() {
+// Grok 跑了 Claude Code 配置里的钩子：同一个事件 grok、claude 各报一遍 (Windows 上的 Grok 1.0.73)，claude 那遍不要
+{
+  const { grokDup } = SessionHooks;
+  ok(!grokDup({ agent: 'grok', session_id: 'g-1', hook_event_name: 'SessionStart' }) && grokDup({ agent: 'claude', session_id: 'g-1', hook_event_name: 'SessionStart' }),
+    'Grok 报过的对话号：之后标成 claude 的同号事件是它的重复，不要');
+  ok(!grokDup({ agent: 'claude', session_id: 'c-1', hook_event_name: 'Stop' }) && !grokDup({ agent: 'claude', hook_event_name: 'Stop' }) && !grokDup({ agent: 'pi', session_id: 'g-1' }),
+    '真的 Claude Code (对话号不一样、没有对话号)、别的 Agent：照常');
+}
 const src = fs.readFileSync(path.join(__dirname, '../lib/session/index.js'), 'utf8');
 ok(/registerOscHandler\(7501,[^\n]*onProgramStatus/.test(src), '终端输出里的 OSC 7501 交给 onProgramStatus');
 fs.rmSync(dir, { recursive: true, force: true });
