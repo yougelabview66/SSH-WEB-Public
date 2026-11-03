@@ -40,6 +40,26 @@ const cur = (line, extra = {}) => ({ term: { rows: 1, buffer: { active: { baseY:
 ok(atShellPrompt(cur('root@host:~# ')) && atShellPrompt(cur('  ask >')) && !atShellPrompt(cur('  ask >', { shellOf: { base: 'powershell' } })),
   '提示符：Linux 上以 $ # > 等结尾就算；Windows 上只认 PS C:\\x> / C:\\x> (Agent 界面里以 > 结尾的行不算)');
 
+// Windows 上光标还在 shell 报目录 (OSC 9;9) 时那一行：停在提示符上 (自己配置的提示符也认得)；画了界面光标到了别的行就不是
+const rowSess = (cursorY, promptRow) => ({ ...cur('❯ '), shellOf: { base: 'powershell' }, promptRow, term: { rows: 30, buffer: { active: { type: 'normal', baseY: 0, cursorY, getLine: () => ({ translateToString: () => '❯ ' }) } } } });
+ok(atShellPrompt(rowSess(5, 5)) && !atShellPrompt(rowSess(20, 5)) && !atShellPrompt(rowSess(5, null)),
+  'Windows：光标还在报目录时那一行 = 停在提示符上 (自定义提示符也行)；光标去了别的行 (程序画了界面) 不是');
+
+// 「继续」：Windows 上 OpenCode 开着、钩子没报、手机上屏幕也认不出它 —— 先退出它，等提示符出来再发命令 (以前直接发，打进了 OpenCode 的输入框)
+(async () => {
+  const { resumeInTerminal } = require('../lib/agent-sessions');
+  let lines = ['  Build  deepseek-v4.1-flash', '', '  ┃ 问点什么'], cy = 2;
+  const writes = [];
+  const sess = { hook: null, hookSid: null, shellOf: { base: 'powershell' }, promptRow: 0, outAt: 0, termPending: 0,
+    term: { rows: 3, buffer: { active: { type: 'normal', baseY: 0, viewportY: 0, get cursorY() { return cy; }, getLine: (y) => ({ translateToString: () => lines[y] ?? '' }) } } },
+    promptShell() { return /^PS [A-Za-z]:\\[^>]*>/.test(lines[cy]) ? 'powershell' : null; },
+    write(k) { writes.push(k); if (k === '\x03' && writes.filter((x) => x === '\x03').length === 2) { lines = ['PS C:\\Users\\me> ', '', '']; cy = 0; this.promptRow = 0; this.outAt = Date.now() - 1000; } },
+    noteDaemonAgent() {}, setAgentCwd() {}, setHookAgent() {} };
+  const r = await resumeInTerminal(sess, 'pi --session abc', '', '', '', 'pi');
+  ok(r.quit === true && writes[0] === '\x03' && writes.at(-1) === 'pi --session abc\r' && writes.filter((x) => x.includes('pi --session')).length === 1,
+    '「继续」：Windows 上停在 OpenCode 界面 (钩子没报、屏幕认不出)：先按 Ctrl+C 退出，回到 PS 提示符才发命令: ' + JSON.stringify(writes));
+})().then(() => {
+
 // ---- 网页：认这个标签里在跑哪个 Agent
 const src = fs.readFileSync(path.join(__dirname, '../public/app/09-agents.js'), 'utf8');
 const { agentIdOf } = vm.runInNewContext(src + '\n;({ agentIdOf })', { isTouch: false, send: () => {}, window: {}, document: {} });
@@ -61,3 +81,4 @@ const ls = fs.readFileSync(path.join(__dirname, '../public/app/55-local-scroll.j
 ok(/s\.noTmuxUntil > Date\.now\(\) && s\.noTmuxAgent === agentIdOf\(s\)/.test(ls) && /s\.noTmuxAgent = agentIdOf\(s\)/.test(ls) && /'no-agent-history': 3000/.test(ls),
   '取历史失败后的冷却：换了 Agent 不算 (以前 30 秒到 5 分钟里换了 Agent 也不试)；Agent 自己的记录读不到 (还没说话) 只停 3 秒');
 process.exit();
+});
