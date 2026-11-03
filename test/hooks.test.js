@@ -576,6 +576,23 @@ run(async () => {
   await until(() => lastState() === '完成', 5000);
   ok(lastState() === '完成' && lastDetail() === 'Antigravity · 已中断', 'Antigravity 底部回到「? for shortcuts」(被 Esc 打断，没报事件)：已中断: ' + lastDetail());
 
+  // Codex 出错结束 (额度用完等) 不报 Stop：钩子说在跑、屏幕上最新的是红色「■ 原因」、底部没在转 → 报错
+  ws.send(JSON.stringify({ type: 'data', data: 'e' })); await wait(300);
+  shellSt.write('\x1b[2J\x1b[H› 算一下 1+1\r\n\r\n• Working (2s • esc to interrupt)\r\n\r\n› Ask Codex to do anything\r\n'); await wait(300);
+  emit({ agent: 'codex', hook_event_name: 'UserPromptSubmit', prompt: '算一下 1+1' }); await wait(2000);
+  ok(lastState() === '运行中', 'Codex 在跑 (底部 esc to interrupt)：运行中');
+  shellSt.write('\x1b[2J\x1b[H› 算一下 1+1\r\n\r\n■ You’ve hit your usage limit. Upgrade to Pro (https://example.com/pro), visit https://example.com/usage to\r\npurchase more credits or try again at Nov 4th, 2026 12:39 AM.\r\n\r\n  Approaching rate limits\r\n› 1. Switch to a smaller model\r\n  2. Keep current model\r\n');
+  await until(() => lastState() === '报错', 5000);
+  ok(lastState() === '报错' && /^Codex · You’ve hit your usage limit\. .*try again at Nov 4th/.test(lastDetail()), 'Codex 额度用完 (没报事件，屏幕上是「■」出错行)：报错，写出原因: ' + lastDetail());
+  // 出错后又说了话：旧的「■」还在上面，但下面有新的你说的话，不算出错
+  ws.send(JSON.stringify({ type: 'data', data: 'f' })); await wait(300);
+  shellSt.write('\x1b[2J\x1b[H■ stream disconnected before completion.\r\n\r\n› 再试一次\r\n\r\n› Ask Codex to do anything\r\n'); await wait(300);
+  emit({ agent: 'codex', hook_event_name: 'UserPromptSubmit', prompt: '再试一次' }); await wait(2500);
+  ok(lastState() === '运行中', 'Codex 出错后又说了话 (旧「■」上面，下面有新问题)：还是运行中: ' + lastState());
+  shellSt.write('\x1b[2J\x1b[H› 再试一次\r\n\r\n■ Conversation interrupted - use /feedback if something went wrong\r\n\r\n› Ask Codex to do anything\r\n');
+  await until(() => lastState() === '完成', 5000);
+  ok(lastState() === '完成' && lastDetail() === 'Codex · 已中断', 'Codex 屏幕上是「■ Conversation interrupted」：已中断: ' + lastDetail());
+
   // 钩子不是在网页上装的 (主机上已经有 hook.sh)：重新连上这台主机时认出来，同样只按钩子推送
   await J('POST', '/api/hooks/uninstall', { sid });
   fs.mkdirSync(path.join(home, '.ssh-web'), { recursive: true }); fs.writeFileSync(path.join(home, '.ssh-web/hook.sh'), HOOK_SH);
