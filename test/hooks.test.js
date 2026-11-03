@@ -576,7 +576,9 @@ run(async () => {
   await until(() => lastState() === '完成', 5000);
   ok(lastState() === '完成' && lastDetail() === 'Antigravity · 已中断', 'Antigravity 底部回到「? for shortcuts」(被 Esc 打断，没报事件)：已中断: ' + lastDetail());
 
-  // Codex 出错结束 (额度用完等) 不报 Stop：钩子说在跑、屏幕上最新的是红色「■ 原因」、底部没在转 → 报错
+  // Codex 出错结束 (额度用完等) 不报 Stop：钩子说在跑、屏幕上最新的是红色「■ 原因」、底部没在转 → 报错。
+  // 终端拉高到 50 行：「■」在屏幕上面、离最底下 30 多行也要看得到 (实测网页上的终端常有 40 多行)
+  ws.send(JSON.stringify({ type: 'resize', cols: 80, rows: 50 })); await wait(500);
   ws.send(JSON.stringify({ type: 'data', data: 'e' })); await wait(300);
   shellSt.write('\x1b[2J\x1b[H› 算一下 1+1\r\n\r\n• Working (2s • esc to interrupt)\r\n\r\n› Ask Codex to do anything\r\n'); await wait(300);
   emit({ agent: 'codex', hook_event_name: 'UserPromptSubmit', prompt: '算一下 1+1' }); await wait(2000);
