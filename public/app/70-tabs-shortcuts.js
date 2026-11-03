@@ -194,7 +194,7 @@
 
   // 「✏️ 命名标签」：给当前标签的「主机名-」后面换一个名字，主机名称保留。刷新、重新打开、别的设备、接着的常驻会话
   // 都用新名字 (怎么传到服务端和别的设备见 17-tabs.js 的 renameTab)。没连上也能改：先改本地，连上时会带上。
-  // 输入框 16px：手机上聚焦小字输入框会把整个页面放大 (同终端搜索框、手机输入栏的做法)
+  // 输入框 16px：手机上聚焦小字输入框会把整个页面放大 (同终端搜索框、手机输入栏的做法)；打开时全选现在的名字，直接输入就替换
   $('#btnRename').addEventListener('click', () => {
     const s = active;
     if (!s) return;
@@ -202,7 +202,11 @@
       <p class="muted">主机名称保留，只改它后面的部分；清空恢复按序号显示。</p>`, [
       { label: '取消', value: null, cancel: true },
       { label: '保存', value: true, cls: 'primary', submit: true },
-    ], 'rename-' + s.id).then((r) => {
+    ], 'rename-' + s.id, (body) => {
+      // 打开时全选现在的名字：直接打字就替换掉 (弹窗先聚焦输入框，下一轮再选中；iOS 上 select() 不一定生效，再设一次选区)
+      const inp = body.querySelector('input[name=name]');
+      setTimeout(() => { if (document.activeElement !== inp) inp.focus(); inp.select(); inp.setSelectionRange(0, inp.value.length); });
+    }).then((r) => {
       if (!r.value || s.closed) return;
       renameTab(s, r.form.elements.name.value);
     });

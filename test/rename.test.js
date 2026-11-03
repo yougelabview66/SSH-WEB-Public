@@ -30,7 +30,10 @@ run(async () => {
   ok(await p.inputValue('#dialogBody input[name=name]') === '1', '输入框预填当前序号「1」(主机名称保留在前面)');
   ok(await p.evaluate(() => getComputedStyle(document.querySelector('#dialogBody input[name=name]')).fontSize) === '16px',
     '输入框 16px：手机上聚焦不会把页面放大 (同终端搜索框的做法)');
-  await p.fill('#dialogBody input[name=name]', '下载');
+  const sel = await p.evaluate(() => { const i = document.querySelector('#dialogBody input[name=name]'); return [document.activeElement === i, i.selectionStart, i.selectionEnd, i.value.length]; });
+  ok(sel[0] && sel[1] === 0 && sel[2] === sel[3], '打开时全选现在的名字 (直接打字就替换): ' + JSON.stringify(sel));
+  await p.keyboard.type('下载'); // 不先清空，直接打字
+  ok(await p.inputValue('#dialogBody input[name=name]') === '下载', '直接打字替换掉原来的名字');
   await p.keyboard.press('Enter'); await wait(300);
   ok(await p.isHidden('#dialog'), '回车保存，对话框关掉');
   ok(await p.evaluate(() => document.querySelector('.tab.active .title').textContent) === '重命名测试机-下载', '主机名称保留，只改「-」后面的：变成「重命名测试机-下载」');
