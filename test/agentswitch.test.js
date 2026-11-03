@@ -50,7 +50,7 @@ ok(atShellPrompt(rowSess(5, 5)) && !atShellPrompt(rowSess(20, 5)) && !atShellPro
   const { resumeInTerminal } = require('../lib/agent-sessions');
   let lines = ['  Build  deepseek-v4.1-flash', '', '  ┃ 问点什么'], cy = 2;
   const writes = [];
-  const sess = { hook: null, hookSid: null, shellOf: { base: 'powershell' }, promptRow: 0, outAt: 0, termPending: 0,
+  const sess = { status: 'connected', hook: null, hookSid: null, shellOf: { base: 'powershell' }, promptRow: 0, outAt: 0, termPending: 0,
     term: { rows: 3, buffer: { active: { type: 'normal', baseY: 0, viewportY: 0, get cursorY() { return cy; }, getLine: (y) => ({ translateToString: () => lines[y] ?? '' }) } } },
     promptShell() { return /^PS [A-Za-z]:\\[^>]*>/.test(lines[cy]) ? 'powershell' : null; },
     write(k) { writes.push(k); if (k === '\x03' && writes.filter((x) => x === '\x03').length === 2) { lines = ['PS C:\\Users\\me> ', '', '']; cy = 0; this.promptRow = 0; this.outAt = Date.now() - 1000; } },
@@ -78,6 +78,33 @@ ok(atShellPrompt(rowSess(5, 5)) && !atShellPrompt(rowSess(20, 5)) && !atShellPro
     const err = await resumeInTerminal(sess, 'pi --session abc', '', '', '', 'pi').then(() => null, (e) => e);
     ok(err && /没能退出/.test(err.message) && !writes.includes('\x04') && !writes.some((x) => x.includes('pi --session')),
       '退不出：Windows 上不按 Ctrl+D、不发命令，报「没能退出」: ' + JSON.stringify(writes));
+  }
+  // 真机实测 (11-03，OpenCode 1.19.5)：按 Ctrl+C 后 OpenCode 退出、屏幕重画成开它之前的样子 (光标正好停在之前报目录的那一行)，
+  // 没有新的提示符，4 秒后 PowerShell 也跟着退出 (OpenCode 的 bug)，常驻会话结束。以前把光标那一行当成提示符马上发了命令 (丢了)、
+  // 然后连接断开。现在：等不到提示符、常驻会话结束了 → 同一个标签新开一个常驻会话 (不弹选择框)，提示符出来再发命令
+  {
+    lines = ['  Build  deepseek-v4.1-flash', '', '  ┃ 问点什么'], cy = 2;
+    writes.length = 0;
+    Object.assign(sess, { daemonId: '1', promptRow: 4, promptAt: 0, outAt: 0 });
+    let conns = 0;
+    sess.line = () => {};
+    sess.write = function (k) {
+      writes.push(k);
+      if (k === '\x03' && writes.length === 1) {
+        lines = ["PS C:\\Users\\me> cd 'D:\\p'; opencode --session ses_1", '', '', '', '']; cy = 4; this.outAt = Date.now();
+        this.term.rows = 5;
+        setTimeout(() => { this.daemonId = null; this.status = 'closed'; }, 2500); // PowerShell 跟着退出
+      }
+    };
+    sess.connect = function () {
+      conns++; this.fresh = this.daemonFresh; this.status = 'connecting';
+      setTimeout(() => { this.status = 'connected'; this.daemonId = '2'; lines = ['PS C:\\Users\\me> ']; cy = 0; this.term.rows = 1; this.promptAt = Date.now(); this.outAt = Date.now() - 900; }, 300);
+    };
+    const r3 = await resumeInTerminal(sess, 'pi --session abc', '', '', '', 'pi');
+    const cmdAt = writes.indexOf('pi --session abc\r');
+    ok(r3.quit === true && r3.fresh === true && conns === 1 && sess.fresh === true && cmdAt === writes.length - 1 && writes.filter((x) => x.includes('pi --session')).length === 1,
+      '「继续」：Windows 上 OpenCode 退出把 PowerShell 带走了 (常驻会话结束)：不把光标那一行当提示符，同一个标签新开常驻会话 (不弹选择框)，提示符出来再发命令: ' + JSON.stringify({ r3, conns, writes }));
+    sess.status = 'connected'; sess.daemonId = null;
   }
 })().then(() => {
 

@@ -129,6 +129,15 @@ run(async () => {
   emit({ v: 3, ssh: true, hook_event_name: 'PermissionRequest', tool_name: 'Bash', command: 'via ssh' });
   await until(() => states[states.length - 1]?.[1] === '要执行命令：via ssh', 3000);
   ok(states[states.length - 1]?.[1] === '要执行命令：via ssh', 'SSH 连进来的终端里的 Agent (标了 ssh)：照常交给标签');
+  // 主机上的 watch.ps1 是旧版 (Get-Content -Wait，SSH 断开后不退出，一台主机积了几十个)：重新开始读事件时自动换成新版，不用重装钩子
+  fs.writeFileSync(path.join(home, '.ssh-web/watch.ps1'), '\uFEFF# 旧版\r\nGet-Content -LiteralPath $f -Tail 0 -Wait\r\n');
+  const n1 = watchCmds.length;
+  await wait(5000); // 读事件的通道开了不到 5 秒就断的，要过 1 分钟才重开 (见 session/hooks.js)
+  watchCh.exit(0); watchCh.end();
+  await until(() => watchCmds.length > n1, 8000);
+  ok(watchCmds.length > n1 && fs.readFileSync(path.join(home, '.ssh-web/watch.ps1'), 'utf8') === WATCH_PS1,
+    '主机上是旧版 watch.ps1：重新读事件前自动换成新版 (断开后会自己退出): ' + (watchCmds.length - n1) + ' ' + fs.readFileSync(path.join(home, '.ssh-web/watch.ps1'), 'utf8').slice(0, 40));
+  ok(/HasExited/.test(WATCH_PS1) && !/^Get-Content/m.test(WATCH_PS1), '新版 watch.ps1：启动它的 sshd 没了就退出，不再用 Get-Content -Wait');
 
   // 开头带 BOM：Windows PowerShell 5.1 读没有 BOM 的 .ps1 按系统代码页 (GBK) 解码，中文注释吃掉换行、整个脚本解析失败。
   // 下面在 Linux 上跑的是 pwsh (默认 UTF-8)，测不出这个问题，所以单独看一眼
