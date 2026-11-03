@@ -331,7 +331,10 @@ run(async () => {
   await until(() => p1.ready() || p1.picks.length, 15000);
   if (p1.picks.length) { p1.send({ type: 'daemon-pick-response', id: '' }); await until(p1.ready, 15000); }
   const pid = /新建常驻会话 (\d+)/.exec(p1.out)?.[1];
-  let p2; ({ t: p2 } = await openPick(host.id, pid));
+  let p2, row9; ({ t: p2, row: row9 } = await openPick(host.id, pid));
+  // 正在别的标签里开着的会话：胶囊显示正在用它的那个标签 (p1)，不是这个新标签接上后的名字
+  const p1Name = `DT-${p1.last('attached')?.session?.n}`;
+  ok(row9?.tabNow === p1Name && row9.tabNow !== row9.tabDef, '正在别的标签里开着：胶囊显示那个标签的名字: ' + JSON.stringify(row9 && { tabNow: row9.tabNow, tabDef: row9.tabDef, p1Name }));
   p2.send({ type: 'daemon-pick-response', id: pid, share: true });
   await until(p2.ready, 15000);
   p1.send({ type: 'rename', suffix: '壬' });

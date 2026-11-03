@@ -94,13 +94,15 @@
     // (同「💬 会话历史」卡片：没标题时拿第一句话当标题)
     const idText = (x) => x.tab || x.name || x.title || x.msg || x.cwd || `会话 ${x.id}`;
     // 每行 (同「💬 会话历史」卡片的样式)：会话名称 → 最新一次对话内容 → 项目工作路径 → 工作时间；
-    // 胶囊跟在工作时间后面 (与这行文字居中对齐)：命过名显示会话自己的「主机名-名字」，没命过显示接上后默认的「主机名-序号」
+    // 胶囊跟在工作时间后面 (与这行文字居中对齐)：正在别的标签里开着的显示那个标签的名字 (用户 11-03 定的)；
+    // 没人用的：命过名显示会话自己的「主机名-名字」，没命过显示接上后默认的「主机名-序号」
+    const cap = (x) => x.tabNow || x.tab || x.tabDef;
     const listHtml = () => {
       const list = cur.sessions || [];
       const rows = list.map((x) => `<div class="as-row dp-row${x.busy ? ' dp-busy' : ''}" data-id="${esc(x.id)}">
         <div class="as-main"><div class="as-title">${x.name ? agentLogo(x.agent) : ''}${esc(x.name || x.title || x.msg || x.cwd || `会话 ${x.id}`)}</div>
           ${x.msg && (x.name || x.title) ? `<div class="as-prompt">${esc(x.msg)}</div>` : ''}
-          ${(x.name || x.title || x.msg) && x.cwd ? `<div class="as-prompt">${esc(x.cwd)}</div>` : ''}<div class="as-meta dp-when"><span class="dp-when-t">${esc(x.when)}</span>${x.tab || x.tabDef ? `<span class="dp-name" title="${esc(x.tab || x.tabDef)}">${esc(x.tab || x.tabDef)}</span>` : ''}</div>
+          ${(x.name || x.title || x.msg) && x.cwd ? `<div class="as-prompt">${esc(x.cwd)}</div>` : ''}<div class="as-meta dp-when"><span class="dp-when-t">${esc(x.when)}</span>${cap(x) ? `<span class="dp-name" title="${esc(cap(x))}">${esc(cap(x))}</span>` : ''}</div>
           ${x.busy ? `<div class="dp-used">正在${esc(x.busy)}里使用中</div>` : ''}</div>
         <div class="as-btns"><button type="button" data-a="pick" class="primary">接上</button><button type="button" data-a="kill">删除</button></div></div>`).join('');
       return (cur.note ? `<p class="dp-note">${esc(cur.note)}</p>` : '')

@@ -36,6 +36,29 @@ put('.pi/agent/sessions/--D--pi--/2026-11-02T05-45-23-290Z_0aaa1111-0000-4000-80
   J({ type: 'session_info', id: 'k1', parentId: 'a1', name: 'Windows 上的 pi' }),
 ].join('\n') + '\n', 8);
 
+// OpenCode 新版：SQLite 数据库 ~/.local/share/opencode/opencode.db (SFTP 拷到服务器上读)；子会话、归档的不列
+{
+  const { DatabaseSync } = require('node:sqlite');
+  const dbf = path.join(home, '.local/share/opencode/opencode.db');
+  fs.mkdirSync(path.dirname(dbf), { recursive: true });
+  const db = new DatabaseSync(dbf);
+  db.exec(`create table session (id text primary key, parent_id text, directory text, title text, time_updated integer, time_archived integer);
+    create table message (id text primary key, session_id text, time_created integer, data text);
+    create table part (id text primary key, message_id text, session_id text, time_created integer, data text);`);
+  const ses = (id, parent, dir, title, t, arch) => db.prepare('insert into session values (?,?,?,?,?,?)').run(id, parent, dir, title, t, arch);
+  const msg = (sid, mid, role, text, t) => {
+    db.prepare('insert into message values (?,?,?,?)').run(mid, sid, t, J({ role }));
+    db.prepare('insert into part values (?,?,?,?,?)').run(mid + 'p', mid, sid, t, J({ type: 'text', text }));
+  };
+  const now = Date.now();
+  ses('ses_win1', null, 'D:\\oc', 'OpenCode 在 Windows', now - 60000, null);
+  msg('ses_win1', 'm1', 'user', 'OpenCode 你好', now - 60000); msg('ses_win1', 'm2', 'assistant', '回答里有 oc-needle', now - 59000);
+  ses('ses_kid', 'ses_win1', 'D:\\oc', '子会话', now - 30000, null);
+  ses('ses_arch', null, 'D:\\oc', '归档的', now - 20000, now);
+  db.close();
+}
+const ocCmds = [];
+
 // shell：SSH 默认的命令行 (单独开通道执行命令时)；prompt：终端屏幕上的提示符 (终端里可能又进了别的 shell)
 function server(port, shell, prompt) {
   new Server({ hostKeys: [hostKey()] }, (c) => {
@@ -48,6 +71,7 @@ function server(port, shell, prompt) {
         const ch = a(), cmd = info.command;
         const out = (t, code) => { if (t) ch.write(t); ch.exit(code); ch.end(); };
         if (cmd === 'echo %OS%;$env:OS') return out(shell === 'cmd' ? 'Windows_NT;$env:OS\r\n' : '%OS%\r\nWindows_NT\r\n', 0);
+        if (cmd.startsWith('cmd /c "opencode export')) { ocCmds.push(cmd); return out('DELETED\r\n', 0); }
         ch.stderr.write(`'${cmd.split(' ')[0]}' is not recognized as an internal or external command,\r\n`);
         out('', 1);
       });
@@ -106,6 +130,17 @@ run(async () => {
   r = await api('AWC', 'pi');
   ok(r.sessions.length === 1 && r.sessions[0].title === 'Windows 上的 pi' && r.sessions[0].prompt === 'pi 在 Windows' && r.sessions[0].cmd === 'cd /d "D:\\pi" && pi --session 0aaa1111-0000-4000-8000-000000000001',
     'pi (SFTP)：名字、第一句话、目录，恢复命令按 cmd 写: ' + JSON.stringify(r.sessions));
+  r = await api('AWC', 'opencode');
+  ok(r.sessions.length === 1 && r.sessions[0].id === 'ses_win1' && r.sessions[0].title === 'OpenCode 在 Windows' && r.sessions[0].prompt === 'OpenCode 你好'
+    && r.sessions[0].cmd === 'cd /d "D:\\oc" && opencode --session ses_win1',
+    'OpenCode 新版 (SQLite)：拷数据库读出对话，子会话、归档的不列，恢复命令按 cmd 写: ' + J(r.sessions));
+  r = await api('AWC', 'opencode', 'OC-NEEDLE');
+  ok(r.sessions.length === 1 && r.sessions[0].id === 'ses_win1', 'OpenCode：搜索消息内容 (不分大小写): ' + J(r.sessions.map((x) => x.id)));
+  r = await api('AWC', 'opencode', 'zzz-none');
+  ok(r.sessions.length === 0, 'OpenCode：搜不到的词没有结果');
+  const del = await fetch(BASE + '/api/agent-sessions/delete', { method: 'POST', headers: { 'content-type': 'application/json' }, body: J({ sid: sidOf('AWC'), agent: 'opencode', id: 'ses_win1', force: true }) }).then((x) => x.json());
+  ok(del.ok && ocCmds.length === 1 && /^cmd \/c "opencode export ses_win1 > C:\\Users\\me\\\.ssh-web\\trash\\[\w-]+-opencode-ses_win1\\session\.json && opencode session delete ses_win1 && echo DELETED"$/.test(ocCmds[0]),
+    'OpenCode 删除：先导出到回收站再用它自己的命令删 (交给 cmd 跑): ' + J([del, ocCmds]));
   r = await api('AWPS', 'claude');
   ok(r.sessions[0]?.cmd === `cd 'D:\\proj x'; claude --resume ${ID}`, "PowerShell：恢复命令 cd 'D:\\目录'; claude --resume (PowerShell 5 没有 &&): " + r.sessions[0]?.cmd);
   r = await api('AWMIX', 'claude');
