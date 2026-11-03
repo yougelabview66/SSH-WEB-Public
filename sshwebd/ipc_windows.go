@@ -92,13 +92,23 @@ func spawnDaemon() (bool, error) {
 		}
 		return cmd.Process.Release()
 	}
-	base := uint32(windows.DETACHED_PROCESS | windows.CREATE_NEW_PROCESS_GROUP)
+	// 不带 CREATE_NEW_PROCESS_GROUP：它会让新进程忽略 Ctrl+C，而且这个设置一路传给会话里的 shell 和
+	// 它启动的程序 (ping -t 等按 Ctrl+C 停不下)。DETACHED_PROCESS 没有控制台，本来就收不到 SSH 那边的 Ctrl+C
+	base := uint32(windows.DETACHED_PROCESS)
 	if err := start(base|createBreakawayFromJob, "breakaway"); err == nil {
 		return true, nil
 	}
 	// 外面的作业不让脱离：照样启动，SSH 断开时会话会跟着结束 (不用 WMI 兜底：普通用户的 SSH 登录不让用，
 	// 杀毒软件也会当成可疑的远程执行)
 	return false, start(base, "plain")
+}
+
+var procSetConsoleCtrlHandler = windows.NewLazySystemDLL("kernel32.dll").NewProc("SetConsoleCtrlHandler")
+
+// 恢复正常处理 Ctrl+C：启动我们的进程 (旧版 bridge、sshd 等) 可能设了忽略 Ctrl+C，这个设置会传给
+// 会话里的 shell 和程序，让 Ctrl+C 打断不了它们
+func allowCtrlC() {
+	procSetConsoleCtrlHandler.Call(0, 0)
 }
 
 var procIsProcessInJob = windows.NewLazySystemDLL("kernel32.dll").NewProc("IsProcessInJob")

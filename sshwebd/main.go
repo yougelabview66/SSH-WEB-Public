@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-var version = "0.1.8"
+var version = "0.1.9"
 
 const usage = `sshwebd %s：SSH-WEB 的终端守护程序
 
@@ -87,6 +87,7 @@ func runServe(args []string) int {
 	buf := fs.Int("buffer", 1<<20, "每个会话记住最近多少字节输出 (接上时补发)")
 	spawn := fs.String("spawn", "", "(内部用) 怎么启动的：breakaway = 带着脱离 SSH 会话的作业启动成功，plain = 没能脱离")
 	fs.Parse(args)
+	allowCtrlC() // 会话里的程序继承这个设置：要让 Ctrl+C 打断得了
 	os.MkdirAll(dataDir(), 0o700)
 	logPath := filepath.Join(dataDir(), "sshwebd.log")
 	if st, err := os.Stat(logPath); err == nil && st.Size() > 1<<20 {

@@ -56,6 +56,8 @@ func spawnDaemon() (bool, error) {
 
 func inJob() bool { return false }
 
+func allowCtrlC() {}
+
 func homeDir() string {
 	if h, err := os.UserHomeDir(); err == nil {
 		return h
