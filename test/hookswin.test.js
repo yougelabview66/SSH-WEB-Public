@@ -149,6 +149,31 @@ run(async () => {
     ok(o2.trim() === '{"decision":""}' && lines[1].agent === 'antigravity' && lines[1].hook_event_name === 'Stop', 'hook.ps1：Antigravity 的 Stop 回 {"decision":""}，事件名从命令里来');
   } else console.log('  (本机没有 PowerShell，跳过 hook.ps1 实跑；设 SSHWEB_PWSH=路径 可以跑)');
 
+  // ---- Antigravity：agy 在 Windows 上把命令交给 cmd 跑，带引号的 powershell -File "…" 跑不起来 (实测一条事件都没有)；
+  // 钩子命令换成每个事件一个 .cmd 小文件的路径 (不带引号、不带参数)。以前装的旧写法提示重新安装，重装后换掉，卸载删掉小文件
+  const agyF = path.join(home, '.gemini/config/hooks.json');
+  fs.mkdirSync(path.dirname(agyF), { recursive: true });
+  fs.writeFileSync(agyF, JSON.stringify({ 'other-status': { Stop: [{ type: 'command', command: 'C:/Users/me/.other-tool/agent-hooks/antigravity-stop.cmd' }] },
+    'sshweb-status': Object.fromEntries(['SessionStart', 'PreInvocation', 'PostInvocation', 'Stop'].map((ev) => [ev, [{ type: 'command', command: `${PS_CMD} antigravity ${ev}` }]])
+      .concat(['PreToolUse', 'PostToolUse'].map((ev) => [ev, [{ matcher: '*', hooks: [{ type: 'command', command: `${PS_CMD} antigravity ${ev}` }] }]]))) }, null, 2));
+  const agySt = async () => (await J('POST', '/api/hooks/status', { sid: pageSid })).body.agents.find((a) => a.id === 'antigravity');
+  const old = await agySt();
+  ok(old.installed && old.outdated, 'Antigravity 以前装的 powershell -File "…" 写法：算装了，但提示重新安装: ' + JSON.stringify(old));
+  const ai = await J('POST', '/api/hooks/install', { sid: pageSid, agent: 'antigravity' });
+  const agyCfg = JSON.parse(fs.readFileSync(agyF, 'utf8'));
+  const agyCmds = Object.entries(agyCfg['sshweb-status']).map(([ev, gs]) => [ev, gs.flatMap((g) => (g.hooks ? g.hooks : [g])).map((h) => h.command)]);
+  ok(ai.status === 200 && agyCmds.length === 6 && agyCmds.every(([ev, cs]) => cs.length === 1 && cs[0] === `C:/Users/me/.ssh-web/hook-antigravity-${ev}.cmd`)
+    && agyCfg['other-status'].Stop[0].command.includes('.other-tool'),
+    'Antigravity 重新安装：每个事件的命令换成 .cmd 小文件的路径 (不带引号、参数)，旧的去掉，别的工具的保留: ' + JSON.stringify(agyCmds));
+  const stopCmd = fs.readFileSync(path.join(home, '.ssh-web/hook-antigravity-Stop.cmd'), 'utf8');
+  ok(stopCmd === '@echo off\r\npowershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0hook.ps1" antigravity Stop\r\n',
+    '.cmd 小文件：调 同目录的 hook.ps1，带上 Agent 和事件名 (CRLF): ' + JSON.stringify(stopCmd));
+  const now = await agySt();
+  ok(now.installed && !now.outdated, '重装后显示已安装，不再提示重新安装');
+  const au = await J('POST', '/api/hooks/uninstall', { sid: pageSid, agent: 'antigravity' });
+  ok(au.status === 200 && !fs.readdirSync(path.join(home, '.ssh-web')).some((f) => f.endsWith('.cmd')) && !JSON.parse(fs.readFileSync(agyF, 'utf8'))['sshweb-status'],
+    '卸载 Antigravity：.cmd 小文件删掉，sshweb-status 分组去掉: ' + fs.readdirSync(path.join(home, '.ssh-web')));
+
   // ---- 卸载：hook.sh / hook.ps1 / watch.ps1 都删掉
   const un = await J('POST', '/api/hooks/uninstall', { sid: pageSid, agent: 'claude' });
   ok(un.status === 200 && un.body.scriptRemoved && !['hook.sh', 'hook.ps1', 'watch.ps1'].some((f) => fs.existsSync(path.join(home, '.ssh-web', f))),
