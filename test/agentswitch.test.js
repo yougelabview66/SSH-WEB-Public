@@ -20,7 +20,7 @@ const fakeSess = (agent, lines, type = 'normal', extra = {}) => {
   const s = { hookAgent: agent, hook: { kind: 'done' }, hookSid: { id: 'x', agent }, termPending: 0, freshAgentCwd: () => false,
     term: { rows: lines.length, buffer: { active: { type, baseY: 0, cursorY: lines.length - 1, getLine: (y) => ({ translateToString: () => lines[y] ?? '' }) } } },
     promptShell: () => null, noteDaemonAgent: (i) => calls.push(['note', i]), setAgentCwd: (d) => calls.push(['cwd', d]), updateState: () => calls.push(['state']),
-    setHookAgent(a) { this.hookAgent = a; calls.push(['agent', a]); }, ...extra };
+    setHookAgent(a) { this.hookAgent = a; calls.push(['agent', a]); }, agentGone: SessionHooks.prototype.agentGone, ...extra };
   SessionHooks.prototype.checkAgentGone.call(s);
   return { gone: s.hookAgent === '' && s.hookSid === null && s.hook === null, calls };
 };

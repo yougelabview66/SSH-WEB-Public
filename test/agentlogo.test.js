@@ -21,17 +21,17 @@ const oc = require('../lib/agents/opencode');
     { info: { role: 'user' }, parts: [{ type: 'text', text: 'Windows 上的问题' }] },
     { info: { role: 'assistant' }, parts: [{ type: 'tool', tool: 'bash', state: { input: { command: 'dir' }, output: 'a.txt' } }, { type: 'text', text: 'Windows 上的回答' }] }] };
   const cmds = [];
-  const exec = async (c) => { cmds.push(c); return c.includes('session list') ? 'note\r\n' + JSON.stringify(list) : JSON.stringify(exp); };
+  const exec = async (c) => { cmds.push(c); if (c.includes('session export')) throw new Error('旧版没有这个命令'); return c.includes('session list') ? 'note\r\n' + JSON.stringify(list) : JSON.stringify(exp); };
   const plain = (t) => t.replace(/\x1b\[[0-9;]*m/g, '');
   let t = plain(await oc.history.read({ sid: '', cwd: 'c:/users/me/', exec, win: true }));
-  ok(t.includes('Windows 上的问题') && t.includes('Windows 上的回答') && t.includes('$ dir') && cmds.join('|') === 'opencode session list --format json -n 30|opencode export ses_mine',
+  ok(t.includes('Windows 上的问题') && t.includes('Windows 上的回答') && t.includes('$ dir') && cmds.join('|') === 'opencode session list --format json -n 30|opencode session export ses_mine|opencode export ses_mine',
     'Windows：没有对话号按目录挑出对话，用 opencode export 读出完整对话: ' + JSON.stringify(cmds));
   cmds.length = 0;
   await oc.history.read({ sid: 'ses_known', cwd: '', exec, win: true });
-  ok(cmds.join('|') === 'opencode export ses_known', 'Windows：有对话号直接导出: ' + JSON.stringify(cmds));
+  ok(cmds.join('|') === 'opencode session export ses_known|opencode export ses_known', 'Windows：有对话号直接导出 (先试 OpenCode 2 的 session export，旧版再用 export): ' + JSON.stringify(cmds));
   cmds.length = 0;
   await oc.history.read({ sid: 'a & del x', cwd: 'E:\\none', exec, win: true });
-  ok(cmds.join('|') === 'opencode session list --format json -n 30|opencode export ses_other', '对话号不像样不拼进命令；目录对不上用最近的: ' + JSON.stringify(cmds));
+  ok(cmds.join('|') === 'opencode session list --format json -n 30|opencode session export ses_other|opencode export ses_other', '对话号不像样不拼进命令；目录对不上用最近的: ' + JSON.stringify(cmds));
   const bad = await oc.history.read({ sid: '', cwd: '', exec: async () => '[]', win: true }).then(() => 'ok', (e) => e.message);
   ok(bad === '没有对话', '一个对话都没有算失败 (网页把滚轮交回 OpenCode): ' + bad);
 
@@ -82,7 +82,7 @@ const oc = require('../lib/agents/opencode');
   fs.rmSync(dbf); fs.rmSync(dbf + '-wal', { force: true }); fs.rmSync(dbf + '-shm', { force: true });
   cmds.length = 0;
   await oc.history.read({ sftp, home, sid: 'ses_known', cwd: '', exec, win: true });
-  ok(cmds.join('|') === 'opencode export ses_known', '没有数据库再用 opencode export: ' + JSON.stringify(cmds));
+  ok(cmds.join('|') === 'opencode session export ses_known|opencode export ses_known', '没有数据库再用 opencode 命令导出 (先试 OpenCode 2 的 session export): ' + JSON.stringify(cmds));
   fs.rmSync(home, { recursive: true, force: true });
   process.exit();
 })().catch((e) => { console.error(e); process.exit(1); });

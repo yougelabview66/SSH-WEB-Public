@@ -71,7 +71,7 @@ function server(port, shell, prompt) {
         const ch = a(), cmd = info.command;
         const out = (t, code) => { if (t) ch.write(t); ch.exit(code); ch.end(); };
         if (cmd === 'echo %OS%;$env:OS') return out(shell === 'cmd' ? 'Windows_NT;$env:OS\r\n' : '%OS%\r\nWindows_NT\r\n', 0);
-        if (cmd.startsWith('cmd /c "opencode export')) { ocCmds.push(cmd); return out('DELETED\r\n', 0); }
+        if (cmd.startsWith('cmd /c "(opencode session export')) { ocCmds.push(cmd); return out('DELETED\r\n', 0); }
         ch.stderr.write(`'${cmd.split(' ')[0]}' is not recognized as an internal or external command,\r\n`);
         out('', 1);
       });
@@ -139,7 +139,7 @@ run(async () => {
   r = await api('AWC', 'opencode', 'zzz-none');
   ok(r.sessions.length === 0, 'OpenCode：搜不到的词没有结果');
   const del = await fetch(BASE + '/api/agent-sessions/delete', { method: 'POST', headers: { 'content-type': 'application/json' }, body: J({ sid: sidOf('AWC'), agent: 'opencode', id: 'ses_win1', force: true }) }).then((x) => x.json());
-  ok(del.ok && ocCmds.length === 1 && /^cmd \/c "opencode export ses_win1 > C:\\Users\\me\\\.ssh-web\\trash\\[\w-]+-opencode-ses_win1\\session\.json && opencode session delete ses_win1 && echo DELETED"$/.test(ocCmds[0]),
+  ok(del.ok && ocCmds.length === 1 && /^cmd \/c "\(opencode session export ses_win1 2>nul \|\| opencode export ses_win1\) > C:\\Users\\me\\\.ssh-web\\trash\\[\w-]+-opencode-ses_win1\\session\.json && opencode session delete ses_win1 && echo DELETED"$/.test(ocCmds[0]),
     'OpenCode 删除：先导出到回收站再用它自己的命令删 (交给 cmd 跑): ' + J([del, ocCmds]));
   r = await api('AWPS', 'claude');
   ok(r.sessions[0]?.cmd === `cd 'D:\\proj x'; claude --resume ${ID}`, "PowerShell：恢复命令 cd 'D:\\目录'; claude --resume (PowerShell 5 没有 &&): " + r.sessions[0]?.cmd);
