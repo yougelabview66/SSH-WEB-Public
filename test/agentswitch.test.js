@@ -15,12 +15,12 @@ ok(sid({ id: 'old' }, 'opencode') === 'old', '旧记录不知道是谁的：照�
 ok(sid(null, 'pi', (a) => (a === 'pi' ? 'p1' : '')) === 'p1' && sid(null, 'pi', (a) => (a === 'grok' ? 'g' : '')) === '', '标签刚接上常驻会话：用会话记着的、同一个 Agent 的对话号');
 
 // ---- 服务端：退出时不报事件的 Agent (Codex / Antigravity / OpenCode)，回到 shell 提示符就当退出了
-const fakeSess = (agent, lines, type = 'normal') => {
+const fakeSess = (agent, lines, type = 'normal', extra = {}) => {
   const calls = [];
   const s = { hookAgent: agent, hook: { kind: 'done' }, hookSid: { id: 'x', agent }, termPending: 0, freshAgentCwd: () => false,
     term: { rows: lines.length, buffer: { active: { type, baseY: 0, cursorY: lines.length - 1, getLine: (y) => ({ translateToString: () => lines[y] ?? '' }) } } },
     promptShell: () => null, noteDaemonAgent: (i) => calls.push(['note', i]), setAgentCwd: (d) => calls.push(['cwd', d]), updateState: () => calls.push(['state']),
-    setHookAgent(a) { this.hookAgent = a; calls.push(['agent', a]); } };
+    setHookAgent(a) { this.hookAgent = a; calls.push(['agent', a]); }, ...extra };
   SessionHooks.prototype.checkAgentGone.call(s);
   return { gone: s.hookAgent === '' && s.hookSid === null && s.hook === null, calls };
 };
@@ -28,18 +28,31 @@ ok(fakeSess('codex', ['Disconnected from this task.', 'root@host:~/proj# ']).gon
 ok(!fakeSess('codex', ['› 问点什么', '', '  gpt-5.6 · 80% context left']).gone, 'Codex 还开着 (光标在它的输入行 ›、下面是状态行)：不动');
 ok(!fakeSess('opencode', ['root@host:~# '], 'alternate').gone, 'OpenCode 全屏界面还在 (备用屏幕)：不动');
 ok(!fakeSess('claude', ['root@host:~# ']).gone && !fakeSess('pi', ['root@host:~# ']).gone, 'Claude Code、Pi 退出时自己报事件：不用猜，不动');
+// Windows 主机：终端 (ConPTY) 不转出备用画面，OpenCode 开着也是普通画面；只认 PS C:\x> / C:\x> 这种提示符
+const win = (line) => ({ shellOf: { base: 'powershell' }, promptShell: () => (/^PS [A-Za-z]:\\[^>]*>/.test(line) ? 'powershell' : /^[A-Za-z]:\\[^>]*>/.test(line) ? 'cmd' : null) });
+ok(!fakeSess('opencode', ['  Build  deepseek', '  ┃ 问点什么 >'], 'normal', win('  ┃ 问点什么 >')).gone,
+  'Windows 上 OpenCode 开着 (普通画面，光标那行以 > 结尾)：不当成 shell 提示符，不算退出');
+ok(fakeSess('opencode', ['PS C:\\Users\\me> '], 'normal', win('PS C:\\Users\\me>')).gone, 'Windows 上回到 PowerShell 提示符：当 OpenCode 退出了');
+ok(!fakeSess('opencode', ["PS C:\\Users\\me> cd 'C:\\p'; opencode --session ses_1"], 'normal', { ...win('PS C:\\Users\\me>'), agentStartAt: Date.now() }).gone,
+  '「继续」刚发出恢复命令 (OpenCode 还没画出界面，光标那行还是带命令的提示符)：20 秒内不算退出');
+const { atShellPrompt } = require('../lib/agent-sessions');
+const cur = (line, extra = {}) => ({ term: { rows: 1, buffer: { active: { baseY: 0, cursorY: 0, getLine: () => ({ translateToString: () => line }) } } }, promptShell: () => null, ...extra });
+ok(atShellPrompt(cur('root@host:~# ')) && atShellPrompt(cur('  ask >')) && !atShellPrompt(cur('  ask >', { shellOf: { base: 'powershell' } })),
+  '提示符：Linux 上以 $ # > 等结尾就算；Windows 上只认 PS C:\\x> / C:\\x> (Agent 界面里以 > 结尾的行不算)');
 
 // ---- 网页：认这个标签里在跑哪个 Agent
 const src = fs.readFileSync(path.join(__dirname, '../public/app/09-agents.js'), 'utf8');
 const { agentIdOf } = vm.runInNewContext(src + '\n;({ agentIdOf })', { isTouch: false, send: () => {}, window: {}, document: {} });
 // 假终端：lines 是屏幕上的每一行 (从上到下)，type 是 normal / alternate
-const term = (lines, type = 'normal', agent = null) => ({ agent: agent && { id: agent }, term: { rows: lines.length, buffer: { active: { type, baseY: 0, getLine: (y) => ({ translateToString: () => lines[y] ?? '' }) } } } });
+const term = (lines, type = 'normal', agent = null, altSeen = true) => ({ agent: agent && { id: agent }, altSeen, term: { rows: lines.length, buffer: { active: { type, baseY: 0, getLine: (y) => ({ translateToString: () => lines[y] ?? '' }) } } } });
 const pad = (n) => Array(n).fill('');
 ok(agentIdOf(term(['┃ 问点什么', '', '  ctrl+p commands', ...pad(10)], 'alternate')) === 'opencode',
   '同一个终端开在两台设备上，这边屏幕底下空着好几行：跳过空行，还是认得出 OpenCode (以前只看最后 6 行，认不出就进不了历史画面)');
 ok(agentIdOf(term(['$ ', ...pad(5)], 'normal', 'opencode')) === null,
   'OpenCode 退出了 (不报事件，钩子报的还停在它)：终端不在全屏 (备用屏幕) 就不算它在跑，shell 里往上滑看终端历史，不再显示 OpenCode 的旧对话');
 ok(agentIdOf(term(['OpenCode 界面', ...pad(3)], 'alternate', 'opencode')) === 'opencode', 'OpenCode 还开着 (全屏)：照钩子报的认');
+ok(agentIdOf(term(['  ┃ 问点什么', '  Build · deepseek'], 'normal', 'opencode', false)) === 'opencode',
+  'Windows 主机 (这个标签从没进过备用画面)：OpenCode 开着也是普通画面，照钩子报的认 (以前当成已退出，进不了历史画面)');
 ok(agentIdOf(term(['❯ ', '  Ctrl+x:shortcuts'], 'normal', 'opencode')) === 'grok', '屏幕上明明白白是 Grok：屏幕优先');
 ok(agentIdOf(term(['claude 界面'], 'normal', 'claude')) === 'claude', 'Claude Code 不全屏：照钩子报的认 (不受影响)');
 

@@ -18,6 +18,7 @@
     // 全屏界面 (没有关掉的设置)：历史视图从它的数据库读完整对话 (lib/agents/opencode.js 的 history)。
     // 屏幕最下面一直有「ctrl+p commands」：还没跟它说话 (插件没报过事件) 也认得出
     // altScreen：一直是全屏界面 —— 终端不在备用屏幕上就是它已经退出了 (OpenCode 退出时不报事件，钩子报的还停在它)
+    // (只在这个标签进过备用画面时这么判断：Windows 的终端不转出备用画面，OpenCode 开着也是普通画面)
     opencode: { ownHistory: true, altScreen: true, screen: /ctrl\+p\s+commands/ },
   };
   // 这个标签里在跑的 Agent：屏幕上明明白白是它 (各 Agent 的 screen) 就是它；屏幕上认不出才用钩子报的 (s.agent.id，见 10-session.js 的
@@ -37,7 +38,7 @@
       for (const [id, a] of Object.entries(AGENTS)) if (a.screen?.test(text)) return id;
     }
     const id = s?.agent?.id || null;
-    return AGENTS[id]?.altScreen && b && b.type !== 'alternate' ? null : id;
+    return AGENTS[id]?.altScreen && s.altSeen && b && b.type !== 'alternate' ? null : id;
   }
   const agentDoes = (s, what) => !!AGENTS[agentIdOf(s)]?.[what];
   // Agent 的标志 (常驻会话选择框里名字前面画，服务端告诉是哪个 Agent，见 lib/agents/index.js 的 agentLabel)。

@@ -59,13 +59,25 @@ const oc = require('../lib/agents/opencode');
     fastGet: (from, to, cb) => { gets.push(path.basename(from)); fs.copyFile(from, to, cb); } };
   const noExec = async (c) => { throw new Error('不该启动 opencode：' + c); };
   t = plain(await oc.history.read({ sftp, home, sid: '', cwd: 'c:/users/me', exec: noExec, win: true }));
-  ok(t.includes('数据库里的问题') && !t.includes('别的目录') && gets.join() === 'opencode.db,opencode.db-wal', 'Windows：拷数据库在服务器上读，按目录挑出对话，不启动 opencode: ' + JSON.stringify(gets));
+  ok(t.includes('数据库里的问题') && !t.includes('别的目录') && gets.join() === 'opencode.db', 'Windows：拷数据库在服务器上读 (-wal 是空的不拷)，按目录挑出对话，不启动 opencode: ' + JSON.stringify(gets));
   add('ses_a', 'C:\\Users\\Me', 3, 'm3', 'assistant', '刚刚的回答'); // 只写进 -wal
   gets.length = 0;
   t = plain(await oc.history.read({ sftp, home, sid: 'ses_a', cwd: '', exec: noExec, win: true }));
   ok(t.includes('数据库里的问题') && t.includes('刚刚的回答') && gets.join() === 'opencode.db-wal', '再读：主库没变不重拷，只拷 -wal，刚聊的也读得到: ' + JSON.stringify(gets));
   t = plain(await oc.history.read({ sftp, home, sid: 'ses_a', cwd: '', exec: noExec, win: true }));
   ok(t.includes('刚刚的回答'), '连着读几次都对 (查询用另一份拷贝，缓存的 -wal 没被并掉)');
+  // -wal 没变不再拷；只在末尾追加了就只读新增的那段 (SFTP 能按位置读时)，不整个重拷
+  const reads = [];
+  const sftp2 = Object.assign(sftp, { open: (f, m, cb) => fs.open(f, 'r', cb), close: (h, cb) => fs.close(h, cb), // 同一个 SFTP 连接 (缓存按连接记)
+    read: (h, buf, off, len, pos, cb) => { reads.push([pos, len]); fs.read(h, buf, off, len, pos, (e, n) => cb(e, n)); } });
+  gets.length = 0;
+  t = plain(await oc.history.read({ sftp: sftp2, home, sid: 'ses_a', cwd: '', exec: noExec, win: true }));
+  ok(gets.length === 0 && reads.length === 0 && t.includes('刚刚的回答'), '-wal 没变：不拷也不读: ' + JSON.stringify([gets, reads.length]));
+  add('ses_a', 'C:\\Users\\Me', 4, 'm4', 'assistant', '追加的新回答');
+  gets.length = 0;
+  t = plain(await oc.history.read({ sftp: sftp2, home, sid: 'ses_a', cwd: '', exec: noExec, win: true }));
+  ok(gets.length === 0 && reads.length >= 2 && reads.some(([pos]) => pos > 0) && t.includes('追加的新回答') && t.includes('刚刚的回答'),
+    '-wal 只追加了：只读开头 32 字节核对和新增的那段，读出来的对话是全的: ' + JSON.stringify([gets, reads.slice(0, 4)]));
   db.close();
   fs.rmSync(dbf); fs.rmSync(dbf + '-wal', { force: true }); fs.rmSync(dbf + '-shm', { force: true });
   cmds.length = 0;

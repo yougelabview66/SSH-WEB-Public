@@ -39,6 +39,9 @@
     // 接着问一次终端型号就退出了，不等回答 (实测 Codex 0.166)。回答 (ESC [ ? 1 ; 2 c) 晚到一点就落进 shell：
     // 提示符后面多出「1;2c」，紧接着打的命令被拼坏 (「1;2cclear」)。弹出键盘设置后 300 毫秒内的这种询问算退出时的，不回答
     s.term.parser.registerCsiHandler({ prefix: '<', final: 'u' }, () => { s.kbdPopAt = Date.now(); return false; });
+    // 进过全屏备用画面 (Linux 上的 OpenCode 一开就进)：认 Agent 时才用「不在备用画面 = 全屏 Agent 已退出」(见 09-agents.js 的 agentIdOf)。
+    // Windows 的终端 (ConPTY) 不转出备用画面，一直是普通画面，不能这么判断
+    s.term.buffer.onBufferChange((b) => { if (b.type === 'alternate') s.altSeen = true; });
     s.term.parser.registerCsiHandler({ final: 'c' }, (params) => {
       if (s.kbdPopAt && Date.now() - s.kbdPopAt < 300 && params.length <= 1 && !(params[0] > 0)) { s.kbdPopAt = 0; return true; }
       return false;
