@@ -58,6 +58,27 @@ ok(atShellPrompt(rowSess(5, 5)) && !atShellPrompt(rowSess(20, 5)) && !atShellPro
   const r = await resumeInTerminal(sess, 'pi --session abc', '', '', '', 'pi');
   ok(r.quit === true && writes[0] === '\x03' && writes.at(-1) === 'pi --session abc\r' && writes.filter((x) => x.includes('pi --session')).length === 1,
     '「继续」：Windows 上停在 OpenCode 界面 (钩子没报、屏幕认不出)：先按 Ctrl+C 退出，回到 PS 提示符才发命令: ' + JSON.stringify(writes));
+  // 实测 (11-03)：OpenCode 退出了，但 ConPTY 先转出报目录、再重画屏幕 (光标对不上报目录那一行)，自定义的提示符、光标下面还留着它的界面
+  // —— 以前一直认不出，最后按 Ctrl+D 把 PowerShell 关了，连接断开。现在 shell 报过目录就算回到提示符，后面的键不再按
+  {
+    lines = ['  Build  deepseek-v4.1-flash', '', '  ┃ 问点什么   ctrl+p commands'], cy = 2;
+    writes.length = 0;
+    sess.promptRow = null;
+    sess.write = function (k) { writes.push(k); if (k === '\x03' && writes.length === 1) { setTimeout(() => { this.promptRow = 2; this.promptAt = Date.now(); }, 20); setTimeout(() => { lines = ['❯ ', '', '  ctrl+p commands  tab agents']; cy = 0; this.outAt = Date.now() - 1000; }, 50); } };
+    const r2 = await resumeInTerminal(sess, 'pi --session abc', '', '', '', 'pi');
+    ok(r2.quit === true && writes.at(-1) === 'pi --session abc\r' && !writes.includes('\x04') && !writes.some((x) => x.includes('/exit')),
+      '「继续」：Windows 上 OpenCode 退出后 shell 报了目录 (光标不在那一行、自定义提示符、下面残留界面)：就算回到提示符，马上发命令，不再按 /exit、Ctrl+D: ' + JSON.stringify(writes));
+  }
+  // 怎么都退不出：Windows 上也不按 Ctrl+D (会关掉 PowerShell，常驻会话就没了)，报错让用户手动退出
+  {
+    lines = ['  Build  deepseek-v4.1-flash', '', '┃ 问点什么'], cy = 2;
+    writes.length = 0;
+    sess.promptRow = null; sess.promptAt = 0;
+    sess.write = (k) => writes.push(k);
+    const err = await resumeInTerminal(sess, 'pi --session abc', '', '', '', 'pi').then(() => null, (e) => e);
+    ok(err && /没能退出/.test(err.message) && !writes.includes('\x04') && !writes.some((x) => x.includes('pi --session')),
+      '退不出：Windows 上不按 Ctrl+D、不发命令，报「没能退出」: ' + JSON.stringify(writes));
+  }
 })().then(() => {
 
 // ---- 网页：认这个标签里在跑哪个 Agent
