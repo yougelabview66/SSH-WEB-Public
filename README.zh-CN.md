@@ -4,6 +4,11 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
+<p align="center">
+  <img src="docs/images/demo.gif" alt="手机演示：Claude Code 要权限时手机收到通知，一键点允许，终端里 Agent 接着干，再打开代码改动看红绿对比" width="300">
+</p>
+<p align="center"><sub>Claude Code 要权限 → 收到通知 → 点「允许」→ Agent 接着干 → 打开代码改动看对比。真实的 SSH-WEB 页面和真的 Claude Code；系统通知在无头浏览器里录不下来，是照真实推送的样子画的，点「允许」调的是通知按钮背后同一个接口。</sub></p>
+
 轻量的自托管 Web SSH 终端，专为在远程主机上跑 AI 编程助手（Claude Code、Codex、Grok 等）设计，手机、电脑都能用。一个 Docker 容器就能跑，适合部署在 NAS 上。
 
 <p align="center">

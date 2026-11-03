@@ -4,6 +4,11 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
+<p align="center">
+  <img src="docs/images/demo.gif" alt="Mobile demo: the phone gets a notification when Claude Code asks for permission, one tap on Allow, the agent keeps going in the terminal, then the Changes panel shows the diff" width="300">
+</p>
+<p align="center"><sub>Claude Code asks for permission → notification → tap <b>允许</b> (Allow) → the agent continues → open the diff. Real SSH-WEB page and real Claude Code; the system notification is re-drawn for the recording (headless browsers can't capture it), the Allow tap calls the same API as the notification button.</sub></p>
+
 A lightweight, self-hosted web SSH terminal built for running AI coding agents (Claude Code, Codex, Grok …) on remote machines from any device. Runs in a single Docker container — ideal for a NAS. The interface is currently in Chinese.
 
 <p align="center">
