@@ -534,6 +534,7 @@ run(async () => {
   ok(lastState() === '运行中' && pushed.length === n0, 'Grok 每次用工具前的「tool permission requested」提醒：不算要权限');
   emit({ agent: 'grok', hook_event_name: 'Notification', message: 'Grok needs your approval to run rm -rf build' });
   await until(() => pushed.length > n0, 5000);
+  await until(() => lastState() === '待选择', 3000); // 推送和状态消息先后到 (机器慢时状态晚一点)
   ok(lastState() === '待选择' && lastPush().body === 'Grok · Grok needs your approval to run rm -rf build' && !lastPush().actions, 'Grok 真要你确认：待选择，推送写上 Grok，不带按钮: ' + JSON.stringify(lastPush()));
   emit({ agent: 'codex', hook_event_name: 'PostToolUse', tool_name: 'Bash', child: true }); await wait(500);
   ok(lastState() === '待选择', 'Codex 子 Agent 的事件不算');
