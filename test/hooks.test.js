@@ -153,7 +153,7 @@ run(async () => {
   const plug = path.join(home, 'sshweb-status.mjs'); fs.writeFileSync(plug, OPENCODE_PLUGIN);
   const n1 = fs.readFileSync(path.join(fakeHome, '.cache/ssh-web/hook.log'), 'utf8').trim().split('\n').length;
   execFileSync(process.execPath, ['--input-type=module', '-e', `
-    const { SshWebStatus } = await import(${JSON.stringify('file://' + plug)});
+    const { default: { server: SshWebStatus } } = await import(${JSON.stringify('file://' + plug)}); // OpenCode 1.x 用 default 里的 server()
     const h = await SshWebStatus({ directory: '/srv/oc' });
     const e = (type, properties) => h.event({ event: { type, properties } });
     await e('session.created', { info: { id: 'kid', parentID: 'root' } });
@@ -602,6 +602,11 @@ run(async () => {
   for (const x of await (await fetch(BASE + '/api/sessions')).json()) await fetch(BASE + '/api/sessions/' + x.id, { method: 'DELETE' });
   await wait(800);
   tailCh = null;
+  // 顺带：主机上 SSH-WEB 装的 OpenCode 插件是旧版 (OpenCode 2 加载不了、每次弹错误框)，连上时自动换成新版；别人的同名文件不动
+  const ocPlug = path.join(home, '.config/opencode/plugins/sshweb-status.js'), piExt2 = path.join(home, '.pi/agent/extensions/sshweb-status.ts');
+  fs.mkdirSync(path.dirname(ocPlug), { recursive: true }); fs.mkdirSync(path.dirname(piExt2), { recursive: true });
+  fs.writeFileSync(ocPlug, '// SSH-WEB 的 OpenCode 状态插件 (旧版)\nexport const SshWebStatus = async () => ({});\n');
+  fs.writeFileSync(piExt2, '// 我自己写的扩展，碰巧同名\nexport default () => {};\n');
   const ws3 = new WebSocket(BASE.replace('http', 'ws') + '/ws');
   await new Promise((r) => ws3.on('open', r));
   ws3.send(JSON.stringify({ type: 'connect', hostId: host.id, title: 'HK3', cols: 80, rows: 24 }));
@@ -609,6 +614,9 @@ run(async () => {
   n0 = pushed.length;
   shellSt.write('\x07'); await wait(1500);
   ok(!!tailCh && pushed.length === n0, '主机上已经有钩子：重新连上时认出来，响铃不推送');
+  await until(() => fs.readFileSync(ocPlug, 'utf8') === OPENCODE_PLUGIN, 5000);
+  ok(fs.readFileSync(ocPlug, 'utf8') === OPENCODE_PLUGIN && fs.readFileSync(piExt2, 'utf8').startsWith('// 我自己写的扩展'),
+    '连上时 SSH-WEB 装的旧版 OpenCode 插件自动换成新版，别人的同名文件 (没有 SSH-WEB 标记) 不动');
   ws3.close();
   pushSrv.close();
   fs.rmSync(home, { recursive: true, force: true });

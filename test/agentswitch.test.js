@@ -106,6 +106,41 @@ ok(atShellPrompt(rowSess(5, 5)) && !atShellPrompt(rowSess(20, 5)) && !atShellPro
       '「继续」：Windows 上 OpenCode 退出把 PowerShell 带走了 (常驻会话结束)：不把光标那一行当提示符，同一个标签新开常驻会话 (不弹选择框)，提示符出来再发命令: ' + JSON.stringify({ r3, conns, writes }));
     sess.status = 'connected'; sess.daemonId = null;
   }
+  // Linux：OpenCode 2 退出时先清掉界面，过好几秒才清它报的程序状态、真的退出 (慢的机器上，11-04 实测)。
+  // 以前安静 2 秒就当回到了 shell，命令打进还没退干净的 OpenCode 被吃掉；现在等它清掉程序状态
+  {
+    let lines2 = ['  ┃ 问点什么', '  ctrl+p commands'], cy2 = 1, clearedAt = 0;
+    const w2 = [];
+    const ls = { status: 'connected', hook: null, hookSid: null, shellOf: { base: 'sh' }, outAt: 0, termPending: 0, pstat: { app: 'opencode', state: 'idle' },
+      term: { rows: 2, buffer: { active: { type: 'normal', baseY: 0, viewportY: 0, get cursorY() { return cy2; }, getLine: (y) => ({ translateToString: () => lines2[y] ?? '' }) } } },
+      promptShell() { return null; },
+      write(k) {
+        w2.push([k, Date.now()]);
+        if (k === '\x03' && w2.filter(([x]) => x === '\x03').length === 2) {
+          lines2 = ['', '']; cy2 = 0; this.outAt = Date.now() - 1000; // 界面清掉了，还没真的退出
+          setTimeout(() => { clearedAt = Date.now(); this.pstat = null; lines2 = ['root@box:~/p# ', '']; cy2 = 0; this.outAt = Date.now() - 900; }, 3500);
+        }
+      },
+      noteDaemonAgent() {}, setAgentCwd() {}, setHookAgent() {} };
+    const r4 = await resumeInTerminal(ls, 'opencode --session ses_2', '', '', '', 'opencode');
+    const sent = w2.filter(([k]) => k.includes('opencode --session'));
+    ok(r4.quit === true && sent.length === 1 && clearedAt && sent[0][1] >= clearedAt,
+      '「继续」：Linux 上 OpenCode 2 清掉界面后好几秒才真的退出：等它清掉程序状态 (OSC 7501) 才发命令，不再被它吃掉');
+  }
+  // OpenCode 2 按 Ctrl+C 退出时不一定清它报的程序状态：光标那行已经是 shell 提示符就算回到 shell，马上发命令，
+  // 不再接着按 /exit、Ctrl+D (11-04 实测：以前打进了 bash，Ctrl+D 把常驻会话关了)
+  {
+    let lines3 = ['  ┃ 问点什么', '  ctrl+p commands'], cy3 = 1;
+    const w3 = [];
+    const ls3 = { status: 'connected', hook: null, hookSid: null, shellOf: { base: 'sh' }, outAt: 0, termPending: 0, pstat: { app: 'opencode', state: 'idle' },
+      term: { rows: 2, buffer: { active: { type: 'normal', baseY: 0, viewportY: 0, get cursorY() { return cy3; }, getLine: (y) => ({ translateToString: () => lines3[y] ?? '' }) } } },
+      promptShell() { return null; },
+      write(k) { w3.push(k); if (k === '\x03' && w3.filter((x) => x === '\x03').length === 2) { lines3 = ['^C', 'root@box:~/p# ']; cy3 = 1; this.outAt = Date.now() - 900; } },
+      noteDaemonAgent() {}, setAgentCwd() {}, setHookAgent() {} };
+    const r5 = await resumeInTerminal(ls3, 'opencode --session ses_3', '', '', '', 'opencode');
+    ok(r5.quit === true && w3.at(-1) === 'opencode --session ses_3\r' && !w3.some((k) => k.includes('/exit') || k === '\x04'),
+      '「继续」：OpenCode 2 退出时没清程序状态，但光标那行已经是 shell 提示符：马上发命令，不再按 /exit、Ctrl+D: ' + JSON.stringify(w3));
+  }
 })().then(() => {
 
 // ---- 网页：认这个标签里在跑哪个 Agent

@@ -71,7 +71,8 @@ ok(/opencode session export ses_1 2>\/dev\/null \|\| opencode export ses_1/.test
 // ---- OSC 7501 程序状态 → 钩子事件
 const fake = () => {
   const evs = [];
-  const s = { hookSid: null, onHook: (ev) => evs.push(ev), ocSid: SessionHooks.prototype.ocSid };
+  const P = SessionHooks.prototype;
+  const s = { hookSid: null, onHook: (ev) => evs.push(ev), ocSid: P.ocSid, ocScreen: P.ocScreen, ocFinish: P.ocFinish, ocFlush: P.ocFlush, ocPromptLater: P.ocPromptLater, ocNotePrompt: P.ocNotePrompt, noteTask: P.noteTask };
   return { s, evs, feed: (body) => SessionHooks.prototype.onProgramStatus.call(s, body) };
 };
 const b64 = (x) => Buffer.from(x).toString('base64');
@@ -163,8 +164,120 @@ function done2() {
   ok(!grokDup({ agent: 'claude', session_id: 'c-1', hook_event_name: 'Stop' }) && !grokDup({ agent: 'claude', hook_event_name: 'Stop' }) && !grokDup({ agent: 'pi', session_id: 'g-1' }),
     '真的 Claude Code (对话号不一样、没有对话号)、别的 Agent：照常');
 }
+// ---- OpenCode 2 的屏幕：你说的话、回复、被打断 (状态信号里只有对话标题)。照 2.2.5 实测的样子画 (带颜色)：
+// 你说的话是和输入框同色 (75) 的「┃」框，工具输出是暗色 (232) 的「┃」框，回复后面一行页脚
+const { Terminal } = require('@xterm/headless');
+const C = (n, t) => `\x1b[38;5;${n}m${t}\x1b[0m`;
+const userBox = (t) => [C(75, '  ┃'), C(75, '  ┃') + '  ' + t, C(75, '  ┃'), ''];
+const toolBox = (cmd, out) => [C(232, '  ┃'), C(232, '  ┃') + '  ' + cmd, C(232, '  ┃'), C(232, '  ┃') + '  ' + out, C(232, '  ┃'), ''];
+const inputBox = [C(75, '  ┃'), C(75, '  ┃'), C(75, '  ┃') + '  Build · DeepSeek V4.1 Flash (WorkBuddy) AiProxy', C(75, '  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀'), '  ~/proj  7.1K (4%)  ctrl+p commands'];
+const draw = (term, rows) => new Promise((r) => term.write('\x1b[2J\x1b[H' + rows.join('\r\n'), r));
+const lines = (term) => require('../lib/status').screenLines(term);
+(async () => {
+  const term = new Terminal({ cols: 100, rows: 30, allowProposedApi: true });
+  // 前一轮 (页脚在上面) + 这一轮：你说的话 → 工具 → 回复 → 页脚
+  await draw(term, ['   修登录                +', ...userBox('上一个问题'), '     上一个回答', '     Build · DeepSeek · 2.1s · 3.0 tok/s', '',
+    ...userBox('在终端执行 echo HELLO123 ，然后用一句话告诉我输出是什么'), ...toolBox('$ echo HELLO123', 'HELLO123'),
+    '     + Thought · 351ms', '', '     输出是 HELLO123。', '', '     Build · DeepSeek V4.1 Flash (WorkBuddy) · 4.7s · 13.1 tok/s', '', ...inputBox]);
+  let sc = oc.events.oscScreen(lines(term));
+  ok(sc && sc.prompt === '在终端执行 echo HELLO123 ，然后用一句话告诉我输出是什么' && sc.reply === '输出是 HELLO123。' && sc.footer && !sc.interrupted,
+    'OpenCode 2 屏幕：最近一条你说的话 (和输入框同色的框，工具输出的暗色框不算)、工具后面的回复 (跳过折起来的思考)、这一轮的页脚: ' + J(sc));
+  // 还在回复 (这一轮没有页脚，上面那轮的页脚不算)
+  await draw(term, [...userBox('上一个问题'), '     上一个回答', '     Build · DeepSeek · 2.1s · 3.0 tok/s', '', ...userBox('写一篇长文'), '     秋天来了', '', ...inputBox]);
+  sc = oc.events.oscScreen(lines(term));
+  ok(sc && sc.prompt === '写一篇长文' && !sc.footer && sc.reply === '秋天来了', '还在回复：这一轮还没有页脚 (上一轮的页脚不算): ' + J(sc));
+  // 被打断
+  await draw(term, [...userBox('写一篇长文'), '     秋天来了', '', '     Build · DeepSeek V4.1 Flash (WorkBuddy) · 7.7s · interrupted', '', ...inputBox]);
+  sc = oc.events.oscScreen(lines(term));
+  ok(sc && sc.footer && sc.interrupted, '页脚末尾「· interrupted」：被打断: ' + J(sc));
+  ok(oc.events.oscScreen(lines(new Terminal({ cols: 80, rows: 10, allowProposedApi: true }))) === null, '认不出输入框 (不是 OpenCode 2 的界面)：不猜');
+
+  // 接到状态信号上：开始干活时读你说的话；做完 / 打断等页脚画出来才报 (信号比页脚先到)
+  const { s, evs, feed } = fake();
+  s.term = term;
+  feed('state=idle:app=opencode');
+  // 信号到的时候对话区里还是上一轮 (先画的是输入框里打的字)：先报开始干活，你说的话等对话区画出来再补进「在做」
+  s.ocLastPrompt = '上一轮的问题';
+  await draw(term, [...userBox('上一轮的问题'), '     上一轮的回答', '     Build · DeepSeek · 1.0s · 2.0 tok/s', '', C(75, '  ┃') + '  只回复这个词：PEAR', ...inputBox.slice(1)]);
+  feed(`state=working:app=opencode:title=${b64('New session - 2026-11-04T00:05:19.974Z')}`);
+  const up = evs.find((e) => e.hook_event_name === 'UserPromptSubmit');
+  ok(up && up.prompt === '', '开始干活：标题还是「New session - 日期」时不用标题: ' + J(up && up.prompt));
+  await new Promise((r) => setTimeout(r, 400));
+  ok(!s.hookTask, '对话区里还是上一轮的话：先不当成这一轮的 (等新的画出来): ' + J(s.hookTask));
+  await draw(term, [...userBox('上一轮的问题'), '     上一轮的回答', '     Build · DeepSeek · 1.0s · 2.0 tok/s', '', ...userBox('只回复这个词：PEAR'), ...inputBox]);
+  await new Promise((r) => setTimeout(r, 400));
+  ok(s.hookTask === '只回复这个词：PEAR', '对话区画出这一轮你说的话：补进「在做」: ' + J(s.hookTask));
+  feed('state=clear:id=ses_x');
+  feed('state=idle:app=opencode');
+  await new Promise((r) => setTimeout(r, 400));
+  ok(!evs.some((e) => e.hook_event_name === 'Stop'), '收到 idle 但页脚还没画出来：先不报做完');
+  feed('state=idle:app=opencode'); // 重复报同一个状态：不算，不提前报
+  await draw(term, [...userBox('只回复这个词：PEAR'), '     PEAR', '     Build · DeepSeek · 2.9s · 1.4 tok/s', '', ...inputBox]);
+  await new Promise((r) => setTimeout(r, 400));
+  const stop = evs.find((e) => e.hook_event_name === 'Stop');
+  ok(stop && stop.last_assistant_message === 'PEAR', '页脚画出来了：报做完，回复写进去: ' + J(stop));
+  // 打断
+  await draw(term, [...userBox('写一篇长文'), '', ...inputBox]);
+  feed(`state=working:app=opencode:title=${b64('只回复 PEAR')}`);
+  feed('state=idle:app=opencode');
+  await draw(term, [...userBox('写一篇长文'), '     秋天来了', '     Build · DeepSeek · 7.7s · interrupted', '', ...inputBox]);
+  await new Promise((r) => setTimeout(r, 400));
+  ok(evs[evs.length - 1].hook_event_name === 'Interrupt', '页脚是「· interrupted」：报已中断 (不是做完): ' + J(evs.slice(-2).map((e) => e.hook_event_name)));
+  // 等页脚的时候又开始干活：先按现在的屏幕把上一轮报掉，再报开始，顺序不乱
+  await draw(term, [...userBox('t'), '', ...inputBox]); // 这一轮还没有页脚
+  const n = evs.length;
+  feed(`state=working:app=opencode:title=${b64('t')}`);
+  feed('state=idle:app=opencode');
+  feed(`state=working:app=opencode:title=${b64('t')}`);
+  ok(J(evs.slice(n).map((e) => e.hook_event_name)) === J(['UserPromptSubmit', 'Stop', 'UserPromptSubmit']), '等页脚时又开始干活：先报上一轮做完再报开始: ' + J(evs.slice(n).map((e) => e.hook_event_name)));
+  // 等太久页脚也没出来 (出错等)：2 秒后照样报做完
+  const m = evs.length;
+  feed('state=idle:app=opencode');
+  await draw(term, [...userBox('t'), '', ...inputBox]);
+  await new Promise((r) => setTimeout(r, 2400));
+  ok(evs.slice(m).some((e) => e.hook_event_name === 'Stop'), '页脚一直没出来：2 秒后照样报做完');
+  // 慢的机器上 (实测)：你说的话过了好几秒才画进对话区；回复的字比页脚还晚出来
+  {
+    const { s: s2, evs: e2, feed: f2 } = fake();
+    const t2 = new Terminal({ cols: 100, rows: 30, allowProposedApi: true });
+    s2.term = t2; s2.ocLastPrompt = '旧问题';
+    await draw(t2, [...userBox('旧问题'), '     旧回答', '     Build · DeepSeek · 1.0s · 2.0 tok/s', '', ...inputBox]);
+    f2('state=idle:app=opencode');
+    f2(`state=working:app=opencode:title=${b64('标题')}`);
+    await new Promise((r) => setTimeout(r, 2200));
+    await draw(t2, [...userBox('旧问题'), '     旧回答', '     Build · DeepSeek · 1.0s · 2.0 tok/s', '', ...userBox('很晚才画出来的问题'), ...inputBox]);
+    await new Promise((r) => setTimeout(r, 500));
+    ok(s2.hookTask === '很晚才画出来的问题', '你说的话过了 2 秒多才画进对话区：照样补进「在做」: ' + J(s2.hookTask));
+    f2('state=idle:app=opencode');
+    await draw(t2, [...userBox('很晚才画出来的问题'), '', '', '     Build · DeepSeek · 3.0s · 2.8 tok/s', '', ...inputBox]);
+    await new Promise((r) => setTimeout(r, 600));
+    ok(!e2.some((e) => e.hook_event_name === 'Stop'), '页脚出来了、回复的字还没画出来：再等等，先不报做完');
+    await draw(t2, [...userBox('很晚才画出来的问题'), '', '     晚到的回答', '     Build · DeepSeek · 3.0s · 2.8 tok/s', '', ...inputBox]);
+    await new Promise((r) => setTimeout(r, 500));
+    const st2 = e2.find((e) => e.hook_event_name === 'Stop');
+    ok(st2 && st2.last_assistant_message === '晚到的回答', '回复的字画出来了：报做完，回复写进去: ' + J(st2));
+  }
+  {
+    // Ctrl+C 退出时 OpenCode 2 不一定清它报的程序状态：别的办法认出它退出了 (回到 shell 提示符，见 checkAgentGone) 时一起清掉，
+    // 不然「继续」会以为它还开着，对着 shell 按 Ctrl+C、/exit、Ctrl+D
+    const P2 = SessionHooks.prototype;
+    const g = { pstat: { app: 'opencode', state: 'idle' }, ocRound: {}, hook: { kind: 'done' }, hookSid: { id: 'ses_9' }, ocFlush: P2.ocFlush,
+      noteDaemonAgent() {}, setAgentCwd() {}, setHookAgent() {}, updateState() {} };
+    P2.agentGone.call(g);
+    ok(g.pstat === null && g.ocRound === null && g.hook === null, '认出 OpenCode 退出了：它报的程序状态一起清掉');
+  }
+  // 插件：新旧 OpenCode 都能加载 —— default 里有 id、server() (1.x 用) 和 setup() (OpenCode 2 用)
+  const pf = path.join(dir, 'plugin-check.mjs');
+  fs.writeFileSync(pf, oc.hooks.plugin);
+  const mod = await import('file://' + pf);
+  ok(mod.default && mod.default.id === 'sshweb-status' && typeof mod.default.server === 'function' && typeof mod.default.setup === 'function'
+    && Object.keys(mod).join() === 'default', '插件 export default { id, server, setup }：OpenCode 1.x 认 server()，OpenCode 2 认 id + setup()，没有别的导出');
+  finish();
+})();
+function finish() {
 const src = fs.readFileSync(path.join(__dirname, '../lib/session/index.js'), 'utf8');
 ok(/registerOscHandler\(7501,[^\n]*onProgramStatus/.test(src), '终端输出里的 OSC 7501 交给 onProgramStatus');
 fs.rmSync(dir, { recursive: true, force: true });
 process.exit();
+}
 }

@@ -1,6 +1,6 @@
 'use strict';
 // 主机状态由服务端判断 (lib/status.js)：网页关着时也在判断；多台设备看到的一致
-const { BASE, ok, wait, shot, launch, addHost, run, hostKey } = require('./helpers');
+const { BASE, ok, wait, shot, launch, addHost, run, hostKey, waitFor } = require('./helpers');
 const { Server, utils } = require('ssh2');
 
 const streams = []; let got = '';
@@ -30,7 +30,10 @@ run(async () => {
 
   let p = await open();
   await p.locator('.host', { hasText: 'ST' }).click(); await wait(1500);
-  ok(await chip(p) === '空闲', '刚连上：空闲');
+  // 机器慢时点开 1.5 秒胶囊可能还没画出来、还没连上：先等它连上
+  await waitFor(p, () => { const t = document.querySelector('#hostFloat .dp-tab .stt')?.textContent || ''; return !!t && !/未连接|连接中/.test(t); }, null, 8000).catch(() => {});
+  const c0 = await chip(p);
+  ok(c0 === '空闲', '刚连上：空闲: ' + JSON.stringify(c0));
   streams[0].write(claudeScreen('✻ Frosting… (3s · ↓ 1k tokens)')); await wait(1500);
   ok(await chip(p) === '运行中', 'Claude 转圈 → 运行中 (服务端判断后推过来)');
 
