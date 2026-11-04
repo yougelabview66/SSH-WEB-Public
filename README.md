@@ -9,7 +9,7 @@
 </p>
 <p align="center"><sub>Claude Code asks for permission → notification → tap <b>允许</b> (Allow) → the agent continues → open the diff. Real SSH-WEB page and real Claude Code; the system notification is re-drawn for the recording (headless browsers can't capture it), the Allow tap calls the same API as the notification button.</sub></p>
 
-A lightweight, self-hosted web SSH terminal built for running AI coding agents (Claude Code, Codex, Grok …) on remote machines from any device. Runs in a single Docker container — ideal for a NAS. The interface is currently in Chinese.
+A lightweight, self-hosted web SSH terminal built for running AI coding agents (Claude Code, Codex, OpenCode, Grok, pi, Antigravity …) on remote machines from any device. Runs in a single Docker container — ideal for a NAS. The interface is currently in Chinese.
 
 <p align="center">
   <img src="docs/images/desktop.png" alt="Desktop: tabs, agent status card and project side bar" width="100%">
@@ -51,7 +51,7 @@ SSH-WEB is a single-user tool: one login protects everything. It is not meant fo
 ## Features
 
 - **Persistent sessions** — SSH connections live on the server. Close the browser or lose the network, reopen, and every tab, screen and scrollback is restored. Open the same tab on phone and desktop at once.
-- **Built for agents** — per-tab status (running / done / needs input), push notifications via Web Push or Claude Code hooks (with Allow / Deny buttons on Android), a floating status card, and a browser for past agent sessions.
+- **Built for agents** — per-tab status (running / done / needs input), push notifications via Web Push and agent hooks (Claude Code, Codex, OpenCode, Grok, pi, Antigravity; Allow / Deny buttons on Android for Claude Code), a floating status card, and a browser for past agent sessions.
 - **Mobile-first input** — an input bar with special keys, IME-friendly editing, predictive local echo for slow links, fast local scrolling inside tmux.
 - **Project side bar** — file tree with git status and file icons, fuzzy file search (Ctrl+Shift+P), diff view with line comments you can send to the agent.
 - **Files & ports** — SFTP manager (drag-and-drop upload, preview), send images/files to the agent, preview dev servers through the built-in port forwarder.
