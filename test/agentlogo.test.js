@@ -56,10 +56,20 @@ const oc = require('../lib/agents/opencode');
   db.exec('pragma wal_checkpoint(truncate)');
   const gets = [];
   const sftp = { stat: (f, cb) => fs.stat(f, (e, st) => cb(e, st && { size: st.size, mtime: Math.floor(st.mtimeMs / 1000) })),
-    fastGet: (from, to, cb) => { gets.push(path.basename(from)); fs.copyFile(from, to, cb); } };
+    fastGet: (from, to, o, cb) => { if (typeof o === 'function') cb = o; else opts.push(o); gets.push(path.basename(from)); fs.copyFile(from, to, cb); } };
+  const opts = []; // 后台预先拷时带的选项 (并发)
   const noExec = async (c) => { throw new Error('不该启动 opencode：' + c); };
+  // 这条连接还没拷过数据库 (第一次要整个拷，慢的网络上好几分钟)：先用 opencode session export 导出这一条显示，数据库在后台拷着
+  const cmds2 = [];
+  const exp2 = { info: { id: 'ses_a' }, messages: [{ info: { role: 'user' }, parts: [{ type: 'text', text: '导出来的问题' }] }] };
+  t = plain(await oc.history.read({ sftp, home, sid: 'ses_a', cwd: '', exec: async (c) => { cmds2.push(c); return JSON.stringify(exp2); }, win: true }));
+  for (let i = 0; i < 40 && !gets.length; i++) await new Promise((r) => setTimeout(r, 50));
+  await new Promise((r) => setTimeout(r, 200));
+  ok(t.includes('导出来的问题') && cmds2.join('|') === 'opencode session export ses_a' && gets.join() === 'opencode.db' && opts[0]?.concurrency === 4,
+    'Windows 第一次 (还没拷过数据库)：先用 opencode session export 导出这一条显示，不等整个数据库；数据库在后台慢慢拷过来 (只开 4 路，不占满 SFTP；-wal 是空的不拷): ' + JSON.stringify([cmds2, gets, opts]));
+  gets.length = 0;
   t = plain(await oc.history.read({ sftp, home, sid: '', cwd: 'c:/users/me', exec: noExec, win: true }));
-  ok(t.includes('数据库里的问题') && !t.includes('别的目录') && gets.join() === 'opencode.db', 'Windows：拷数据库在服务器上读 (-wal 是空的不拷)，按目录挑出对话，不启动 opencode: ' + JSON.stringify(gets));
+  ok(t.includes('数据库里的问题') && !t.includes('别的目录') && gets.length === 0, '拷过以后：在服务器上读数据库，按目录挑出对话，不启动 opencode、主库没变不重拷: ' + JSON.stringify(gets));
   add('ses_a', 'C:\\Users\\Me', 3, 'm3', 'assistant', '刚刚的回答'); // 只写进 -wal
   gets.length = 0;
   t = plain(await oc.history.read({ sftp, home, sid: 'ses_a', cwd: '', exec: noExec, win: true }));
@@ -84,5 +94,23 @@ const oc = require('../lib/agents/opencode');
   await oc.history.read({ sftp, home, sid: 'ses_known', cwd: '', exec, win: true });
   ok(cmds.join('|') === 'opencode session export ses_known|opencode export ses_known', '没有数据库再用 opencode 命令导出 (先试 OpenCode 2 的 session export): ' + JSON.stringify(cmds));
   fs.rmSync(home, { recursive: true, force: true });
+
+  // 会话列表 (Windows 主机)：这条连接第一次列、不是搜索 → 用 OpenCode 2 后台服务的接口列出全部顶层对话 (几秒)，不等拷数据库
+  const mkX = (exec, q = '') => { const rows = []; return { rows, x: { q, MAX: 50, SCAN: 400, exec, home: '/C:/Users/me', sftp: { stat: (f, cb) => cb(new Error('no')) },
+    J: (...a) => a.join('/'), push: (r) => rows.push(r), oneLn: (v) => v, filesIn: async () => [], subdirs: async () => [], pick: async () => [], collect: async () => {}, head: async () => '', has: async () => true } }; };
+  const api = { data: [{ id: 'ses_n1', title: '修登录', location: { directory: 'C:\\p' }, time: { created: 1, updated: 5 } }, { id: 'bad id', title: 'x' }], cursor: {} };
+  const ec = [];
+  let m = mkX(async (c) => { ec.push(c); return 'note\n' + JSON.stringify(api); });
+  await oc.sessions.sftp(m.x);
+  const r0 = m.rows[0], j0 = r0 && JSON.parse(r0.f.json[0]);
+  ok(ec[0] === 'opencode api session.list --param limit=50 --param parentID=null' && m.rows.length === 1 && r0.path.endsWith('opencode.db#ses_n1') && r0.mtime === 5 && j0.title === '修登录' && j0.directory === 'C:\\p',
+    'Windows 会话列表第一次：用 OpenCode 2 后台服务的接口列出 (只要顶层对话，对话号不像样的不要)，不等拷数据库: ' + JSON.stringify([ec, m.rows]));
+  ec.length = 0;
+  m = mkX(async (c) => { ec.push(c); return JSON.stringify(api); }, '登录');
+  await oc.sessions.sftp(m.x);
+  ok(!ec.length, '搜索要查全部内容：不用接口 (照旧读数据库): ' + JSON.stringify(ec));
+  m = mkX(async () => 'Error: unknown command "api"');
+  await oc.sessions.sftp(m.x);
+  ok(m.rows.length === 0, '旧版 OpenCode 没有 opencode api：照旧读数据库 (这里没有数据库，列表是空的，不报错)');
   process.exit();
 })().catch((e) => { console.error(e); process.exit(1); });
