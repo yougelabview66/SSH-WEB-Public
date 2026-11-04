@@ -6,6 +6,8 @@
   const LS_LINES = 3000;
   const LS_WHEEL_QUIET = 400; // 滚轮停这么久才算这一下滚动结束
   const LS_CHUNK = 100; // 历史视图按块放进页面，每块这么多行
+  // 浏览器会不会在上面插了内容后自己保持滚动位置 (scroll anchoring)：iPhone 的 Safari 不会 (见 openLocalScroll 的 fill)
+  const ANCHOR_OK = !!window.CSS?.supports?.('overflow-anchor', 'auto');
 
 
   // 常驻会话 (sshwebd)：程序没开鼠标 (比如 Claude Code) 也走历史视图，同 tmux 里的用法
@@ -165,7 +167,7 @@
       pre.prepend(el);
       // scrollTop 只认整 (设备) 像素：零头留着下次一起补，补很多次也不会一点点漂开
       const want = pre.scrollTop + ref.getBoundingClientRect().top - y0 + frac;
-      pre.scrollTop = want;
+      if (Math.abs(want - pre.scrollTop) >= 1) pre.scrollTop = want; // 浏览器已经保持住了就别再设 (iPhone 上设一下就打断惯性、画面闪空白)
       frac = want - pre.scrollTop;
       selfTop = pre.scrollTop; // 这是补内容自己挪的 (含浏览器的 scroll anchoring)，不算在滑
     };
@@ -173,9 +175,12 @@
     // 停下来 250ms 再补；离已有内容的顶上不到一屏了才边滑边补。一次做几块合成一批放进去，只排一次版
     let busyUntil = 0, selfTop = -1, frac = 0;
     pre.addEventListener('scroll', () => { if (pre.scrollTop !== selfTop) busyUntil = performance.now() + 250; }, { passive: true });
+    // 边滑边补只给自己会保持位置的浏览器 (scroll anchoring：Chrome、安卓)。iPhone 的 Safari 不支持，补进去后只能自己改 scrollTop ——
+    // 惯性滑动中改 scrollTop / 往上插内容，iPhone 会把历史视图画成一大片空白，惯性停了才恢复 (用户实测：快速往下滑出现空白一截)。
+    // 所以那里滑着 (连同惯性) 一律不补，停下 250ms 再补：最多滑到已有内容的顶上停一下，不会闪空白
     const fill = () => {
       if (s.scrollView !== v || next < 0) return;
-      const near = pre.scrollTop < pre.clientHeight;
+      const near = ANCHOR_OK && pre.scrollTop < pre.clientHeight;
       if (!near && performance.now() < busyUntil) { setTimeout(fill, 100); return; }
       const f = document.createDocumentFragment();
       for (const t0 = performance.now(); next >= 0 && performance.now() - t0 < 8;) f.prepend(block(chunks[next--]));

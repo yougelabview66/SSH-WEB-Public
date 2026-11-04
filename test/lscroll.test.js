@@ -426,6 +426,49 @@ const WHEEL_UP = '\x1b[<64;';
   ok(got === 'q' && !(await mFocused()), '手机：点它发 q 退出复制模式，不聚焦输入框 (不弹输入法): ' + JSON.stringify(got));
   await m.locator('.term.active .xterm-screen').tap(); await wait(300);
   ok(await mFocused(), '手机：点终端本身还是照常聚焦输入框');
+  // ---- iPhone (Safari 不会在上面插了内容后自己保持滚动位置)：滑着 (连同惯性) 的时候一律不往上补，
+  // 补进去要自己改 scrollTop，惯性中一改 iPhone 就画成一大片空白 (用户实测「快速往下滑出现空白一截，后面恢复」)。停下才补，补完看着的内容不动
+  await ctx.close();
+  const ictx = await browser.newContext({ ...devices['Pixel 7'] });
+  await ictx.addInitScript(() => { const sup = CSS.supports.bind(CSS); CSS.supports = (a, b) => (/overflow-anchor/.test(a) ? false : sup(a, b)); });
+  const im = await ictx.newPage(); im.on('pageerror', (e) => errors.push(e.message));
+  await im.goto(B + '/'); await im.waitForSelector('.tab'); await wait(1000);
+  await im.locator('.tab', { hasText: 'TMUX-1' }).first().tap(); await wait(1200);
+  const icdp = await ictx.newCDPSession(im);
+  const ibox = await im.locator('.term.active .term-box').boundingBox();
+  await icdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: ibox.x + ibox.width / 2, y: ibox.y + 200 }] });
+  for (let i = 1; i <= 15; i++) { await icdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: ibox.x + ibox.width / 2, y: ibox.y + 200 + i * 20 }] }); await wait(30); }
+  await icdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await waitFor(im, () => !!document.querySelector('.term.active .ls-body'), null, 5000).catch(() => {});
+  // 一打开就一直快速往上滑 (每 16ms 滑 60px，滑到已有内容的顶上也接着推)，记下滑的过程中块数有没有变、位置有没有被改
+  const run = await im.evaluate(async () => {
+    const pre = document.querySelector('.term.active .ls-body');
+    // 头 1.1 秒不记：打开时那 150ms 往回滚的动画、松手后那一下的惯性 (约 0.8 秒) 会动位置，开头那一批 (还没开始滑) 会动块数。
+    // 一直滑着：先往上快速滑，到离顶上 300px 以内就小幅来回滑 (撞到最顶上就不算在滑了，那时补是对的)
+    let n0 = 0; const jumps = [], counts = new Set();
+    for (let i = 0; i < 140; i++) {
+      const want = pre.scrollTop > 300 ? pre.scrollTop - 25 : pre.scrollTop + (i % 2 ? 4 : -4);
+      pre.scrollTop = want;
+      await new Promise((r) => setTimeout(r, 16));
+      if (i === 60) n0 = pre.children.length;
+      if (i < 60) continue;
+      counts.add(pre.children.length);
+      if (Math.abs(pre.scrollTop - want) > 1) jumps.push([want, pre.scrollTop]);
+    }
+    // 停下时最上面那行是什么
+    const r = pre.getBoundingClientRect();
+    const topLine = document.elementFromPoint(r.left + 40, r.top + 30)?.closest('.ls-body > div *')?.textContent?.slice(0, 30) || '';
+    return { n0, counts: [...counts], jumps: jumps.slice(0, 3), top: pre.scrollTop, topLine };
+  });
+  ok(run.counts.length === 1 && !run.jumps.length, `iPhone：一直滑着的时候不往上补、不改位置 (块数 ${run.counts.join('/')}，被改位置 ${JSON.stringify(run.jumps)})`);
+  await wait(1500);
+  const after = await im.evaluate((topLine) => {
+    const pre = document.querySelector('.term.active .ls-body'), r = pre.getBoundingClientRect();
+    return { n: pre.children.length, topLine: document.elementFromPoint(r.left + 40, r.top + 30)?.closest('.ls-body > div *')?.textContent?.slice(0, 30) || '' };
+  }, run.topLine);
+  ok(after.n > run.n0 && after.topLine === run.topLine, `iPhone：停下以后才补上前面的历史 (块 ${run.n0} → ${after.n})，看着的那行不动: ${JSON.stringify(run.topLine)} → ${JSON.stringify(after.topLine)}`);
+  await ictx.close();
+
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
   await browser.close(); process.exit();
 })().catch((e) => { console.error(e); process.exit(1); });
