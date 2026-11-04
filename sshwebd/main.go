@@ -1,4 +1,4 @@
-// sshwebd：SSH-WEB 的终端守护程序 。
+// sshwebd：SSH-WEB 的终端守护程序。
 // 在 Windows 上代替 psmux：终端会话放在一个常驻的守护进程里 (ConPTY)，SSH 断了、网页关了会话还在，重新连上接着用。
 // SSH-WEB 用 `sshwebd bridge` 通过一个 SSH 通道直接和守护进程通信 (不经过 sshd 的终端那一层，中文不错位)；
 // 在电脑上也能用 `sshwebd attach` 接上同一个会话。
@@ -154,7 +154,7 @@ func request(c net.Conn, req Request) (Msg, error) {
 
 // bridge：SSH-WEB 通过一个 SSH 通道 (exec，不要终端) 运行它。先输出一行 SSHWEBD READY <版本>，
 // 之后两个方向都是一行一段 base64 (原样传守护进程的帧)：sshd 的默认 shell 是 PowerShell 时，
-// 它会把程序的输出当文字按代码页重新解码，原始字节会被改坏，base64 不会 
+// 它会把程序的输出当文字按代码页重新解码，原始字节会被改坏，base64 不会
 func runBridge() int {
 	var wmu sync.Mutex
 	writeLine := func(s string) {

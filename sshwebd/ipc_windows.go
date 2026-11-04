@@ -4,7 +4,7 @@ package main
 
 // Windows：守护进程听命名管道 \\.\pipe\sshwebd-v1-<用户名> (只有自己这个用户能连)。
 // 启动守护进程时要脱离 SSH 会话的作业对象：Windows 的 OpenSSH 在 SSH 断开时会结束整个作业，
-// 它允许脱离，但要 CreateProcess 时明确带上 CREATE_BREAKAWAY_FROM_JOB 
+// 它允许脱离，但要 CreateProcess 时明确带上 CREATE_BREAKAWAY_FROM_JOB
 
 import (
 	"errors"

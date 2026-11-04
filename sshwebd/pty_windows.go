@@ -49,7 +49,7 @@ const psInit = `chcp.com 65001 > $null; $global:__sshwebdPrompt = $function:prom
 	`function global:prompt { $global:__sshwebdLast = ''; & $global:__sshwebdCwd; & $global:__sshwebdPrompt }`
 
 // 要启动的程序。cmd / PowerShell 先把代码页切到 UTF-8 (65001)：直接写 UTF-8 字节的程序 (比如 Claude Code)
-// 中文才不乱 。别的当成整条命令行
+// 中文才不乱。别的当成整条命令行
 func shellCmdline(shell string) (string, string) {
 	switch strings.ToLower(shell) {
 	case "", "powershell":
