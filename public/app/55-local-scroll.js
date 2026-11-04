@@ -8,7 +8,8 @@
   const LS_CHUNK = 100; // 历史视图按块放进页面，每块这么多行
   // 能不能边滑边往上补历史 (见 openLocalScroll 的 fill)：只给电脑 —— 浏览器要会在上面插了内容后自己保持滚动位置 (scroll anchoring，
   // iPhone 的 Safari 不会)，而且不是手机 (手机上惯性滑动中往上插内容、改滚动位置会闪出一大片空白，用户只在手机上遇到，电脑上没有)
-  const FILL_WHILE_SCROLL = !!window.CSS?.supports?.('overflow-anchor', 'auto') && !matchMedia('(pointer: coarse)').matches;
+  const TOUCH = matchMedia('(pointer: coarse)').matches;
+  const FILL_WHILE_SCROLL = !!window.CSS?.supports?.('overflow-anchor', 'auto') && !TOUCH;
 
 
   // 常驻会话 (sshwebd)：程序没开鼠标 (比如 Claude Code) 也走历史视图，同 tmux 里的用法
@@ -172,19 +173,27 @@
       frac = want - pre.scrollTop;
       selfTop = pre.scrollTop; // 这是补内容自己挪的 (含浏览器的 scroll anchoring)，不算在滑
     };
-    // 往上补一次就要整个重新排版 (手机上一次几十到上百毫秒)：正在滑的时候先不补 (以前一打开就一直补，头两三秒滑起来一卡一卡)，
-    // 停下来 250ms 再补；离已有内容的顶上不到一屏了才边滑边补。一次做几块合成一批放进去，只排一次版
-    let busyUntil = 0, selfTop = -1, frac = 0;
-    pre.addEventListener('scroll', () => { if (pre.scrollTop !== selfTop) busyUntil = performance.now() + 250; }, { passive: true });
-    // 边滑边补只给电脑 (FILL_WHILE_SCROLL)。手机上惯性滑动中往上插内容 / 改 scrollTop，会把历史视图画成一大片空白，惯性停了才恢复
-    // (用户实测：手机上快速往下滑出现空白一截；iPhone 的 Safari 不会自己保持位置，补进去只能自己改 scrollTop，最明显)。
-    // 所以手机上滑着 (连同惯性) 一律不补，停下 250ms 再补：最多滑到已有内容的顶上停一下，不会闪空白
+    // 往上补一次就要整个重新排版 (手机上一次几十到上百毫秒)：正在滑的时候先不补，停下来 250ms 再补。
+    // 「在滑」：电脑上任何滚动 (快滑到已有内容顶上不到一屏时边滑边补，见 FILL_WHILE_SCROLL)；
+    // 手机上只算手指在历史视图上滑、连同松手后浏览器自己的惯性 —— 打开时那 150ms 的回滚动画、手指在终端上滑开的那一下
+    // 剩下的惯性 (57-touch-scroll.js) 是我们自己改 scrollTop，补的时候一起校正，不用等。
+    // 手机上剩下的一次补完 (只排一次版)：以前几块几块地补，每补一次整页重排、卡好几下，还补得慢 ——
+    // 打开后马上再快速往回滑，惯性冲到已有内容的顶上，iPhone 回弹露出一截空白，过一会儿才补上 (用户实测)
+    let busyUntil = 0, selfTop = -1, frac = 0, touching = false, touchEndAt = -1e9;
+    pre.addEventListener('touchstart', () => { touching = true; }, { passive: true });
+    const untouch = () => { touching = false; touchEndAt = performance.now(); busyUntil = touchEndAt + 250; };
+    pre.addEventListener('touchend', untouch, { passive: true });
+    pre.addEventListener('touchcancel', untouch, { passive: true });
+    pre.addEventListener('scroll', () => {
+      if (pre.scrollTop === selfTop) return; // 补内容自己挪的
+      if (!TOUCH || touching || performance.now() - touchEndAt < 3000) busyUntil = performance.now() + 250;
+    }, { passive: true });
     const fill = () => {
       if (s.scrollView !== v || next < 0) return;
       const near = FILL_WHILE_SCROLL && pre.scrollTop < pre.clientHeight;
-      if (!near && performance.now() < busyUntil) { setTimeout(fill, 100); return; }
-      const f = document.createDocumentFragment();
-      for (const t0 = performance.now(); next >= 0 && performance.now() - t0 < 8;) f.prepend(block(chunks[next--]));
+      if (!near && (touching || performance.now() < busyUntil)) { setTimeout(fill, 100); return; }
+      const f = document.createDocumentFragment(), budget = TOUCH ? Infinity : 8;
+      for (const t0 = performance.now(); next >= 0 && performance.now() - t0 < budget;) f.prepend(block(chunks[next--]));
       addAbove(f);
       if (next >= 0) setTimeout(fill, near ? 0 : 30);
     };

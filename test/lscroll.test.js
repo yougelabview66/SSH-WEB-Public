@@ -218,14 +218,17 @@ const WHEEL_UP = '\x1b[<64;';
   const lb0 = await p.locator('.term.active .ls-body').boundingBox();
   got = '';
   await p.mouse.move(lb0.x + 20, lb0.y + 40); await p.mouse.down();
-  await p.mouse.move(lb0.x + 300, lb0.y + 100, { steps: 5 }); await p.mouse.up(); await wait(400);
+  await p.mouse.move(lb0.x + 300, lb0.y + 100, { steps: 5 }); await p.mouse.up();
+  // 提示只显示 1.2 秒：一出来就把文字、位置一起量下来 (机器慢时先读剪贴板，回头再量提示已经没了)
+  await waitFor(p, () => !!document.querySelector('.term.active .lscroll .font-toast'), null, 3000).catch(() => {});
+  const cpToast = await p.evaluate(() => { const t = document.querySelector('.term.active .lscroll .font-toast'); if (!t) return { text: '' };
+    const v = document.querySelector('.term.active .lscroll').getBoundingClientRect(), r = t.getBoundingClientRect(), c = document.querySelector('.term.active .ls-close').getBoundingClientRect();
+    return { text: t.textContent, right: Math.round(v.right - r.right), aboveClose: Math.round(c.top - r.bottom), bottom: Math.round(v.bottom - r.bottom) }; });
   const sel = await p.evaluate(() => getSelection().toString());
   const clip = await p.evaluate(() => navigator.clipboard.readText());
-  const toastT = await p.evaluate(() => document.querySelector('.term.active .lscroll .font-toast')?.textContent || '');
+  const toastT = cpToast.text, tp = cpToast;
   ok(sel.length > 10 && clip === sel && got === '', `历史视图里选中文字松开就复制到剪贴板 (${clip.length} 个字符)，没有发给终端`);
   ok(toastT === `已复制 ${sel.length} 个字符` && !!(await view()), '提示「' + toastT + '」，历史视图不关');
-  const tp = await p.evaluate(() => { const v = document.querySelector('.term.active .lscroll').getBoundingClientRect(), t = document.querySelector('.term.active .lscroll .font-toast').getBoundingClientRect(), c = document.querySelector('.term.active .ls-close').getBoundingClientRect();
-    return { right: Math.round(v.right - t.right), aboveClose: Math.round(c.top - t.bottom), bottom: Math.round(v.bottom - t.bottom) }; });
   ok(tp.right < 30 && tp.aboveClose >= 0 && tp.bottom < 80, `提示在右下角、「回到实时画面」上面 (离右边 ${tp.right}px，离底部 ${tp.bottom}px)`);
   await p.screenshot({ path: shot('lscroll-copysel.png') });
   await p.mouse.click(lb0.x + 20, lb0.y + 40); await wait(300); // 单击 (没选中文字) 不复制
@@ -426,50 +429,59 @@ const WHEEL_UP = '\x1b[<64;';
   ok(got === 'q' && !(await mFocused()), '手机：点它发 q 退出复制模式，不聚焦输入框 (不弹输入法): ' + JSON.stringify(got));
   await m.locator('.term.active .xterm-screen').tap(); await wait(300);
   ok(await mFocused(), '手机：点终端本身还是照常聚焦输入框');
-  // ---- 手机：滑着 (连同惯性) 的时候一律不往上补，惯性中往上插内容、改滚动位置会画成一大片空白 (用户实测「手机上快速往下滑出现空白一截，
-  // 后面恢复」，电脑上没有)。停下才补，补完看着的内容不动。这里还模拟成 iPhone (Safari 不会自己保持滚动位置，补进去只能自己改 scrollTop)
+  // ---- 手机：历史视图打开后马上把前面的历史一次补完 (只排一次版)。以前几块几块地补、停手 250ms 才开始补，
+  // 小滑一下进来、马上再快速往回滑，惯性冲到已有内容的顶上，iPhone 回弹露出一截空白 (用户实测)。
+  // 只有手指在历史视图上滑 (连同松手后的惯性) 才先不补：惯性中往上插内容、改滚动位置会画成一大片空白。
+  // 两种都测：模拟成 iPhone (Safari 不会自己保持滚动位置，补进去只能自己改 scrollTop) 和安卓
   await ctx.close();
   for (const fakeIphone of [true, false]) {
-  const who = fakeIphone ? '手机 (iPhone)' : '手机 (安卓)';
-  const ictx = await browser.newContext({ ...devices['Pixel 7'] });
-  if (fakeIphone) await ictx.addInitScript(() => { const sup = CSS.supports.bind(CSS); CSS.supports = (a, b) => (/overflow-anchor/.test(a) ? false : sup(a, b)); });
-  const im = await ictx.newPage(); im.on('pageerror', (e) => errors.push(e.message));
-  await im.goto(B + '/'); await im.waitForSelector('.tab'); await wait(1000);
-  await im.locator('.tab', { hasText: 'TMUX-1' }).first().tap(); await wait(1200);
-  const icdp = await ictx.newCDPSession(im);
-  const ibox = await im.locator('.term.active .term-box').boundingBox();
-  await icdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: ibox.x + ibox.width / 2, y: ibox.y + 200 }] });
-  for (let i = 1; i <= 15; i++) { await icdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: ibox.x + ibox.width / 2, y: ibox.y + 200 + i * 20 }] }); await wait(30); }
-  await icdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-  await waitFor(im, () => !!document.querySelector('.term.active .ls-body'), null, 5000).catch(() => {});
-  // 一打开就一直快速往上滑 (每 16ms 滑 60px，滑到已有内容的顶上也接着推)，记下滑的过程中块数有没有变、位置有没有被改
-  const run = await im.evaluate(async () => {
-    const pre = document.querySelector('.term.active .ls-body');
-    // 头 1.1 秒不记：打开时那 150ms 往回滚的动画、松手后那一下的惯性 (约 0.8 秒) 会动位置，开头那一批 (还没开始滑) 会动块数。
-    // 一直滑着：先往上快速滑，到离顶上 300px 以内就小幅来回滑 (撞到最顶上就不算在滑了，那时补是对的)
-    let n0 = 0; const jumps = [], counts = new Set();
-    for (let i = 0; i < 140; i++) {
-      const want = pre.scrollTop > 300 ? pre.scrollTop - 25 : pre.scrollTop + (i % 2 ? 4 : -4);
-      pre.scrollTop = want;
-      await new Promise((r) => setTimeout(r, 16));
-      if (i === 60) n0 = pre.children.length;
-      if (i < 60) continue;
-      counts.add(pre.children.length);
-      if (Math.abs(pre.scrollTop - want) > 1) jumps.push([want, pre.scrollTop]);
-    }
-    // 停下时最上面那行是什么
-    const r = pre.getBoundingClientRect();
-    const topLine = document.elementFromPoint(r.left + 40, r.top + 30)?.closest('.ls-body > div *')?.textContent?.slice(0, 30) || '';
-    return { n0, counts: [...counts], jumps: jumps.slice(0, 3), top: pre.scrollTop, topLine };
-  });
-  ok(run.counts.length === 1 && !run.jumps.length, `${who}：一直滑着的时候不往上补、不改位置 (块数 ${run.counts.join('/')}，被改位置 ${JSON.stringify(run.jumps)})`);
-  await wait(1500);
-  const after = await im.evaluate((topLine) => {
-    const pre = document.querySelector('.term.active .ls-body'), r = pre.getBoundingClientRect();
-    return { n: pre.children.length, topLine: document.elementFromPoint(r.left + 40, r.top + 30)?.closest('.ls-body > div *')?.textContent?.slice(0, 30) || '' };
-  }, run.topLine);
-  ok(after.n > run.n0 && after.topLine === run.topLine, `${who}：停下以后才补上前面的历史 (块 ${run.n0} → ${after.n})，看着的那行不动: ${JSON.stringify(run.topLine)} → ${JSON.stringify(after.topLine)}`);
-  await ictx.close();
+    const who = fakeIphone ? '手机 (iPhone)' : '手机 (安卓)';
+    const ictx = await browser.newContext({ ...devices['Pixel 7'] });
+    if (fakeIphone) await ictx.addInitScript(() => { const sup = CSS.supports.bind(CSS); CSS.supports = (a, b) => (/overflow-anchor/.test(a) ? false : sup(a, b)); });
+    const im = await ictx.newPage(); im.on('pageerror', (e) => errors.push(e.message));
+    await im.goto(B + '/'); await im.waitForSelector('.tab'); await wait(1000);
+    await im.locator('.tab', { hasText: 'TMUX-1' }).first().tap(); await wait(1200);
+    const icdp = await ictx.newCDPSession(im);
+    const ibox = await im.locator('.term.active .term-box').boundingBox();
+    const swipe = async () => {
+      await icdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: ibox.x + ibox.width / 2, y: ibox.y + 200 }] });
+      for (let i = 1; i <= 15; i++) { await icdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: ibox.x + ibox.width / 2, y: ibox.y + 200 + i * 20 }] }); await wait(30); }
+      await icdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await waitFor(im, () => !!document.querySelector('.term.active .ls-body'), null, 5000).catch(() => {});
+    };
+    // 1. 小滑一下打开：不等停手，马上一次补完 (块数一下子到齐，不是一块块加)，看着的那行不动
+    await im.evaluate(() => {
+      window.__lsAdds = [];
+      new MutationObserver(() => {
+        const pre = document.querySelector('.term.active .ls-body');
+        if (pre && !pre.__obs) { pre.__obs = true; window.__lsT0 = performance.now(); new MutationObserver(() => window.__lsAdds.push([Math.round(performance.now() - window.__lsT0), pre.children.length])).observe(pre, { childList: true }); }
+      }).observe(document.body, { childList: true, subtree: true });
+    });
+    await swipe();
+    await waitFor(im, () => document.querySelector('.term.active .ls-body')?.textContent.startsWith('line 1 普通输出'), null, 3000).catch(() => {});
+    const adds = await im.evaluate(() => window.__lsAdds);
+    const full = await im.evaluate(() => document.querySelector('.term.active .ls-body')?.textContent.startsWith('line 1 普通输出'));
+    // 一次补完 (不是一块块地加)；这台测试机慢 (一个 CPU)，一次生成全部历史本身要一两秒，真手机快得多
+    ok(full && adds.length === 1 && adds[0][0] < 3000, `${who}：小滑一下打开后马上把前面的历史一次补完 (补了 ${adds.length} 次: ${JSON.stringify(adds)})`);
+    await im.locator('.term.active .ls-close').tap(); await waitFor(im, () => !document.querySelector('.term.active .lscroll'), null, 3000).catch(() => {}); await wait(800);
+    // 2. 手指按在历史视图上 (在滑)：先不补；松手、惯性停了才补，补完看着的那行不动
+    await im.evaluate(() => {
+      new MutationObserver((ms, ob) => {
+        const pre = document.querySelector('.term.active .ls-body');
+        if (pre && !pre.__touched) { pre.__touched = true; const t = new Touch({ identifier: 9, target: pre, clientX: 100, clientY: 300 }); pre.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, touches: [t], targetTouches: [t], changedTouches: [t] })); ob.disconnect(); }
+      }).observe(document.body, { childList: true, subtree: true });
+    });
+    await swipe();
+    await wait(1000);
+    const held = await im.evaluate(() => { const pre = document.querySelector('.term.active .ls-body'); const r = pre.getBoundingClientRect();
+      return { n: pre.children.length, full: pre.textContent.startsWith('line 1 普通输出'), top: document.elementFromPoint(r.left + 40, r.top + 30)?.closest('.ls-body > div *')?.textContent?.slice(0, 30) || '' }; });
+    ok(!held.full, `${who}：手指按在历史视图上 (在滑)：先不往上补 (块数 ${held.n})`);
+    await im.evaluate(() => { const pre = document.querySelector('.term.active .ls-body'); const t = new Touch({ identifier: 9, target: pre, clientX: 100, clientY: 300 }); pre.dispatchEvent(new TouchEvent('touchend', { bubbles: true, touches: [], changedTouches: [t] })); });
+    await wait(1200);
+    const rel = await im.evaluate(() => { const pre = document.querySelector('.term.active .ls-body'); const r = pre.getBoundingClientRect();
+      return { full: pre.textContent.startsWith('line 1 普通输出'), top: document.elementFromPoint(r.left + 40, r.top + 30)?.closest('.ls-body > div *')?.textContent?.slice(0, 30) || '' }; });
+    ok(rel.full && rel.top === held.top, `${who}：松手停下后才补上，看着的那行不动: ${JSON.stringify(held.top)} → ${JSON.stringify(rel.top)}`);
+    await ictx.close();
   }
 
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
