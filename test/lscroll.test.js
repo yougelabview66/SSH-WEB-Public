@@ -426,11 +426,13 @@ const WHEEL_UP = '\x1b[<64;';
   ok(got === 'q' && !(await mFocused()), '手机：点它发 q 退出复制模式，不聚焦输入框 (不弹输入法): ' + JSON.stringify(got));
   await m.locator('.term.active .xterm-screen').tap(); await wait(300);
   ok(await mFocused(), '手机：点终端本身还是照常聚焦输入框');
-  // ---- iPhone (Safari 不会在上面插了内容后自己保持滚动位置)：滑着 (连同惯性) 的时候一律不往上补，
-  // 补进去要自己改 scrollTop，惯性中一改 iPhone 就画成一大片空白 (用户实测「快速往下滑出现空白一截，后面恢复」)。停下才补，补完看着的内容不动
+  // ---- 手机：滑着 (连同惯性) 的时候一律不往上补，惯性中往上插内容、改滚动位置会画成一大片空白 (用户实测「手机上快速往下滑出现空白一截，
+  // 后面恢复」，电脑上没有)。停下才补，补完看着的内容不动。这里还模拟成 iPhone (Safari 不会自己保持滚动位置，补进去只能自己改 scrollTop)
   await ctx.close();
+  for (const fakeIphone of [true, false]) {
+  const who = fakeIphone ? '手机 (iPhone)' : '手机 (安卓)';
   const ictx = await browser.newContext({ ...devices['Pixel 7'] });
-  await ictx.addInitScript(() => { const sup = CSS.supports.bind(CSS); CSS.supports = (a, b) => (/overflow-anchor/.test(a) ? false : sup(a, b)); });
+  if (fakeIphone) await ictx.addInitScript(() => { const sup = CSS.supports.bind(CSS); CSS.supports = (a, b) => (/overflow-anchor/.test(a) ? false : sup(a, b)); });
   const im = await ictx.newPage(); im.on('pageerror', (e) => errors.push(e.message));
   await im.goto(B + '/'); await im.waitForSelector('.tab'); await wait(1000);
   await im.locator('.tab', { hasText: 'TMUX-1' }).first().tap(); await wait(1200);
@@ -460,14 +462,15 @@ const WHEEL_UP = '\x1b[<64;';
     const topLine = document.elementFromPoint(r.left + 40, r.top + 30)?.closest('.ls-body > div *')?.textContent?.slice(0, 30) || '';
     return { n0, counts: [...counts], jumps: jumps.slice(0, 3), top: pre.scrollTop, topLine };
   });
-  ok(run.counts.length === 1 && !run.jumps.length, `iPhone：一直滑着的时候不往上补、不改位置 (块数 ${run.counts.join('/')}，被改位置 ${JSON.stringify(run.jumps)})`);
+  ok(run.counts.length === 1 && !run.jumps.length, `${who}：一直滑着的时候不往上补、不改位置 (块数 ${run.counts.join('/')}，被改位置 ${JSON.stringify(run.jumps)})`);
   await wait(1500);
   const after = await im.evaluate((topLine) => {
     const pre = document.querySelector('.term.active .ls-body'), r = pre.getBoundingClientRect();
     return { n: pre.children.length, topLine: document.elementFromPoint(r.left + 40, r.top + 30)?.closest('.ls-body > div *')?.textContent?.slice(0, 30) || '' };
   }, run.topLine);
-  ok(after.n > run.n0 && after.topLine === run.topLine, `iPhone：停下以后才补上前面的历史 (块 ${run.n0} → ${after.n})，看着的那行不动: ${JSON.stringify(run.topLine)} → ${JSON.stringify(after.topLine)}`);
+  ok(after.n > run.n0 && after.topLine === run.topLine, `${who}：停下以后才补上前面的历史 (块 ${run.n0} → ${after.n})，看着的那行不动: ${JSON.stringify(run.topLine)} → ${JSON.stringify(after.topLine)}`);
   await ictx.close();
+  }
 
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
   await browser.close(); process.exit();
