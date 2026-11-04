@@ -92,7 +92,7 @@ SSH-WEB 是浏览器里的 SSH 终端（Node.js 服务端 + 网页），重点�
 
 已知没测到的（风险低，有条件时再补）：
 
-- Windows 上 OpenCode 2 的「继续」切换和打断：测试机走 Tailscale 中转，读 OpenCode 数据库超时，没测完。读屏幕（你说的话、回复）和旧插件自动换新已在 Windows 上实测通过；切换的逻辑在 Windows 上没变，昨天的切换实测是通过的。
+- Windows 上 OpenCode 2 的打断：识别逻辑和 Linux 同一套，Linux 上实测通过；Windows 上读屏幕（你说的话、回复）、旧插件自动换新、OpenCode 和 pi 互相「继续」切换、会话历史都已实测通过（v1.84.65）。
 - agy 的回答、钩子通知没在真机上完整测过（测试机地区不支持 / 没登录）。
 - 手机真机只靠自动化测试模拟；手机历史画面快滑空白已由项目负责人真机确认解决。
 - PowerShell 5.1 不认 Ctrl+U：退出 Agent 时发的 Ctrl+U 是给 Agent 的，实际碰不到 PowerShell，不处理。
