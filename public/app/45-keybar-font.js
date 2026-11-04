@@ -224,10 +224,19 @@
     // 从后台回来 / 旋转屏幕：键盘可能在后台收起了，浏览器却没通知 (或报的是过时的高度)，
     // 主动重新算几次 (有的浏览器回到前台后过一会儿才更新可视区域)
     // 最后按这台设备的尺寸同步一次：你回到这台设备上用了，排版就按它的
-    const resync = () => { onVV(); setTimeout(onVV, 150); setTimeout(() => { onVV(); if (active) syncSize(active); }, 500); };
+    // 旋转屏幕还有个坑：有的浏览器 (和安卓 App 的 WebView) 转完过一两秒才更新可视区域、之后也不再报，以前停在转之前的高度 ——
+    // 输入栏被压扁，或者跑到屏幕外、怎么滑都回不到最底下 (用户实测，开关一次输入法才恢复)。所以再多等两次 (1.2 秒、2.5 秒) 再算
+    const resync = () => {
+      onVV(); setTimeout(onVV, 150); setTimeout(() => { onVV(); if (active) syncSize(active); }, 500);
+      setTimeout(onVV, 1200); setTimeout(onVV, 2500);
+    };
     document.addEventListener('visibilitychange', () => { if (!document.hidden) resync(); });
     window.addEventListener('pageshow', resync);
     window.addEventListener('focus', resync);
     window.addEventListener('orientationchange', resync);
+    screen.orientation?.addEventListener?.('change', resync);
+    // 窗口大小变了 (转屏、分屏、折叠屏展开)：停下来 300ms 再算一次
+    let resizeT = 0;
+    window.addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(onVV, 300); });
   }
 

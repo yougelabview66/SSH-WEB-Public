@@ -66,6 +66,17 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   await p.evaluate(() => { window.__vvH = undefined; document.getElementById('mInput').blur(); }); await wait(600);
   ok(await appH() === full, `收起键盘时浏览器没通知：离开输入框后自己恢复占满 (${await appH()} / ${full}px)`);
 
+  // 键盘开着时转屏：浏览器转完过一两秒才更新可视区域、而且不再报 (安卓 App 的 WebView、有的浏览器)，
+  // 以前停在转之前的高度 (输入栏被压扁或跑到屏幕外，开关一次输入法才恢复)。转屏后多等两次再算，恢复占满
+  await p.evaluate(() => document.getElementById('mInput').focus());
+  await p.evaluate((h) => window.__vv(h), full - 300); await wait(200);
+  await p.evaluate(() => window.dispatchEvent(new Event('orientationchange'))); // 转屏：可视区域还报着旧的矮高度
+  await wait(800);
+  await p.evaluate(() => { window.__vvH = undefined; }); // 过了 0.8 秒才更新 (键盘在转屏时收起了)，不再发事件
+  await wait(2200);
+  ok(await appH() === full, `键盘开着时转屏、浏览器过一会儿才更新可视区域又不通知：转屏后多等两次再算，恢复占满 (${await appH()} / ${full}px)`);
+  await p.evaluate(() => document.getElementById('mInput').blur()); await wait(400);
+
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
   await browser.close(); process.exit();
 })().catch((e) => { console.error(e); process.exit(1); });
