@@ -189,6 +189,7 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   got = '';
   await p.tap('#mobileBar .mkeys [data-k="tab"]');
   for (let i = 0; i < 30 && !got.includes('\t'); i++) await wait(100); // 按键经过服务端传到主机要一会儿
+  await waitFor(p, () => !document.querySelector('.term.active .tmux-exit:not(.hidden)'), null, 2000).catch(() => {}); // 按钮每 300ms 才更新一次
   ok(got.includes('\t') && await live() && !(await btn()), '按键栏 / 输入栏发出按键 → 终端回到最底下: ' + JSON.stringify(got));
 
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
