@@ -28,9 +28,15 @@
     }
     return false;
   }
-  const EXIT_KEYS = { tmux: ['q', '退出 tmux 复制模式 (发送 q)'], claude: ['\x1b[1;5F', '回到 Claude Code 最新的对话 (发送 Ctrl+End)'] };
+  // 终端自己的滚动区往上翻着 (普通画面不在最底下)：普通 shell 里手指滑 / 滚轮翻上去的，或者以前的版本在常驻会话里滚上去的。
+  // 以前没有按钮，常驻会话里滑动、滚轮又都走历史视图动不了它，看着就是「回不到最新画面」。只在本地滚，没连上也能点
+  function termScrolledUp(s) {
+    const b = s.term.buffer.active;
+    return b.type === 'normal' && !s.scrollView && b.viewportY < b.baseY;
+  }
+  const EXIT_KEYS = { tmux: ['q', '退出 tmux 复制模式 (发送 q)'], claude: ['\x1b[1;5F', '回到 Claude Code 最新的对话 (发送 Ctrl+End)'], term: [null, '滚到最底下的实时画面'] };
   function updateCopyModeBtn(s) {
-    const mode = !s.sid ? null : tmuxScrolledUp(s) ? 'tmux' : claudeScrolledUp(s) ? 'claude' : null;
+    const mode = termScrolledUp(s) ? 'term' : !s.sid ? null : tmuxScrolledUp(s) ? 'tmux' : claudeScrolledUp(s) ? 'claude' : null;
     if (mode && !s.copyBtn) {
       s.copyBtn = document.createElement('button');
       s.copyBtn.className = 'ls-close tmux-exit';
@@ -38,7 +44,9 @@
       s.copyBtn.addEventListener('mousedown', (e) => e.preventDefault());
       s.copyBtn.addEventListener('click', () => {
         const mode = s.copyBtn.dataset.mode;
-        send(s, { type: 'data', data: EXIT_KEYS[mode][0], tmux: mode === 'tmux' }); // q 是给 tmux 的，不算打进输入框的字
+        if (mode === 'term') s.term.scrollToBottom();
+        else send(s, { type: 'data', data: EXIT_KEYS[mode][0], tmux: mode === 'tmux' }); // q 是给 tmux 的，不算打进输入框的字
+        updateCopyModeBtn(s);
         focusTerm(s);
       });
       s.box.appendChild(s.copyBtn);

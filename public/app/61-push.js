@@ -35,7 +35,8 @@
         navigator.serviceWorker.addEventListener('message', (e) => {
           if (e.data && e.data.type === 'open-session') {
             const t = sessions.find((x) => x.remoteId === e.data.id);
-            if (t) { activate(t); t.tab.classList.remove('ring'); } // 点开通知看了：铃铛去掉 (本来就在这个标签上也去掉)
+            // 点开通知看了：铃铛去掉 (本来就在这个标签上也去掉)；要看的是现在的画面 —— 开着的历史视图关掉、终端滚到最底下
+            if (t) { activate(t); goLive(t); t.tab.classList.remove('ring'); }
           }
         });
       } catch {}

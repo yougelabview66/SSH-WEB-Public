@@ -17,6 +17,11 @@
   // 备用屏幕也照试：里面开着 tmux 时备用屏幕是 tmux 的，抓 tmux 的历史没问题；真正的全屏程序由服务端再查
   // (这个会话的 tmux pane 里是全屏程序 → busy / 没开 tmux → 终端记录自己在备用屏幕上取不了 → busy)，滚轮照旧交给程序
   const daemonHistory = (s) => !!s.params?.daemonId;
+  // 历史只能看历史视图的：常驻会话里程序没开鼠标、在普通画面 (Claude Code 普通模式)。终端自己的滚动区只是连上时的那份快照，
+  // 不是真正的历史 —— 滚轮 / 滑动交给 xterm 只会把这份旧画面滚上去，之后滑动又都走历史视图、动不了它，就停在半路回不到最新画面
+  const historyViewOnly = (s) => daemonHistory(s) && s.term.modes.mouseTrackingMode === 'none' && s.term.buffer.active.type === 'normal';
+  // 连着服务器、接上了会话：这时取历史才有回答
+  const historyReady = (s) => !!s.sid && s.ws?.readyState === WebSocket.OPEN;
 
   function localScrollWheel(s, e) {
     if (s.bypassWheel) return true;
@@ -28,12 +33,25 @@
     // Windows 没开常驻会话：不取历史 (不用 psmux 了)，滚轮按终端默认的方式处理
     // 自带完整对话的 Agent (Grok，见 09-agents.js 的 ownHistory)：不管开没开鼠标、是不是 Windows，都去读它的会话文件
     const own = agentDoes(s, 'ownHistory');
-    if (e.deltaY >= 0 || !s.sid || (!own && s.term.modes.mouseTrackingMode === 'none' && !daemonHistory(s))) return true;
+    if (e.deltaY >= 0 || (!own && s.term.modes.mouseTrackingMode === 'none' && !daemonHistory(s))) return true;
     if (!own && s.winHost && !daemonHistory(s)) return true;
+    // 只能看历史视图的 (见 historyViewOnly)：取不了历史时滚轮吞掉，不交给 xterm
+    const viewOnly = historyViewOnly(s);
+    // 还没连上 (后台回来、点推送通知进来时正在重连)：以前这时滑动交给了 xterm，把旧画面滚上去就回不来了
+    if (!historyReady(s)) {
+      if (!viewOnly) return true;
+      fontToast(s, '还没连上，连上后再滑就能看历史', 2500);
+      return false;
+    }
     // 上次失败后的冷却：换了 Agent (这个标签里退出一个、开了另一个) 不算，马上重试 —— 以前冷却 30 秒到 5 分钟，
     // 期间换了 Agent 也一直不试，在几个 Agent 之间切几次就像是进不了历史画面
-    if (s.noTmuxUntil > Date.now() && s.noTmuxAgent === agentIdOf(s)) return true;
-    s.scrollLoading = true;
+    if (s.noTmuxUntil > Date.now() && s.noTmuxAgent === agentIdOf(s)) {
+      if (!viewOnly) return true;
+      fontToast(s, '历史暂时取不到，过一会儿再滑', 2000);
+      return false;
+    }
+    s.lsReq = (s.lsReq || 0) + 1;
+    s.scrollLoading = s.lsReq; // 记下第几次取：等画完再比对期间作废了、又开始了下一次，旧的回答不能算到新的头上
     s.heldWheel = 1;
     s.lsPull = 0;
     send(s, { type: 'tmux-history', lines: LS_LINES, ...(own && { agent: agentIdOf(s) }) });
@@ -61,6 +79,13 @@
 
   function onTmuxHistory(s, m) {
     if (!s.scrollLoading) return;
+    // 抓到的是终端画面 (要和屏幕比对)：先等终端把之前收到的输出都画完再比 (term.write('') 的回调在那之后才调)。
+    // 刚连上时快照 / 断线期间补发的输出手机上要画好一会儿，以前拿画了一半的屏幕去比，对不上、进 30 秒冷却
+    if (m.ok && !m.own && !m.drawn) {
+      const req = s.scrollLoading;
+      s.term.write('', () => { if (s.scrollLoading === req) onTmuxHistory(s, { ...m, drawn: true }); });
+      return;
+    }
     s.scrollLoading = false;
     clearTimeout(s.lsTimer);
     if (m.ok && s.heldWheel <= 0) return resetPull(s); // 等结果期间又滚回来了 (最后是往下的)，不打开
@@ -70,6 +95,7 @@
     const reason = m.ok ? 'mismatch' : m.reason;
     s.noTmuxUntil = Date.now() + ({ 'no-tmux': 300000, busy: 5000, 'in-mode': 3000, 'no-agent-history': 3000 }[reason] || 30000);
     s.noTmuxAgent = agentIdOf(s);
+    s.noTmuxReason = reason; // 连接引起的 (超时 / 服务端还没连上主机)：重新连上就不用冷却了 (见 10-session.js 的 status)
     if (m.win) s.winHost = true;
     // 超时：提示一次原因 (真机上没法看，方便找问题)；Windows 主机没开常驻会话本来就没有历史，不提示
     if (reason === 'timeout' && !s.winHost && !s.winToastDone) {
@@ -100,6 +126,19 @@
   }
   function resetPull(s) {
     s.lsPull = 0;
+  }
+  // 连接要换了 / 断了：正在等的历史回答走的是旧连接，不会来了。直接作废，不算失败、不进冷却 (连上后滑一下就能再取)；
+  // 以前要等满 12 秒超时，再冷却 30 秒，这段时间里滑动都进不了历史画面
+  function cancelHistoryWait(s) {
+    if (!s.scrollLoading) return;
+    s.scrollLoading = false;
+    clearTimeout(s.lsTimer);
+    s.heldWheel = 0;
+    resetPull(s);
+  }
+  // 重新连上了：上次是连接问题取不到的，冷却作废
+  function historyConnected(s) {
+    if (s.noTmuxReason === 'timeout' || s.noTmuxReason === 'offline') { s.noTmuxUntil = 0; s.noTmuxReason = ''; }
   }
   // 手机：历史视图是手指在终端上滑开的，这一次滑动 (连同松手后的惯性) 剩下的部分跟着手指一像素一像素地滚
   // (以前换算成滚轮，一下 3 行地跳)；滑到最底再往上推就回到实时画面

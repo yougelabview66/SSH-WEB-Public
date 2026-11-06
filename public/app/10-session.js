@@ -231,6 +231,8 @@
     // 打开历史视图时焦点从终端挪到历史视图上，开了焦点上报 (?1004) 的程序会让 xterm 立刻发一个「焦点离开」，
     // 以前这一下就把刚打开的历史视图关掉了 —— 不启用输入框 (焦点在终端) 时滚轮进不了历史画面就是这个原因
     if (obj.type === 'data' && !obj.auto && s.scrollView) closeLocalScroll(s);
+    // 终端自己的滚动区往上翻着也回到最底下：xterm 只管从它自己的输入框打的字，手机输入栏 / 下方输入框发的它不知道
+    if (obj.type === 'data' && !obj.auto) scrollTermToBottom(s);
     // tmux 复制模式里 Ctrl+End 没有用 (不认这个键，按了没反应)：换成 q 退出复制模式，同「回到实时画面」
     if (obj.type === 'data' && obj.data === '\x1b[1;5F' && tmuxInCopyMode(s)) obj = { ...obj, data: 'q', tmux: true };
     // tmux：给 tmux 的按键 (退出复制模式的 q)，不是打进程序输入框的字 —— 不预测回显、不算进终端输入框的内容
@@ -253,6 +255,12 @@
   // 打开 WebSocket 并挂载到后台会话：已有会话用 attach，新连接用 connect
   function connect(s) {
     clearTimeout(s.retryTimer);
+    clearTimeout(s.wakeTimer);
+    // 新连接接上会话 (服务端发来 status) 之前不算连着：sid 是旧连接的。以前回到前台重连时 sid 还留着，
+    // 这时滑动就去要历史，请求发在还没接上的新连接上 / 已经死掉的旧连接上，等 12 秒超时再冷却 30 秒
+    if (s.sid) { s.sid = null; updateSftpBtn(); }
+    cancelHistoryWait(s); // 在等的历史走的是旧连接，不会来了
+    dropHeldOut(s); // 后台时攒着没画的输出：新连接从终端里现有的画面接着补
     hideReconnect(s);
     setStatus(s, 'wait');
     if (s.box.clientWidth && !s.scrollView) s.fit.fit();
@@ -302,15 +310,13 @@
       if (s.ws !== ws) return;
       s.lastMsg = Date.now(); // 收到过东西 (输出 / pong) = 连接还活着 (见心跳和 wakeTabs)
       if (ev.data instanceof ArrayBuffer) {
+        if (s.awaitScreen) return; // 回到前台向服务端要了画面：在那之前到的输出都包含在回答里了 (见 releaseOut)
         if (s.offset !== undefined) s.offset += ev.data.byteLength;
         s.lastOut = Date.now();
         if (pipWin && s.lastOut - (lastStatusPaint || 0) > 300) { lastStatusPaint = s.lastOut; renderDeskTabs(); }
         const replay = s.muteOsc52;
-        s.term.write(new Uint8Array(ev.data), () => {
-          if (replay) s.muteOsc52 = false;
-          checkCapture(s);
-          predCheck(s);
-        });
+        if (document.hidden) { holdOut(s, new Uint8Array(ev.data), replay); return; }
+        writeOut(s, new Uint8Array(ev.data), replay);
         return;
       }
       let m;
@@ -335,14 +341,13 @@
       } else if (m.type === 'params') { // 接上了常驻会话 (见 lib/session/daemon.js)：记下是哪个，服务重启后照原样接回去
         s.params = m.params || s.params;
       } else if (m.type === 'snapshot') {
-        // 还原服务端保存的画面和滚动记录
-        predClear(s, false);
-        s.term.reset();
-        s.term.write(m.data);
+        s.awaitScreen = false;
         s.offset = m.offset;
-        doneRestoring(s);
-        if (active === s) syncSize(s);
+        // 网页在后台：先不画 (同 holdOut)，回到前台再画；之后的输出接在它后面攒着
+        if (document.hidden) { s.holdSnap = m.data; s.hold = []; s.holdBytes = 0; s.holdFrom = m.offset; return; }
+        applySnapshot(s, m.data);
       } else if (m.type === 'resume') {
+        s.awaitScreen = false;
         // 接下来的一帧是断开期间的输出补发，其中的复制序列是以前的，不再写剪贴板
         if (m.bytes) s.muteOsc52 = true;
         // 画面还在，服务端接着补发断开期间的输出
@@ -362,6 +367,7 @@
         if (s === active) updateLat();
         if (m.status === 'connected' && s === active) measureRtt(); // 连上就测，不等下一轮
         if (m.status === 'connected') {
+          historyConnected(s); // 上次是连接问题取不到历史的：不用再冷却，滑一下就能进历史画面 (见 55-local-scroll.js)
           if (s.sftp && s.sftp.open) s.sftp.load(s.sftp.path);
           // 重新连接 SSH 时，服务端用它记着的最后一次尺寸开新 shell (可能是别的设备设的)：按这台设备的屏幕同步一次
           if (active === s) { syncSize(s); focusTerm(s); }
@@ -446,6 +452,7 @@
       clearInterval(s.ping);
       if (s.closed || s.ws !== ws) return;
       s.sid = null;
+      cancelHistoryWait(s);
       updateSftpBtn();
       setStatus(s, 'wait');
       if (!s.remoteId) { showReconnect(s, '重试'); return; }
@@ -458,22 +465,106 @@
     };
   }
 
-  // 回到前台、网络恢复：在等重试的标签马上重连 (不用等最长 10 秒的退避)；看着连着的发一个心跳，
-  // 8 秒还没回话就是假死的连接 (锁屏期间断了还没发现)，关掉重连
+  // 回到前台、网络恢复：在等重试的标签马上重连 (不用等最长 10 秒的退避)。
+  // 看着还连着的：手机 / 平板在后台待了一阵 (点推送通知回来多半是这样)，系统早把连接掐了、网页这边还以为连着 ——
+  // 以前先发心跳等 8 秒，没回话再关连接，关一个已经断了的连接浏览器还要等关闭握手 (可能几十秒) 才报关闭，再退避重连，
+  // 回来后很久才看到最新画面，这期间滑动还会把终端的旧画面滚上去 (见 55-local-scroll.js)。现在：
+  // - 手机 / 平板在后台待了 WAKE_RECONNECT_MS 以上：不等，直接换新连接
+  // - 别的：发心跳，WAKE_PING_MS 内没回话就直接换新连接 (不等旧的关掉)；连接其实还好的话也只是多握一次手。
+  //   固定时长，不按测到的延迟放宽：断线重连时扣着的回答一下子到了，测到的延迟会大得离谱
+  // 换新连接时带着已收到的字节数，服务端只补发缺的部分，画面不会重来
+  const WAKE_RECONNECT_MS = 10000;
+  const WAKE_PING_MS = 3000;
+  let hiddenAt = document.hidden ? Date.now() : 0;
   function wakeTabs() {
-    if (document.hidden) return;
-    for (const s of sessions) {
-      if (s.closed || !s.remoteId) continue;
+    if (document.hidden) { hiddenAt ||= Date.now(); return; }
+    const away = hiddenAt ? Date.now() - hiddenAt : 0;
+    hiddenAt = 0;
+    const stale = isTouch && away >= WAKE_RECONNECT_MS;
+    // 正在看的标签先连
+    for (const s of [active, ...sessions.filter((x) => x !== active)]) {
+      if (!s || s.closed) continue;
+      if (!s.remoteId) { releaseOut(s); continue; }
       const ws = s.ws;
-      if (!ws || ws.readyState > WebSocket.OPEN) { connect(s); continue; }
-      if (ws.readyState !== WebSocket.OPEN) continue;
+      if (!ws || ws.readyState > WebSocket.OPEN || stale) { connect(s); continue; }
+      releaseOut(s); // 后台时攒着的输出 (见 holdOut)
+      if (ws.readyState !== WebSocket.OPEN) continue; // 正在连
       const at = Date.now();
       send(s, { type: 'ping' });
-      setTimeout(() => { if (s.ws === ws && (s.lastMsg || 0) < at) try { ws.close(); } catch {} }, 8000);
+      clearTimeout(s.wakeTimer);
+      s.wakeTimer = setTimeout(() => { if (s.ws === ws && !s.closed && (s.lastMsg || 0) < at) connect(s); }, WAKE_PING_MS);
     }
   }
   document.addEventListener('visibilitychange', wakeTabs);
   window.addEventListener('online', wakeTabs);
+
+  // 回到最新的实时画面：关掉历史视图，终端滚动区滚到最底下 (点推送通知进来时：要看的是现在的)
+  function goLive(s) {
+    if (s.scrollView) closeLocalScroll(s);
+    scrollTermToBottom(s);
+  }
+  function scrollTermToBottom(s) {
+    const b = s.term.buffer.active;
+    if (b.viewportY < b.baseY) s.term.scrollToBottom();
+  }
+
+  // 终端输出写进 xterm。replay：断线期间补发的那一帧，里面的复制序列是以前的，不写剪贴板
+  function writeOut(s, data, replay) {
+    if (replay) s.muteOsc52 = true;
+    s.term.write(data, () => {
+      if (replay) s.muteOsc52 = false;
+      checkCapture(s);
+      predCheck(s);
+    });
+  }
+  // 还原服务端保存的画面和滚动记录
+  function applySnapshot(s, data) {
+    predClear(s, false);
+    s.term.reset();
+    // 画完停在最底下：几千行的快照手机上要画好一会儿，期间滚动区被滚上去过的话 xterm 不会跟到底，停在中间的旧画面上
+    s.term.write(data, () => s.term.scrollToBottom());
+    doneRestoring(s);
+    if (active === s) syncSize(s);
+  }
+
+  // 网页在后台时收到的输出先不写进终端，攒着，回到前台再说 (见 releaseOut)。
+  // 浏览器把后台网页的定时器压得很慢 (待了 5 分钟以上大约一分钟才跑一次)，xterm 靠定时器一小段一小段地处理写进去的输出，
+  // 后台待久了攒下几 MB 没处理 (Claude Code 干活时状态行一秒刷好几次)；回到前台它要把这些重绘从旧到新全画一遍，
+  // 看着就是「Ebbing… (1h 5m 50s …)」停在旧的时间不动，过好一阵才追上
+  const HOLD_MAX = 256 * 1024;
+  function holdOut(s, data, replay) {
+    // holdFrom：攒之前终端画到了第几字节。新开的标签没记 (undefined)，要画面时服务端给整屏快照
+    if (s.hold == null) { s.hold = []; s.holdBytes = 0; s.holdFrom = s.offset === undefined ? undefined : s.offset - data.length; }
+    if (replay) s.muteOsc52 = false; // 记在这一帧上，写的时候再关剪贴板 (见 writeOut)
+    if (s.hold === false) return; // 攒太多了：不再攒，回到前台直接要现在的画面
+    s.hold.push([data, replay]);
+    s.holdBytes += data.length;
+    if (s.holdBytes > HOLD_MAX) s.hold = false;
+  }
+  // 回到前台：攒的不多就照常写进终端 (不用等服务端)；攒太多了不一条条补画，向服务端要现在的画面 ——
+  // 服务端只补发缺的部分，缺得多时给一整屏快照 (见 lib/session/index.js 的 sendScreen)
+  function releaseOut(s) {
+    const { hold, holdSnap, holdFrom } = s;
+    if (hold == null) return;
+    s.hold = s.holdSnap = null;
+    if (hold === false) {
+      // 攒着的里面有还没画的快照：终端里还是快照之前的画面，只补后面缺的会对不上，要整屏快照 (不给 offset)
+      const from = holdSnap != null ? undefined : holdFrom;
+      s.offset = from;
+      s.awaitScreen = true;
+      send(s, { type: 'sync', offset: from });
+      return;
+    }
+    if (holdSnap != null) applySnapshot(s, holdSnap);
+    for (const [data, replay] of hold) writeOut(s, data, replay);
+  }
+  // 换新连接：攒着的不要了，从终端里现有的画面接着补 (还没画的快照：终端里是快照之前的画面，对不上，整屏重要)
+  function dropHeldOut(s) {
+    if (s.holdSnap != null) s.offset = undefined;
+    else if (s.hold != null) s.offset = s.holdFrom;
+    s.hold = s.holdSnap = null;
+    s.awaitScreen = false;
+  }
 
   function doneRestoring(s) {
     s.restoring?.remove();

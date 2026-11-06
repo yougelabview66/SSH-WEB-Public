@@ -23,6 +23,10 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   await p.keyboard.press('Alt+ArrowRight'); await wait(200); ok(await act() === 'T-3', 'Alt+→ → T-3');
   await p.keyboard.press('Alt+ArrowRight'); await wait(200); ok(await act() === 'T-1', 'Alt+→ 在最后一个时循环到 T-1');
   await p.keyboard.press('Alt+ArrowLeft'); await wait(200); ok(await act() === 'T-3', 'Alt+← 在第一个时循环到 T-3');
+  await p.keyboard.press('Alt+ArrowUp'); await wait(200); ok(await act() === 'T-2', 'Alt+↑ 同 Alt+←：上一个 T-2');
+  await p.keyboard.press('Alt+ArrowDown'); await wait(200); ok(await act() === 'T-3', 'Alt+↓ 同 Alt+→：下一个 T-3');
+  await p.keyboard.press('Alt+ArrowDown'); await wait(200); ok(await act() === 'T-1', 'Alt+↓ 在最后一个时循环到 T-1');
+  await p.keyboard.press('Alt+ArrowUp'); await wait(200); ok(await act() === 'T-3', 'Alt+↑ 在第一个时循环到 T-3');
   await p.keyboard.press('Alt+9'); await wait(200); ok(await act() === 'T-3', 'Alt+9 (没有第 9 个) 不变');
   await wait(300);
   ok(got === '', '快捷键没有发给终端: ' + JSON.stringify(got));
@@ -32,6 +36,10 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   await p.locator('.term.active .xterm-helper-textarea').focus(); await wait(200); // 焦点放进终端 (点终端会回到下方输入框)
   got = ''; await p.keyboard.press('Alt+1'); await wait(300);
   ok(await act() === 'T-1' && got === '', '焦点在终端里时 Alt+1 也能切换，且不发给终端');
+  await p.locator('.term.active .xterm-helper-textarea').focus(); await wait(200);
+  got = ''; await p.keyboard.press('Alt+ArrowDown'); await wait(300);
+  ok(await act() === 'T-2' && got === '', '焦点在终端里时 Alt+↓ 也能切换，且不发给终端: ' + JSON.stringify(got));
+  await p.keyboard.press('Alt+ArrowUp'); await wait(200); ok(await act() === 'T-1', '再按 Alt+↑ 回到 T-1');
   await p.locator('.term.active .xterm-helper-textarea').focus(); await wait(200); // 焦点放进终端 (点终端会回到下方输入框)
   got = ''; await p.keyboard.press('Alt+b'); await wait(300);
   ok(got === '\x1bb', '其他 Alt 组合键 (Alt+b) 照常发给终端');

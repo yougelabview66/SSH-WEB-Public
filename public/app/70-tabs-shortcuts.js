@@ -213,12 +213,13 @@
   });
 
   // ------------------------------------------------------------ 标签切换快捷键
-  // Alt+1~9 跳到第 N 个标签，Alt+← / Alt+→ 上一个 / 下一个 (循环)；按界面上的标签顺序。
+  // Alt+1~9 跳到第 N 个标签，Alt+← / Alt+↑ 上一个、Alt+→ / Alt+↓ 下一个 (循环)；按界面上的标签顺序。
   // 捕获阶段处理，不再发给终端 / 输入框；Ctrl+Tab、Ctrl+数字会被浏览器占用，所以用 Alt
+  const TAB_STEP = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 };
   window.addEventListener('keydown', (e) => {
     if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
     const n = /^Digit([1-9])$/.exec(e.code);
-    if (!n && e.code !== 'ArrowLeft' && e.code !== 'ArrowRight') return;
+    if (!n && !TAB_STEP[e.code]) return;
     if (document.querySelector('.overlay:not(.hidden):not(.tab-away)')) return; // 弹窗打开时不切换
     const list = tabOrder();
     if (!list.length) return;
@@ -228,7 +229,7 @@
     if (n) target = list[n[1] - 1];
     else {
       const i = list.indexOf(active);
-      target = list[(i + (e.code === 'ArrowRight' ? 1 : -1) + list.length) % list.length];
+      target = list[(i + TAB_STEP[e.code] + list.length) % list.length];
     }
     if (target && target !== active) activate(target);
   }, true);
