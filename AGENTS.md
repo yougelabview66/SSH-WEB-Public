@@ -24,7 +24,7 @@ SSH-WEB 是浏览器里的 SSH 终端（Node.js 服务端 + 网页），重点�
 | SSH-WEB（私有库） | v1.85.1 |
 | SSH-WEB（公开库） | v1.85.0（2026-11-04 发版；加安卓 App 之前是 v1.84.66） |
 | sshwebd | 0.1.9 |
-| 自动化测试 | 94 组（v1.85.1 加了 wakescroll、bgout），2026-11-04 在 v1.84.67 上全部通过；v1.85.1 在 1G 内存的开发机上一组一组跑了相关的 30 组：新加的和相关的都通过；mob、jitter、attach、idle、predict、copy、lscroll、lsgrid、sendgap、viewport 在这台机器上改动前的代码也一样失败（机器太慢、时序不稳），留给公开库的 CI |
+| 自动化测试 | 94 组（v1.85.1 加了 wakescroll、bgout），2026-11-06 在 v1.85.1 上全部通过（1G 内存的开发机，`npm test`）。机器内存紧（同时开着别的 Agent、浏览器）时 mob、lscroll、attach 这类按时序判断的测试会偶尔失败，先看可用内存再重跑，别当成代码问题 |
 
 ## 目录结构
 
