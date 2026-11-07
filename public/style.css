@@ -781,6 +781,12 @@ body.no-select { user-select: none; -webkit-user-select: none; }
   background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 10px;
   padding: 8px 16px; font-size: 16px; box-shadow: 0 6px 20px var(--shadow);
   width: max-content; max-width: calc(100% - 32px); text-align: center; }
+/* 手机：提示放终端正中 (40% 高在手机上看着偏上，项目负责人反馈)；都还是同一个位置 (要写在上面这条后面才盖得过)。
+   锁住的提示也在正中，显示着时提示都挪到它下面 (历史视图里的「已复制」照旧在右下角，见 .lscroll > .font-toast) */
+@media (pointer: coarse) {
+  .font-toast, .conn-hint { top: 50%; }
+  .term-box:has(> .owner-notice) > .font-toast { top: calc(50% + 84px); }
+}
 /* xterm 内部滚动层背景跟随主题 (否则浅色下边缘露出一圈黑 / 灰线) */
 .xterm .xterm-viewport { background-color: var(--term-bg) !important; }
 /* 全局输入框样式不要作用到 xterm 的隐藏输入框 */

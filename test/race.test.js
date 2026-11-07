@@ -154,15 +154,15 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   let th = -1;
   for (let i = 0; i < 40; i++) { if (/正在连接/.test(await hintText())) { th = Date.now() - tb; break; } await wait(50); }
   ok(th >= 700 && th < 1400, `一直没连上：显示「正在连接…」(${th} ms)`);
-  // 和其他提示 (.font-toast，如「还没连上，连上后再滑就能看历史」) 同一个位置：左右居中、40% 高
-  const pos = await p.evaluate(() => {
-    const h = document.querySelector('.term.active .conn-hint')?.getBoundingClientRect(), b = document.querySelector('.term.active .term-box').getBoundingClientRect();
-    return h && { x: Math.round(h.left + h.width / 2 - b.left - b.width / 2), y: Math.round(h.top + h.height / 2 - b.top - b.height * 0.4) };
-  });
-  ok(pos && Math.abs(pos.x) < 4 && Math.abs(pos.y) < 4, '在其他提示的位置 (居中、40% 高): ' + JSON.stringify(pos));
+  // 和其他提示 (.font-toast，如「还没连上，连上后再滑就能看历史」) 同一个位置；手机上是终端正中
+  const center = (sel) => p.evaluate((q) => { const r = document.querySelector(q)?.getBoundingClientRect(); return r && { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; }, sel);
+  const hc = await center('.term.active .conn-hint'), bc = await center('.term.active .term-box');
+  ok(hc && Math.abs(hc.x - bc.x) < 4 && Math.abs(hc.y - bc.y) < 4, `手机上在终端正中: ${JSON.stringify(hc)} / ${JSON.stringify(bc)}`);
   // 那个位置正显示着别的提示：先让它，它没了再显示
   const vis = () => p.evaluate(() => { const h = document.querySelector('.term.active .conn-hint'); return !!h && getComputedStyle(h).display !== 'none'; });
   await p.evaluate(() => { const t = document.createElement('div'); t.className = 'font-toast'; t.id = 'fakeToast'; t.textContent = '别的提示'; document.querySelector('.term.active .term-box').appendChild(t); });
+  const tc = await center('#fakeToast');
+  ok(tc && Math.abs(tc.x - hc.x) < 4 && Math.abs(tc.y - hc.y) < 4, `和其他提示同一个位置: ${JSON.stringify(tc)}`);
   ok(!(await vis()), '同一个位置正显示着别的提示：先不显示，不叠在一起');
   await p.evaluate(() => document.getElementById('fakeToast').remove());
   ok(await vis(), '别的提示没了：接着显示');
