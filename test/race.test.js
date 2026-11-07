@@ -200,6 +200,16 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   ok(tabs().length === n4b, '类型没变的 change 不算');
 
   ok(!(await locked()) && /手机/.test(await qNotice()), '最后：手机还在用，电脑还锁着');
+  // 电脑上提示也在终端正中；锁住的提示 (也在正中) 显示着时挪到它下面，不叠在一起
+  const qpos = await q.evaluate(() => {
+    const box = document.querySelector('.term.active .term-box'), n = box.querySelector('.owner-notice');
+    const t = document.createElement('div'); t.className = 'font-toast'; t.textContent = '别的提示'; box.appendChild(t);
+    const [b, nr, tr] = [box, n, t].map((x) => x.getBoundingClientRect());
+    t.remove();
+    return { boxX: Math.round(b.left + b.width / 2), toastX: Math.round(tr.left + tr.width / 2), noticeBottom: Math.round(nr.bottom), toastTop: Math.round(tr.top), boxBottom: Math.round(b.bottom), toastBottom: Math.round(tr.bottom) };
+  });
+  ok(Math.abs(qpos.toastX - qpos.boxX) < 4 && qpos.toastTop > qpos.noticeBottom && qpos.toastBottom < qpos.boxBottom,
+    '电脑上锁着时：提示左右居中，在锁住的提示下面 ' + JSON.stringify(qpos));
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
   await browser.close(); process.exit();
 })().catch((e) => { console.error('✘ 测试出错: ' + (e.stack || e)); process.exit(1); });
