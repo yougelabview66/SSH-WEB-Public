@@ -22,7 +22,7 @@ SSH-WEB 是浏览器里的 SSH 终端（Node.js 服务端 + 网页），重点�
 | 项目 | 状态 |
 |---|---|
 | SSH-WEB（私有库） | v1.85.6 |
-| SSH-WEB（公开库） | v1.85.3（2026-11-07 发版，镜像 1.85.3 / 1.85 / latest；v1.85.2 起带 macOS 版 sshwebd；加安卓 App 之前是 v1.84.66） |
+| SSH-WEB（公开库） | v1.85.6（2026-11-07 发版，镜像 1.85.6 / 1.85 / latest；v1.85.2 起带 macOS 版 sshwebd；加安卓 App 之前是 v1.84.66） |
 | sshwebd | 0.1.9（v1.85.2 加了 macOS 版，Linux、Windows 版功能没变，版本号没升，主机上不用换） |
 | 自动化测试 | 96 组（v1.85.1 加了 wakescroll、bgout，v1.85.3 加了 freeze，v1.85.4 加了 race）。2026-11-07 在 4 核 8G 的测试机上跑 v1.85.4 全套（Docker：Playwright 1.49 镜像 + tmux + Node 22.23，同 CI；`sshweb-test-remote`）：95 组通过，sendgap 的「回车 40ms 内写」在容器里实测 43~50ms，v1.85.0、v1.85.3 一样，是机器时序。1G 内存的开发机上内存紧时 mob、lscroll、attach 这类按时序判断的测试会偶尔失败，先看可用内存再重跑，别当成代码问题 |
 
