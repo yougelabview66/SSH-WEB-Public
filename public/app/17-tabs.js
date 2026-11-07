@@ -53,7 +53,8 @@
     active = s;
     s.shown = true;
     // 还没看过的后台标签 (只收了状态，见 10-session.js)：现在要画面
-    if (s.lite && s.ws?.readyState === WebSocket.OPEN) { s.lite = false; send(s, { type: 'sync', offset: s.offset }); }
+    // 新旧连接正在比 (见 10-session.js 的 raceTab)：比完再要 (raceWin)，不然这时的 offset 可能对不上赢的那条
+    if (s.lite && !s.race && s.ws?.readyState === WebSocket.OPEN) { s.lite = false; send(s, { type: 'sync', offset: s.offset }); }
     sessions.forEach((x) => {
       x.el.classList.toggle('active', x === s);
       x.tab.classList.toggle('active', x === s);
@@ -89,6 +90,9 @@
     if (s.pred) predClear(s);
     clearInterval(s.ping);
     clearTimeout(s.retryTimer);
+    clearTimeout(s.replyTimer);
+    endRace(s); // 新旧连接正在比：不比了，关标签的消息直接发在现在这条上
+    clearTimeout(s.connHintTimer);
     if (s.mon) clearTimeout(s.mon.timer);
     // 结束后台会话 (断开 SSH)
     if (!remote && s.remoteId) {

@@ -54,7 +54,8 @@
     s.scrollLoading = s.lsReq; // 记下第几次取：等画完再比对期间作废了、又开始了下一次，旧的回答不能算到新的头上
     s.heldWheel = 1;
     s.lsPull = 0;
-    send(s, { type: 'tmux-history', lines: LS_LINES, ...(own && { agent: agentIdOf(s) }) });
+    s.lsMsg = { type: 'tmux-history', lines: LS_LINES, ...(own && { agent: agentIdOf(s) }) }; // 记下来：连接换了 (见 10-session.js 的 raceWin) 要重发
+    send(s, s.lsMsg);
     s.lsTimer = setTimeout(() => onTmuxHistory(s, { ok: false, reason: 'timeout' }), 12000); // 慢的主机 (NAS 第一次开通道、扫进程要好几秒) 多等一会儿，服务端那边同样放宽到 10 秒
     return false;
   }

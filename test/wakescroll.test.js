@@ -1,10 +1,11 @@
 'use strict';
 // 手机后台回来 / 点推送通知进来：
 // 1. 常驻会话里程序没开鼠标 (Claude Code 普通模式)，还没连上时在终端上滑：以前滑动交给 xterm，把它自己那份旧画面滚上去，
-//    之后滑动又走历史视图、动不了它，回不到最新画面，也没有「回到实时画面」按钮。现在没连上时滑动吞掉 (提示一下)，终端不动；
-//    取历史在冷却时也一样
+//    之后滑动又走历史视图、动不了它，回不到最新画面，也没有「回到实时画面」按钮。现在终端不动：新旧连接在比 (见 race 测试) 时
+//    历史请求先排着，连上就自动打开历史视图 (不用再滑)；取历史在冷却时滑动吞掉，提示一下
 // 2. 连接在后台已经断了、网页还以为连着 (假死)：以前等 8 秒心跳超时，再等旧连接关掉 (关闭握手) 才重连，很久看不到最新画面。
-//    现在后台待了 10 秒以上直接换新连接，待得短的发心跳 3 秒没回话就换；换连接时在等的历史作废，不进冷却
+//    现在后台待了 2 秒以上回来马上新旧连接一起试，待得短的发心跳 1.5 秒没回话再一起试；
+//    假死连接上在等的历史，换上新连接后在新连接上再要一次
 // 3. 终端滚动区往上翻着 (普通 shell 里滑上去的) 显示「回到实时画面」，点了 / 从输入栏发字都回到最底下
 // 4. 点推送通知 (Service Worker 的 open-session，安卓 App 也发这个) 切到那个标签并回到实时画面 (历史视图关掉)
 // 常驻会话用 Playwright 拦 WebSocket 模拟：给 D 的会话信息加上 daemonId，取历史由这里回答；假死 = 两头的消息都不转
@@ -39,7 +40,7 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   await ctx.routeWebSocket(/\/ws$/, (ws) => {
     const server = ws.connectToServer();
     const r = { frozen: false, held: holdNew ? [] : null, at: Date.now() };
-    r.release = () => { const h = r.held || []; r.held = null; for (const m of h) ws.send(m); };
+    r.release = () => { const h = r.held || []; r.held = null; for (const m of h) try { ws.send(m); } catch {} };
     routes.push(r);
     ws.onMessage((msg) => {
       if (r.frozen) { if (String(msg).includes('"tmux-history"')) frozenHist++; return; }
@@ -106,47 +107,47 @@ new Server({ hostKeys: [hostKey()] }, (c) => {
   await closeView();
   ok(!(await view()) && await live(), '点「回到实时画面」回来');
 
-  // ---- 1+2. 在后台待了很久，连接已经假死；回来时新连接还没连上就滑
+  // ---- 1+2. 在后台待了很久，D 的连接已经假死、新连接也还没连上 (扣着)：回来时新旧连接一起试，等的时候滑
   routes[routes.length - 1].frozen = true;
   holdNew = true;
   const n0 = routes.length;
   await setHidden(true);
   await setHidden(false, 60000);
   await wait(500);
-  ok(routes.length === n0 + 2, `后台待了 60 秒回来：不等心跳，两个标签马上都换新连接 (${routes.length - n0} 个)`);
-  ok(!(await connected()), '新连接还没连上：不显示连着');
+  ok(routes.length === n0 + 2, `后台待了 60 秒回来：不等心跳，两个标签马上都开新连接一起试 (${routes.length - n0} 个)`);
   const req0 = histReqs;
   await swipe();
-  ok(/还没连上/.test(await toast()), '提示还没连上: ' + await toast());
+  ok(!/还没连上/.test(await toast()), '一起试的时候滑：不再提示「还没连上」(以前要连上后再滑一次): ' + await toast());
   await swipe();
-  ok(await live(), '还没连上时往下滑：终端不动，还在实时画面 (以前把终端自己的旧画面滚上去，回不来)');
-  ok(!(await view()) && histReqs === req0, '还没连上时不去取历史');
+  ok(await live(), '等的时候往下滑：终端不动，还在实时画面 (以前把终端自己的旧画面滚上去，回不来)');
+  ok(!(await view()) && histReqs === req0, '还没定下来用哪条连接：历史请求先排着');
   ok(!(await btn()), '终端没被滚上去，也不用「回到实时画面」');
   holdNew = false;
   for (const r of routes.slice(n0)) r.release();
-  await waitFor(p, () => !!document.querySelector('.tab.active .dot.ok'), null, 8000);
-  ok(await live(), '连上后还在实时画面');
+  await waitFor(p, () => !!document.querySelector('.term.active .lscroll'), null, 5000).catch(() => {});
+  ok(await view() && histReqs === req0 + 1, `新连接连上 (旧的死了)：刚才滑的那一下自动打开历史视图，不用再滑 (${histReqs - req0})`);
+  await closeView();
+  ok(await live() && await connected(), '回到实时画面，连着');
   await swipe();
-  ok(await view(), '连上后往下滑马上能进历史视图');
+  ok(await view(), '再往下滑马上能进历史视图');
   await closeView();
 
-  // ---- 2. 在后台待得短，连接假死：心跳 3 秒没回话就换新连接 (不等旧的关掉)；假死期间滑动在等的历史作废，不进冷却
-  for (const r of routes.slice(-2)) r.frozen = true; // 两个标签现在用的连接都假死
-  const n1 = routes.length, f1 = frozenHist;
+  // ---- 2. 在后台待得短 (1 秒)，连接假死：先发心跳，1.5 秒没回话再一起试；假死连接上在等的历史在新连接上再要一次
+  for (const r of routes) r.frozen = true; // 两个标签现在用的连接都假死
+  const n1 = routes.length, f1 = frozenHist, req1 = histReqs;
   await setHidden(true);
-  await setHidden(false, 3000);
+  await setHidden(false, 1000);
   const t0 = Date.now();
   await wait(100);
-  ok(routes.length === n1, '后台待了 3 秒：先发心跳，不马上重连');
+  ok(routes.length === n1, '后台待了 1 秒：先发心跳，不马上开新连接');
   await swipe(); // 请求发在假死的连接上，不会有回答
-  ok(frozenHist === f1 + 1 && !(await view()) && await live(), `假死时滑动：去取历史 (没有回答)，等的时候终端不动 (${frozenHist - f1})`);
+  ok(frozenHist === f1 + 1, `假死时滑动：去取历史，请求发在假死的连接上 (${frozenHist - f1})`);
   while (routes.length < n1 + 2 && Date.now() - t0 < 10000) await wait(100);
   const secs = routes[n1] ? (routes[n1].at - t0) / 1000 : 99;
-  ok(routes.length === n1 + 2 && secs > 2.5 && secs < 4.5, `心跳 ${secs.toFixed(1)} 秒没回话就换了新连接 (以前 8 秒后再等旧连接关掉)`);
-  await waitFor(p, () => !!document.querySelector('.tab.active .dot.ok'), null, 8000);
-  const req1 = histReqs;
-  await swipe();
-  ok(await view() && histReqs === req1 + 1, '换了连接后往下滑马上能进历史视图 (在假死连接上等的那次作废了，不进 30 秒冷却)');
+  ok(routes.length === n1 + 2 && secs > 1 && secs < 2.5, `心跳 ${secs.toFixed(1)} 秒没回话就一起试 (以前 3 秒后再直接换)`);
+  await waitFor(p, () => !!document.querySelector('.term.active .lscroll'), null, 5000).catch(() => {});
+  ok(await view() && histReqs === req1 + 1, `换上新连接：在新连接上再要一次历史，自动打开历史视图 (不用再滑，${histReqs - req1})`);
+  ok(await connected(), '连着');
   await closeView();
 
   // ---- 4. 点推送通知：切到那个标签，开着的历史视图关掉

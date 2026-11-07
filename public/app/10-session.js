@@ -225,7 +225,7 @@
   const deviceName = isTouch ? (Math.min(screen.width, screen.height) < 600 ? '手机' : '平板') : '电脑';
 
   function send(s, obj) {
-    if (!s.ws || s.ws.readyState !== WebSocket.OPEN) return;
+    if (!s.race && (!s.ws || s.ws.readyState !== WebSocket.OPEN)) return; // 新旧连接在比 (见 raceTab)：先排着
     if (obj.type === 'data' && !obj.auto && inputLocked(s)) return; // 别的设备在用：先点「在本机继续」(见 42-owner.js)
     // 打字 / 按键 = 回到实时画面。程序询问的自动应答 (auto，如焦点进出 \x1b[O / \x1b[I) 不算：
     // 打开历史视图时焦点从终端挪到历史视图上，开了焦点上报 (?1004) 的程序会让 xterm 立刻发一个「焦点离开」，
@@ -245,40 +245,62 @@
     if (obj.type === 'data' && typeof obj.data === 'string' && obj.data.length > 32768) {
       for (let i = 0; i < obj.data.length; i += 32768) {
         const last = i + 32768 >= obj.data.length;
-        s.ws.send(JSON.stringify({ ...(last ? obj : { type: 'data' }), data: obj.data.slice(i, i + 32768) })); // echo / gap 标在最后一块上
+        post(s, JSON.stringify({ ...(last ? obj : { type: 'data' }), data: obj.data.slice(i, i + 32768) })); // echo / gap 标在最后一块上
       }
-      return;
-    }
-    s.ws.send(JSON.stringify(obj));
+    } else post(s, JSON.stringify(obj));
+    // 打了字 / 要了历史：顺便看连接还活着没有 (几秒内什么都没收到就新旧连接一起试，见 expectReply)
+    if ((obj.type === 'data' && !obj.auto) || obj.type === 'tmux-history') expectReply(s, REPLY_MS);
+  }
+  // 发出去。新旧连接正在比谁先回话 (见 raceTab)：先排着，定下来用哪条再按顺序发过去
+  function post(s, str) {
+    if (s.race) s.race.q.push(str);
+    else s.ws.send(str);
   }
 
-  // 打开 WebSocket 并挂载到后台会话：已有会话用 attach，新连接用 connect
-  function connect(s) {
+  // 打开 WebSocket 并挂载到后台会话：已有会话用 attach，新连接用 connect。
+  // race：新旧连接一起试 (见 raceTab) —— 旧连接留着照用，新连接在旁边连，谁先回话用谁；hold：旧连接上来的输出一开始就先攒着不画
+  function connect(s, race) {
     clearTimeout(s.retryTimer);
     clearTimeout(s.wakeTimer);
+    clearTimeout(s.replyTimer); s.replyTimer = 0;
     s.frozeOff = false; // 冻住时关掉的：这就重连了 (醒来时 resume 不用再连一遍)
-    // 新连接接上会话 (服务端发来 status) 之前不算连着：sid 是旧连接的。以前回到前台重连时 sid 还留着，
-    // 这时滑动就去要历史，请求发在还没接上的新连接上 / 已经死掉的旧连接上，等 12 秒超时再冷却 30 秒
-    if (s.sid) { s.sid = null; updateSftpBtn(); }
-    cancelHistoryWait(s); // 在等的历史走的是旧连接，不会来了
-    dropHeldOut(s); // 后台时攒着没画的输出：新连接从终端里现有的画面接着补
-    hideReconnect(s);
-    setStatus(s, 'wait');
+    endRace(s); // 正在比的不比了 (那条新连接关掉)
+    const old = s.ws;
+    if (!race) {
+      // 新连接接上会话 (服务端发来 status) 之前不算连着：sid 是旧连接的。以前回到前台重连时 sid 还留着，
+      // 这时滑动就去要历史，请求发在还没接上的新连接上 / 已经死掉的旧连接上，等 12 秒超时再冷却 30 秒
+      if (s.sid) { s.sid = null; updateSftpBtn(); }
+      cancelHistoryWait(s); // 在等的历史走的是旧连接，不会来了
+      dropHeldOut(s); // 后台时攒着没画的输出：新连接从终端里现有的画面接着补
+      hideReconnect(s);
+      setStatus(s, 'wait');
+      // 旧的连接还开着 (点「重试」、回前台重连时)：先关掉，不然服务端那边多挂一个。
+      // 它可能早就死了 (关不掉，服务端要等心跳才发现)：连上时让服务端按编号直接断开它 (drop，见 lib/session/index.js 的 dropClient)
+      s.dropCid = old?.cid;
+      if (old && old.readyState <= WebSocket.OPEN) { s.ws = null; try { old.close(); } catch {} }
+    }
     if (s.box.clientWidth && !s.scrollView) s.fit.fit();
 
-    // 旧的连接还开着 (点「重试」、回前台重连时)：先关掉，不然服务端那边多挂一个
-    const old = s.ws;
-    if (old && old.readyState <= WebSocket.OPEN) { s.ws = null; try { old.close(); } catch {} }
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     const ws = new WebSocket(`${proto}://${location.host}/ws`);
     ws.binaryType = 'arraybuffer';
-    s.ws = ws;
-    s.lastMsg = s.connAt = Date.now();
+    ws.cid = Math.random().toString(36).slice(2, 10); // 连接编号
+    s.connAt = Date.now();
+    if (race) {
+      // 旧连接上发一个带记号的心跳：它的回话先到 = 旧连接还活着 (见 onmessage 的 pong)
+      const r = s.race = { old, next: ws, q: [], t: performance.now(), hold: !!race.hold, reply: race.reply, resend: !!s.scrollLoading };
+      try { old.send(JSON.stringify({ type: 'ping', t: r.t })); } catch {}
+      r.timer = setTimeout(() => { if (s.race === r) connect(s); }, RACE_MAX); // 两条都没动静：照常重连
+    } else {
+      s.ws = ws;
+      s.lastMsg = Date.now();
+    }
+    syncConnHint(s);
 
     ws.onopen = () => {
-      if (s.ws !== ws) return;
-      s.retries = 0;
-      s.lastMsg = Date.now();
+      const r = s.race?.next === ws ? s.race : null; // 比快的新连接
+      if (!r && s.ws !== ws) return;
+      if (!r) { s.retries = 0; s.lastMsg = Date.now(); }
       // 连上时的尺寸。要不要当使用者 (终端按这台设备排版)：最先用的客户端锁定标签，别人只能点「在本机继续」接管 ——
       // 这里只在没人用时才当 ('auto')；原来就是这台在用的 (同一个页面重连、同一个浏览器刷新)，服务端认得出 (pageId / deviceId)，还是它。
       // 是不是这台在用 (s.mine) 先照旧，服务端连上就会重新告诉：锁着的断线重连期间也锁着，打的字不会发出去
@@ -293,24 +315,27 @@
         // 打开页面时在后台、还没看过的标签：先只要状态，不要画面 (最多 5000 行的快照)，切过来时再要 (见 activate)。
         // 冻住 / 后台待久了醒来换连接时 (wakeLite，见 wakeTab) 不在看的标签也这样：醒来一下子十来个标签一起补画面，
         // 正在看的、点推送要看的那个就得排在后面等。还没要过画面的 (lite) 重连也照旧只要状态
-        s.lite = s !== active && (!s.shown || s.lite || !!s.wakeLite);
+        const lite = s !== active && (!s.shown || s.lite || !!s.wakeLite);
         s.wakeLite = false;
         // offset: 已收到的输出字节数，断线重连时服务端只补发缺的部分
-        ws.send(JSON.stringify({ type: 'attach', id: s.remoteId, offset: s.offset, pageId, deviceId, lite: s.lite, ...size }));
+        let offset = s.offset;
+        if (r) {
+          // 比快的新连接：从终端里现在画到的地方接着补 (攒着没画的不算)。从这时起旧连接上来的输出先攒着不画 ——
+          // 新连接赢了就不要了 (新连接会从这里补)，旧连接赢了再画，两边都不重复、不缺
+          r.lite = lite;
+          r.hold = true;
+          offset = r.from = s.holdSnap != null ? undefined : s.hold != null ? s.holdFrom : s.offset;
+        } else s.lite = lite;
+        ws.send(JSON.stringify({ type: 'attach', id: s.remoteId, offset, pageId, deviceId, lite, cid: ws.cid, ...(!r && s.dropCid && { drop: s.dropCid }), ...size }));
+        if (!r) s.dropCid = null;
       } else {
         // suffixNew：名字是刚改的、还没送到服务端 (服务重启期间改的名等)，接上常驻会话时要记到会话上 (见 session/index.js)
-        ws.send(JSON.stringify({ type: 'connect', ...s.params, title: s.baseTitle, n: s.n, ...(s.suffix && { suffix: s.suffix }), ...(s.pendingSuffix != null && { suffixNew: true }), histHost: s.histHost, pageId, deviceId, ...size }));
+        ws.send(JSON.stringify({ type: 'connect', ...s.params, title: s.baseTitle, n: s.n, ...(s.suffix && { suffix: s.suffix }), ...(s.pendingSuffix != null && { suffixNew: true }), histHost: s.histHost, pageId, deviceId, cid: ws.cid, ...size }));
       }
-      // 应用层心跳，避免 Cloudflare / 反向代理 100 秒空闲断开；服务端每次都回 pong。
-      // 不在这里判断「多久没收到东西就断开重连」：ping/pong 往返慢一个周期 (隧道卡、主机忙) 就会把好连接误杀，
-      // 制造一次莫名其妙的断线；假死连接的检测放在回到前台时做 (wakeTabs 发一个 ping，几秒没回才断)
-      clearInterval(s.ping);
-      s.ping = setInterval(() => {
-        if (s.ws !== ws) return clearInterval(s.ping);
-        send(s, { type: 'ping' });
-      }, 25000);
+      if (!r) startPing(s, ws); // 比快的新连接赢了才开始心跳 (见 raceWin)
     };
     ws.onmessage = (ev) => {
+      if (s.race?.next === ws) raceWin(s, ws); // 比快的新连接先回话了：用它
       if (s.ws !== ws) return;
       // 页面的 JS 停过 (冻住了没收到 freeze 事件、电脑睡眠过) 刚醒：这条多半是排着队的旧输出，后面还有一大堆，
       // 写进 xterm 就要从旧到新全画一遍。不写，换新连接只补缺的 (旧连接后面的消息都不要了，见上面 s.ws !== ws)
@@ -322,7 +347,8 @@
         s.lastOut = Date.now();
         if (pipWin && s.lastOut - (lastStatusPaint || 0) > 300) { lastStatusPaint = s.lastOut; renderDeskTabs(); }
         const replay = s.muteOsc52;
-        if (document.hidden) { holdOut(s, new Uint8Array(ev.data), replay); return; }
+        // 新旧连接在比、新连接已经从这里接着补了 (见 onopen 的 r.hold)：旧连接上的先攒着，看谁赢再说
+        if (document.hidden || s.race?.hold) { holdOut(s, new Uint8Array(ev.data), replay); return; }
         writeOut(s, new Uint8Array(ev.data), replay);
         return;
       }
@@ -351,7 +377,7 @@
         s.awaitScreen = false;
         s.offset = m.offset;
         // 网页在后台：先不画 (同 holdOut)，回到前台再画；之后的输出接在它后面攒着
-        if (document.hidden) { s.holdSnap = m.data; s.hold = []; s.holdBytes = 0; s.holdFrom = m.offset; return; }
+        if (document.hidden || s.race?.hold) { s.holdSnap = m.data; s.hold = []; s.holdBytes = 0; s.holdFrom = m.offset; return; }
         applySnapshot(s, m.data);
       } else if (m.type === 'resume') {
         s.awaitScreen = false;
@@ -371,6 +397,7 @@
         if (m.status === 'closed') showReconnect(s, '重新连接');
         else hideReconnect(s);
         updateSftpBtn();
+        syncConnHint(s);
         if (s === active) updateLat();
         if (m.status === 'connected' && s === active) measureRtt(); // 连上就测，不等下一轮
         if (m.status === 'connected') {
@@ -428,6 +455,7 @@
         renderDeskTabs();
         gitOnState(s, m); // Agent 做完了：代码改动面板开着就刷新 (见 66-git-changes.js)
       } else if (m.type === 'pong') {
+        if (s.race && m.t === s.race.t) { raceWin(s, ws); return; } // 旧连接先回了比快的心跳：还活着，接着用它 (这次不算延迟，刚醒来时偏大)
         if (Number.isFinite(m.t)) { s.rtt = latSample(s, 'web', Math.round(performance.now() - m.t)); if (s === active) updateLat(); }
       } else if (m.type === 'lat') {
         s.sshRtt = latSample(s, 'ssh', m.ssh);
@@ -456,12 +484,26 @@
       }
     };
     ws.onclose = () => {
-      clearInterval(s.ping);
+      clearInterval(ws.pingTimer); // 只停这条连接自己的心跳 (以前停的是 s.ping：换连接后旧连接晚到的关闭事件把新连接的心跳停了)
+      const r = s.race;
+      if (r && ws === r.next) {
+        // 比快的新连接没连上：接着等旧连接回话，WAKE_PING_MS 内还没回 (或者它也断了) 就照常重连
+        r.next = null;
+        clearTimeout(r.timer);
+        r.timer = setTimeout(() => { if (s.race === r) connect(s); }, r.oldDead ? 0 : WAKE_PING_MS);
+        return;
+      }
       if (s.closed || s.ws !== ws) return;
+      if (r) { // 比的时候旧连接断了：等新连接 (它也没连上再照常重连，见上面)
+        r.oldDead = true;
+        if (r.next) return;
+        endRace(s);
+      }
       s.sid = null;
       cancelHistoryWait(s);
       updateSftpBtn();
       setStatus(s, 'wait');
+      syncConnHint(s);
       if (!s.remoteId) { showReconnect(s, '重试'); return; }
       // 网络断开：后台会话仍在，自动重新挂载。断网又在后台时先不试 (费电)，回到前台 / 网络恢复时马上重连 (见下面的 wakeTabs)
       const delay = Math.min(1000 * 2 ** (s.retries || 0), 10000);
@@ -473,17 +515,24 @@
   }
 
   // 回到前台、网络恢复：在等重试的标签马上重连 (不用等最长 10 秒的退避)。
-  // 看着还连着的：手机 / 平板在后台待了一阵 (点推送通知回来多半是这样)，系统早把连接掐了、网页这边还以为连着 ——
-  // 以前先发心跳等 8 秒，没回话再关连接，关一个已经断了的连接浏览器还要等关闭握手 (可能几十秒) 才报关闭，再退避重连，
-  // 回来后很久才看到最新画面，这期间滑动还会把终端的旧画面滚上去 (见 55-local-scroll.js)。现在：
-  // - 手机 / 平板在后台待了 WAKE_RECONNECT_MS 以上：不等，直接换新连接
-  // - 别的：发心跳，WAKE_PING_MS 内没回话就直接换新连接 (不等旧的关掉)；连接其实还好的话也只是多握一次手。
-  //   固定时长，不按测到的延迟放宽：断线重连时扣着的回答一下子到了，测到的延迟会大得离谱
-  // - 页面的 JS 停过 (PAUSED_MS，见下面的 tickAt)：电脑睡眠过、页面被冻住过，连接多半已经死了或者积压着一大堆旧输出，也直接换
+  // 看着还连着的：手机 / 平板在后台待了一阵 (点推送通知回来多半是这样)，系统可能早把连接掐了、网页这边还以为连着；
+  // 也可能好好的。网页没法马上知道是哪种：等它自己发现断了要好几秒到几十秒，直接换新连接又要白等一次建连接 (几百毫秒到一两秒，
+  // 这期间画面是旧的、滑动取不了历史)。所以新旧连接一起试 (raceTab)：旧连接上发心跳，同时开新连接，谁先回话用谁 ——
+  // 旧连接好好的，一个来回就接着用 (新连接关掉)；死了，新连接一连上就换过去，不用等发现旧的断了。
+  // - 手机 / 平板在后台待了 WAKE_RACE_MS 以上、网络变了 (netStale)、页面的 JS 停过 (PAUSED_MS，见下面的 tickAt：电脑睡眠过、
+  //   页面被冻住过，旧连接多半死了或者积压着一大堆旧输出)：马上一起试
+  // - 别的：先发心跳，WAKE_PING_MS 内没回话再一起试 (电脑上切回这个页面很频繁，连接基本都好好的)
   // 换新连接时带着已收到的字节数，服务端只补发缺的部分，画面不会重来；不在看的标签先只要状态 (wakeLite)，切过去再要画面
-  const WAKE_RECONNECT_MS = 10000;
-  const WAKE_PING_MS = 3000;
+  const WAKE_RACE_MS = 2000;
+  const WAKE_PING_MS = 1500;
+  const RACE_MAX = 15000; // 新旧连接都这么久没动静：不比了，照常重连 (有退避和「重试」按钮)
+  // 打了字 / 要了历史之后这么久什么都没收到 (REPLY_MS)、页面在前台时心跳这么久没回 (PING_REPLY_MS)：连接可能死了，新旧连接一起试。
+  // 旧连接其实好好的也不会断开它 (它的回话先到就接着用)，所以可以等得短；刚确认过旧连接是好的就一阵子不再查 (程序不回显、主机慢)
+  const REPLY_MS = 2000;
+  const PING_REPLY_MS = 5000;
+  const RACE_OK_QUIET = 15000;
   let hiddenAt = document.hidden ? Date.now() : 0;
+  let netStale = false; // 网络变过 (换了 Wi-Fi / 流量、断网又恢复)：旧连接多半死了，回到前台时一起试
   // JS 停过没有：页面在跑时下面的定时器每 TICK_MS 跑一次，后台时浏览器把它压到最慢大约一分钟一次；
   // 隔了 PAUSED_MS 以上一次都没跑 = 页面被冻住过 / 电脑睡眠过。醒来先跑到的是定时器还是排着队的消息 (见 onmessage) 都认得出
   const TICK_MS = 15000;
@@ -496,30 +545,116 @@
     const paused = pausedSeen || Date.now() - tickAt >= PAUSED_MS;
     pausedSeen = false;
     tickAt = Date.now();
-    const stale = paused || (isTouch && away >= WAKE_RECONNECT_MS);
+    const stale = paused || netStale || (isTouch && away >= WAKE_RACE_MS);
+    netStale = false;
     // 正在看的标签先连
-    for (const s of [active, ...sessions.filter((x) => x !== active)]) wakeTab(s, stale);
+    for (const s of [active, ...sessions.filter((x) => x !== active)]) wakeTab(s, stale, paused);
   }
-  // 一个标签：连接死了 / 要换 (stale) 就换新连接；看着还连着的发心跳，WAKE_PING_MS 内没回话再换。
-  // 刚换过的 (醒来时 resume 已经连了) 不再换一遍
-  function wakeTab(s, stale) {
+  // 一个标签：连接断了就重连；看着还连着的，要换 (stale) 就新旧连接一起试，不然发心跳，WAKE_PING_MS 内没回话再一起试。
+  // 刚换过的 (醒来时 resume 已经连了) 不再换一遍。paused：JS 停过，旧连接上排着队的多半是一大堆旧输出，一开始就攒着不画
+  function wakeTab(s, stale, paused) {
     if (!s || s.closed) return;
     if (!s.remoteId) { releaseOut(s); return; }
+    if (s.race) return; // 已经在比了
     const ws = s.ws;
-    if (!ws || ws.readyState > WebSocket.OPEN || (stale && Date.now() - (s.connAt || 0) > 2000)) {
+    if (!ws || ws.readyState > WebSocket.OPEN) {
       if (stale && s !== active) s.wakeLite = true;
       connect(s);
       return;
     }
+    if (ws.readyState !== WebSocket.OPEN) { releaseOut(s); return; } // 正在连
+    if (stale && Date.now() - (s.connAt || 0) > 2000) {
+      if (s !== active) s.wakeLite = true;
+      raceTab(s, paused);
+      return;
+    }
     releaseOut(s); // 后台时攒着的输出 (见 holdOut)
-    if (ws.readyState !== WebSocket.OPEN) return; // 正在连
     const at = Date.now();
     send(s, { type: 'ping' });
     clearTimeout(s.wakeTimer);
-    s.wakeTimer = setTimeout(() => { if (s.ws === ws && !s.closed && (s.lastMsg || 0) < at) connect(s); }, WAKE_PING_MS);
+    s.wakeTimer = setTimeout(() => { if (s.ws === ws && !s.closed && (s.lastMsg || 0) < at) raceTab(s); }, WAKE_PING_MS);
   }
   document.addEventListener('visibilitychange', wakeTabs);
-  window.addEventListener('online', wakeTabs);
+  // 网络变了：断网又恢复、换了 Wi-Fi / 流量 (navigator.connection 的 type，安卓 Chrome 有；只看 type，网速估计一直在变，不算)
+  function netChanged() { netStale = true; wakeTabs(); }
+  window.addEventListener('online', netChanged);
+  const netInfo = navigator.connection;
+  let netType = netInfo?.type;
+  netInfo?.addEventListener?.('change', () => { if (netInfo.type === netType) return; netType = netInfo.type; netChanged(); });
+
+  // 新旧连接一起试：旧连接留着照用 (带记号的心跳发在它上面)，同时开一条新连接，谁先回话用谁 (见 raceWin)。
+  // 比的时候要发的先排着 (见 post)，定下来再发给赢的那条；旧连接上来的输出照常画，新连接一连上 (从这里接着补) 就先攒着。
+  // hold：一开始就攒着 (JS 停过，排着队的是一大堆旧输出)
+  // reply：是打了字 / 心跳没回话引起的 (见 expectReply)，旧连接赢了就一阵子不再这样查
+  function raceTab(s, hold, reply) {
+    const old = s.ws;
+    if (s.race || s.closed || !s.remoteId || !old || old.readyState !== WebSocket.OPEN) return;
+    if (Array.isArray(s.hold)) releaseOut(s); // 后台时攒的不多：先画上 (攒太多了的 (false) 留着，谁赢谁补现在的画面)
+    connect(s, { hold: !!hold || s.hold === false, reply: !!reply });
+  }
+  // 比出来了：ws 先回的话 (新连接的第一条消息 / 旧连接回了带记号的心跳)
+  function raceWin(s, ws) {
+    const r = s.race;
+    s.race = null;
+    clearTimeout(r.timer);
+    if (ws === r.next) {
+      // 新连接赢了：换上它。旧连接关掉，也让服务端马上断开它 (多半已经死了，服务端要等心跳才发现，这期间还当有人在看、不推送)。
+      // 旧连接上攒着没画的不要了：新连接是从 r.from (终端里画到的地方) 接着补的
+      s.ws = ws;
+      try { r.old.close(); } catch {}
+      ws.send(JSON.stringify({ type: 'drop', cid: r.old.cid }));
+      s.hold = s.holdSnap = null;
+      s.offset = r.from;
+      s.awaitScreen = false;
+      s.lite = r.lite;
+      s.retries = 0;
+      startPing(s, ws);
+      // 比之前发在旧连接上、还在等的历史请求：旧连接没回 (多半死了)，在新连接上再要一次
+      if (r.resend && s.scrollLoading && s.lsMsg) ws.send(JSON.stringify(s.lsMsg));
+    } else {
+      // 旧连接赢了：还活着，接着用，新连接关掉 (服务端那边同一个页面的两条算一个使用者，关掉不会锁住，见 lib/session/size.js)。
+      // 攒着的照常画 (攒多了要现在的画面)
+      if (r.next) try { r.next.close(); } catch {}
+      if (r.reply) s.raceOkAt = Date.now(); // 打字没回显 (程序不回显、主机慢) 这类误报：一阵子不再查
+      releaseOut(s);
+    }
+    s.lastMsg = Date.now();
+    syncConnHint(s);
+    for (const m of r.q) if (s.ws.readyState === WebSocket.OPEN) s.ws.send(m);
+    // 比的时候切到了这个标签 (activate 没要画面，见 17-tabs.js)、新连接只要了状态：现在要画面
+    if (s === active && s.lite && s.ws.readyState === WebSocket.OPEN) { s.lite = false; send(s, { type: 'sync', offset: s.offset }); }
+  }
+  // 不比了 (要重连 / 关标签 / 冻住)：新连接关掉，排着的不发了
+  function endRace(s) {
+    const r = s.race;
+    if (!r) return;
+    s.race = null;
+    clearTimeout(r.timer);
+    if (r.next) try { r.next.close(); } catch {}
+  }
+  // 应用层心跳，避免 Cloudflare / 反向代理 100 秒空闲断开；服务端每次都回 pong。
+  // 页面在前台时顺便查连接：PING_REPLY_MS 内没回话就新旧连接一起试 —— 不直接断开重连：往返慢一个周期 (隧道卡、主机忙)
+  // 就把好连接误杀，会制造一次莫名其妙的断线；一起试的话旧连接回话了就接着用
+  function startPing(s, ws) {
+    clearInterval(s.ping);
+    s.ping = ws.pingTimer = setInterval(() => {
+      if (s.ws !== ws) return clearInterval(ws.pingTimer);
+      send(s, { type: 'ping' });
+      expectReply(s, PING_REPLY_MS);
+    }, 25000);
+  }
+  // 发了东西，ms 内这条连接上什么都没收到 (输出、回话都算)：可能死了，新旧连接一起试。页面在后台时不查 (回到前台时会查)
+  function expectReply(s, ms) {
+    if (document.hidden || s.race || s.closed || !s.remoteId) return;
+    if (Date.now() - (s.raceOkAt || 0) < RACE_OK_QUIET) return;
+    if (s.replyTimer && (s.lastMsg || 0) < s.replyAt) return; // 前面发的还没回话：照前面的时间查
+    clearTimeout(s.replyTimer); // 前面发的已经回话了：按这次重新计时 (以前接着等前面那次的，到点一看有回话就不查了，这次的没人查)
+    const ws = s.ws, at = s.replyAt = Date.now();
+    s.replyTimer = setTimeout(() => {
+      s.replyTimer = 0;
+      if (s.ws === ws && !s.closed && !document.hidden && (s.lastMsg || 0) < at) raceTab(s, false, true);
+    }, ms);
+  }
 
   // JS 停过没有 (定时器和常量在上面 wakeTabs 前面)
   setInterval(() => {
@@ -536,6 +671,8 @@
   // 看着就是点推送进来停在旧消息上、好久才追上。现在冻住前把连接都关掉，醒来再连，只补缺的
   document.addEventListener('freeze', () => {
     for (const s of sessions) {
+      endRace(s);
+      clearTimeout(s.replyTimer); s.replyTimer = 0;
       if (s.closed || !s.remoteId || !s.ws) continue;
       const ws = s.ws;
       s.ws = null; // 它的关闭事件不再管 (不排重连，见 onclose)
@@ -556,6 +693,31 @@
       connect(s);
     }
   });
+
+  // 「正在连接…」：回到前台换连接、新旧连接在比、服务端在重连主机时，画面上还是之前的内容，看着像加载好了，其实还不能用
+  // (滑动取不了历史、打的字要等)。超过 CONN_HINT_MS 还没好就在终端顶上正中显示一个小提示 (只是告诉一声，点不了、不挡操作)；
+  // 连得快的不闪一下。不和右下角的按钮放一起 (「重新连接」「回到实时画面」都在那里)；
+  // 显示着「重新连接」/「重试」/「正在重新连接… 点击立即重试」按钮时不显示 (按钮已经说了)，重试了好几次的也交给按钮 (同以前)；
+  // 正在恢复会话 (整块盖着「正在恢复会话…」) 时也不显示
+  const CONN_HINT_MS = 800;
+  const connBusy = (s) => !s.closed && !!s.remoteId && !s.restoring && !s.reconnectBtn && (s.retries || 0) <= 3
+    && (!!s.race || !s.sid || s.ws?.readyState !== WebSocket.OPEN);
+  function syncConnHint(s) {
+    if (!connBusy(s)) {
+      clearTimeout(s.connHintTimer); s.connHintTimer = 0;
+      s.connHint?.remove(); s.connHint = null;
+      return;
+    }
+    if (s.connHint || s.connHintTimer) return; // 显示着 / 在等
+    s.connHintTimer = setTimeout(() => {
+      s.connHintTimer = 0;
+      if (s.connHint || !connBusy(s)) return;
+      s.connHint = document.createElement('div');
+      s.connHint.className = 'conn-hint';
+      s.connHint.textContent = '正在连接…';
+      s.box.appendChild(s.connHint);
+    }, CONN_HINT_MS);
+  }
 
   // 回到最新的实时画面：关掉历史视图，终端滚动区滚到最底下 (点推送通知进来时：要看的是现在的)
   function goLive(s) {
@@ -628,6 +790,7 @@
   function doneRestoring(s) {
     s.restoring?.remove();
     s.restoring = null;
+    syncConnHint(s);
   }
 
   // 让服务端终端尺寸与当前显示一致 (其他设备可能改过尺寸)
@@ -661,11 +824,13 @@
       s.reconnectBtn = b;
     }
     s.reconnectBtn.textContent = text;
+    syncConnHint(s); // 有按钮了：「正在连接…」不再显示 (见 syncConnHint)
   }
 
   function hideReconnect(s) {
     s.reconnectBtn?.remove();
     s.reconnectBtn = null;
+    syncConnHint(s);
   }
 
   // 标签顺序与当前标签保存起来，重新打开时恢复

@@ -4,7 +4,7 @@
 // 1. 冻住前 (freeze 事件) 把连接都关掉：冻着时服务端不再往这个页面发 (不积压，也不会因为积压停读 SSH 卡住里面的程序)；
 //    醒来 (resume) 重连只补缺的，正在看的标签马上是最新画面；不在看的只要状态，点推送切过去再要画面
 // 2. 没收到 freeze 事件、JS 停过 (电脑睡眠过等，定时器两分半以上没跑) 刚醒：排着队的旧输出不写进终端，换新连接只补缺的，不重复
-// 3. 页面一直在前台、连接假死：点推送通知切过去时发心跳，3 秒没回话就换新连接 (以前要等心跳超时，一直停在旧画面上)
+// 3. 页面一直在前台、连接假死：点推送通知切过去时发心跳，1.5 秒没回话就新旧连接一起试 (以前要等心跳超时，一直停在旧画面上)
 const { BASE, ok, wait, launch, hostKey, addHost, waitFor } = require('./helpers');
 const { Server } = require('ssh2');
 
@@ -126,7 +126,7 @@ const pour = (st, data) => new Promise((resolve) => { const t = Date.now(); st.w
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
   await ctx.close();
 
-  // ---- 3. 页面一直在前台、连接假死：点推送通知切过去，心跳 3 秒没回话就换新连接
+  // ---- 3. 页面一直在前台、连接假死：点推送通知切过去，心跳 1.5 秒没回话就新旧连接一起试 (新连接先连上，换过去)
   const ctx2 = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const routes = [];
   await ctx2.routeWebSocket(/\/ws$/, (ws) => {
@@ -153,7 +153,7 @@ const pour = (st, data) => new Promise((resolve) => { const t = Date.now(); st.w
     if (/ZOMBIE-B/.test(t)) { tz = Date.now() - z0; break; }
     await wait(100);
   }
-  ok(routes.length > n0 && tz >= 2500 && tz < 6000, `点推送通知时连接假死：心跳 3 秒没回话换新连接，看到最新画面 (${tz} ms，新连接 ${routes.length - n0} 个)`);
+  ok(routes.length > n0 && tz >= 1200 && tz < 4000, `点推送通知时连接假死：心跳 1.5 秒没回话就一起试，换上新连接看到最新画面 (${tz} ms，新连接 ${routes.length - n0} 个)`);
   ok(errors.length === 0, '无页面错误 ' + errors.join('; '));
   await browser.close();
   process.exit();
