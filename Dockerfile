@@ -1,4 +1,5 @@
-# 常驻会话用的 sshwebd：从 sshwebd/ 的源码编 Windows 版和 Linux 版 (连接时传到主机)
+# 常驻会话用的 sshwebd：从 sshwebd/ 的源码编 Windows 版、Linux 版、macOS 版 (连接时传到主机)。
+# macOS 的 Apple 芯片版 Go 编的时候自己带上临时签名 (不签 macOS 不让跑)；SFTP 传过去的文件没有「来自网络」标记，不弹安全提示
 FROM golang:1.27-alpine AS sshwebd
 WORKDIR /src
 COPY sshwebd/go.mod sshwebd/go.sum ./
@@ -9,6 +10,8 @@ RUN CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" 
  && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o /out/sshwebd-linux-amd64 . \
  && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o /out/sshwebd-linux-arm64 . \
  && CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -trimpath -ldflags "-s -w" -o /out/sshwebd-linux-armv7 . \
+ && CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o /out/sshwebd-darwin-amd64 . \
+ && CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o /out/sshwebd-darwin-arm64 . \
  && sed -n 's/^var version = "\([^"]*\)".*/\1/p' main.go > /out/version.txt && test -s /out/version.txt
 
 FROM node:22-alpine

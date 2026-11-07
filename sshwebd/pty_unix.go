@@ -2,14 +2,12 @@
 
 package main
 
-// Linux / macOS：用系统的 pty (Linux 是正式支持的；macOS 主要是开发、测试用)
+// Linux / macOS：用系统的 pty (按会话找进程、补语言环境这些两边不一样的在 proc_linux.go / proc_darwin.go)
 
 import (
-	"bytes"
 	"os"
 	"os/exec"
 	"sort"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -79,6 +77,7 @@ func mergeEnv(base []string, extra map[string]string) []string {
 	if _, ok := m["TERM"]; !ok || m["TERM"] == "dumb" {
 		m["TERM"] = "xterm-256color"
 	}
+	fixLocale(m)
 	for k, v := range extra {
 		m[k] = v
 	}
@@ -113,7 +112,7 @@ func (p *unixPty) Wait() (int, error) {
 	return p.cmd.ProcessState.ExitCode(), nil
 }
 
-// 结束整个会话：shell 和它开的进程 (后台任务在别的进程组里，按会话 id 找；Linux 读 /proc)
+// 结束整个会话：shell 和它开的进程 (后台任务在别的进程组里，按会话 id 找，见 sessionPids)
 func (p *unixPty) Kill() error {
 	pid := p.cmd.Process.Pid
 	kill := func(sig syscall.Signal) {
@@ -128,25 +127,4 @@ func (p *unixPty) Kill() error {
 		kill(syscall.SIGKILL)
 	}()
 	return nil
-}
-
-func sessionPids(sid int) []int {
-	ents, _ := os.ReadDir("/proc")
-	var out []int
-	for _, e := range ents {
-		pid, err := strconv.Atoi(e.Name())
-		if err != nil {
-			continue
-		}
-		b, err := os.ReadFile("/proc/" + e.Name() + "/stat")
-		if err != nil {
-			continue
-		}
-		// pid (名字) 状态 ppid pgrp session …：名字里可能有空格，从最后一个 ) 往后数
-		f := strings.Fields(string(b[bytes.LastIndexByte(b, ')')+1:]))
-		if len(f) > 3 && f[3] == strconv.Itoa(sid) {
-			out = append(out, pid)
-		}
-	}
-	return out
 }

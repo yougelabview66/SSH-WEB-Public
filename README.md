@@ -55,7 +55,7 @@ SSH-WEB is a single-user tool: one login protects everything. It is not meant fo
 - **Mobile-first input** — an input bar with special keys, IME-friendly editing, predictive local echo for slow links, fast local scrolling inside tmux.
 - **Project side bar** — file tree with git status and file icons, fuzzy file search (Ctrl+Shift+P), diff view with line comments you can send to the agent.
 - **Files & ports** — SFTP manager (drag-and-drop upload, preview), send images/files to the agent, preview dev servers through the built-in port forwarder.
-- **Persistent sessions (recommended)** — terminals run inside a tiny daemon on the host ([sshwebd](sshwebd/README.md)), so they survive disconnects, closed tabs and SSH-WEB restarts. Windows and Linux.
+- **Persistent sessions (recommended)** — terminals run inside a tiny daemon on the host ([sshwebd](sshwebd/README.md)), so they survive disconnects, closed tabs and SSH-WEB restarts. Windows, Linux and macOS.
 - **Windows hosts** — cmd / PowerShell support, performance monitor and port list, persistent sessions on ConPTY.
 - **Monitoring** — CPU, memory, network, disk and process charts per host; latency indicator.
 - **Cloudflare Tunnel** — connect to hosts exposed through `cloudflared` (Service Token supported), no client needed.
@@ -70,8 +70,8 @@ Tick **常驻会话 (persistent session)** in the host settings — it is on by 
 
 - The terminal keeps running when the network drops, the browser tab is closed, or SSH-WEB itself restarts. Reconnecting resumes it and only replays what you missed.
 - Open a new tab and pick any session that is still running — each shows its folder and what the agent is doing — or delete ones you no longer need.
-- Works on **Windows** (replaces psmux) and **Linux** (amd64 / arm64 / armv7). You no longer need tmux to keep sessions alive; using tmux inside still works as before.
-- Other hosts (e.g. macOS) simply open a normal terminal.
+- Works on **Windows** (replaces psmux), **Linux** (amd64 / arm64 / armv7) and **macOS** (Apple silicon / Intel). You no longer need tmux to keep sessions alive; using tmux inside still works as before.
+- Other hosts (e.g. FreeBSD) simply open a normal terminal.
 
 <p align="center">
   <img src="docs/images/daemon-setting.png" alt="Host settings with the persistent session option" width="40%">
@@ -136,7 +136,7 @@ npx playwright-core install chromium   # first time only
 npm test                          # or: npm test -- desk lat
 ```
 
-Tests drive a real browser against mock SSH servers on 127.0.0.1; nothing touches real hosts. See [CONTRIBUTING.md](CONTRIBUTING.md). Server code is in `lib/`, front-end modules in `public/app/` (concatenated in numeric order), the terminal daemon in `sshwebd/` (Go, Windows ConPTY + Linux pty).
+Tests drive a real browser against mock SSH servers on 127.0.0.1; nothing touches real hosts. See [CONTRIBUTING.md](CONTRIBUTING.md). Server code is in `lib/`, front-end modules in `public/app/` (concatenated in numeric order), the terminal daemon in `sshwebd/` (Go, Windows ConPTY + Linux / macOS pty).
 
 ## Acknowledgements
 

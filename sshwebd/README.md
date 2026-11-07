@@ -1,6 +1,6 @@
 # sshwebd
 
-SSH-WEB 的终端守护程序（「常驻会话」，在 SSH-WEB 项目的 `sshwebd/` 目录），支持 Windows 和 Linux。
+SSH-WEB 的终端守护程序（「常驻会话」，在 SSH-WEB 项目的 `sshwebd/` 目录），支持 Windows、Linux 和 macOS。
 在 Windows 主机上代替 psmux、在 Linux 主机上代替 tmux 保住会话：终端会话放在一个常驻的守护进程里，SSH 断了、网页标签关了，终端里的程序（比如 Claude Code）照样跑，重新连上接着用。
 
 ## 为什么不用 psmux
@@ -34,7 +34,7 @@ SSH-WEB ──SSH exec 通道 (不要终端)── sshwebd bridge ──命名�
 
 ## 和 SSH-WEB 一起用
 
-1. 在 SSH-WEB 里编辑这台主机（Windows 或 Linux），勾上「常驻会话」（新建主机默认勾着）。
+1. 在 SSH-WEB 里编辑这台主机（Windows、Linux 或 macOS），勾上「常驻会话」（新建主机默认勾着）。
 2. 连接时 SSH-WEB 自动把 sshwebd.exe 传到这台主机的 `~/.ssh-web/sshwebd-v<版本>.exe`（如 `sshwebd-v0.1.6.exe`；已经有了就不传；同一个版本重新编过、正在运行的又换不掉时传成 `sshwebd-v0.1.6-2.exe`）。版本号来自编出来的文件旁边的 `version.txt`（构建 Docker 镜像时写），没有就读 `main.go` 里的 `version`。exe 是构建 Docker 镜像时从这个目录的源码编出来的；不用 Docker、直接跑 SSH-WEB 源码时，先按下面「编译」编出 `sshwebd/sshwebd.exe`，或者自己把 exe 放到主机的 `%USERPROFILE%\.ssh-web\sshwebd.exe`。
 3. **新开标签**：新建一个会话（默认 PowerShell）。主机上有常驻会话时会弹出列表问你接哪个（还有连接的也列出来、标明在哪接着，接上或删除前先问要不要强制），也可以新建或者退出（关掉这个标签）。
 4. **断线后**：这个标签重新连上，自动接回原来的会话，只补发断开期间的输出。
@@ -68,7 +68,19 @@ go test ./...        # 在 Linux 上真跑一遍（守护进程、bridge、断�
 
 SSH-WEB 的 `node test/run.js sshwebd` 会跑 go vet 和这些测试；`daemonwin` 测试用这里的源码编出 Linux 版，接到 SSH-WEB 上真跑。
 
-Linux 版用系统的 pty（SSH-WEB 的 Docker 镜像里编了 amd64 / arm64 / armv7，连接时按 `uname -m` 传过去）；macOS 也能编译，但 SSH-WEB 还不会自动传。Windows 版需要 Windows 10 1809 及以上（ConPTY）。
+Linux 版用系统的 pty（SSH-WEB 的 Docker 镜像里编了 amd64 / arm64 / armv7，连接时按 `uname -sm` 传过去）。Windows 版需要 Windows 10 1809 及以上（ConPTY）。
+
+macOS 版（Docker 镜像里编了 `sshwebd-darwin-arm64`（Apple 芯片）和 `sshwebd-darwin-amd64`（Intel），`uname -s` 是 Darwin 时传过去）同 Linux 用系统的 pty、登录 shell（一般是 zsh）。和 Linux 不一样的地方：
+- 没有 /proc：结束会话时用 sysctl 找会话里的进程；SSH-WEB 那边选择框里的「所在文件夹」、常驻会话里开着 tmux 时的历史这些靠读 /proc 的，同 Windows 走守护进程报的和服务器上的终端记录。
+- macOS 的 sshd 不设语言环境，守护进程里 `LANG`、`LC_CTYPE`、`LC_ALL` 都没有时补上 `LC_CTYPE=UTF-8`（同 macOS 自己的 ssh 客户端带过去的），不然 zsh 把中文显示成 `<e4><b8><ad>`。
+- Apple 芯片版 Go 编译时自带临时签名（没签名 macOS 不让跑）；SFTP 传过去的文件没有「来自网络」的隔离标记，不会弹安全提示。
+
+不用 Docker、直接跑 SSH-WEB 源码时，要的版本自己编到 SSH-WEB 的 `sshwebd/` 目录：
+
+```
+GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o sshwebd-darwin-arm64 .
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o sshwebd-linux-amd64 .
+```
 
 Linux 上常驻会话里开不开 tmux 都行，见 SSH-WEB 的 docs/功能详细说明.md。个别发行版 systemd 设了 `KillUserProcesses=yes` 时，SSH 断开会结束用户的所有进程，要执行一次 `loginctl enable-linger`。
 

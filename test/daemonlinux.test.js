@@ -8,7 +8,8 @@
 //   敲 tmux / 接上时里面开着 tmux 都提示一次「不用再开 tmux」
 // 钩子事件里的 tabs 是第一次开这个会话的标签，daemon 是会话编号：交给现在接着它的标签。
 // 模拟的主机把命令在本机临时目录里真的执行 (HOME、TMUX_TMPDIR 都在临时目录，不碰本机真实的 tmux)；
-// 不是 Linux (macOS 等) 的照常开普通终端，不提示
+// macOS 主机 (uname 报 Darwin) 传 macOS 版：服务器上没有就说清楚缺哪个版本、改用普通终端；
+// 有就同样开常驻会话 (模拟的主机还是在本机执行命令，拿 Linux 版冒充 macOS 版)，没有 /proc 的那些走守护进程报的、服务器上的终端记录
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -22,6 +23,8 @@ const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sshweb-dl-')
 const tmuxDir = path.join(home, 'tmux'); // tmux 的 socket 放这里 (TMUX_TMPDIR)，不碰本机的 tmux 服务
 fs.mkdirSync(tmuxDir);
 killUnder(home); // 中途出错退出时也结束这里起的守护进程
+const macHome = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sshweb-dlm-'))); // 冒充 macOS 的那台的家目录 (守护进程、会话和 Linux 那台分开)
+killUnder(macHome);
 const until = async (fn, ms) => { for (const end = Date.now() + ms; !fn() && Date.now() < end;) await wait(100); };
 const ENV = { HOME: home, PATH: process.env.PATH, TMUX_TMPDIR: tmuxDir, SHELL: '/bin/sh', SSHWEBD_IDLE: '3s', LANG: 'C.UTF-8' };
 const hasTmux = (() => { try { execFileSync('tmux', ['-V'], { stdio: 'ignore' }); return true; } catch { return false; } })();
@@ -40,6 +43,7 @@ const BIN = buildBin();
 
 let conns = [], darwinShells = 0;
 function server(port, darwin) {
+  const h = darwin ? macHome : home, env = { ...ENV, HOME: h };
   new Server({ hostKeys: [hostKey()] }, (c) => {
     conns.push(c);
     c.on('error', () => {});
@@ -52,7 +56,7 @@ function server(port, darwin) {
         const ch = a(), cmd = info.command;
         if (darwin && cmd === 'uname -sm') { ch.write('Darwin arm64\n'); ch.exit(0); ch.end(); return; }
         // 命令在本机临时目录里真的执行 (bridge 这种一直跑的：通道的输入输出接上，通道关了就结束它)
-        const pr = spawn('sh', ['-c', cmd], { cwd: home, env: ENV });
+        const pr = spawn('sh', ['-c', cmd], { cwd: h, env });
         pr.stdin.on('error', () => {}); // 进程已经结束还有输入过来：写入失败是异步报的 (EPIPE)，try 接不住，会让整个测试崩掉
         ch.on('data', (d) => { try { pr.stdin.write(d); } catch {} });
         ch.on('end', () => { try { pr.stdin.end(); } catch {} });
@@ -64,7 +68,7 @@ function server(port, darwin) {
       s.on('sftp', (accept) => {
         const sf = accept();
         const hs = new Map(); let next = 1;
-        const loc = (p) => (p === '.' || p === '' ? home : p);
+        const loc = (p) => (p === '.' || p === '' ? h : p);
         const handle = (v) => { const h = Buffer.alloc(4); h.writeUInt32BE(next); hs.set(next++, v); return h; };
         const get = (h) => hs.get(h.readUInt32BE());
         const okr = (id) => sf.status(id, STATUS_CODE.OK);
@@ -419,18 +423,46 @@ run(async () => {
     rg.ws.close(); rh.ws.close();
   }
 
-  // ---- 6. 不是 Linux (macOS 等)：照常开普通终端，不提示
+  // ---- 6. macOS 主机 (uname 报 Darwin arm64)
+  // 服务器上没有 macOS 版 (直接跑源码、没编)：说清楚缺哪个版本，改用普通终端；记下是 macOS (主机列表照样标「常驻」)
+  fs.writeFileSync(path.join(macHome, '.profile'), "PS1='$ '\n");
   const mac = await addHost('MAC', 2342, { winDaemon: true });
   const m = tab(mac.id);
   await until(() => m.out.includes('mac$') && m.last('status')?.status === 'connected', 15000);
   const hm = (await (await fetch(BASE + '/api/hosts')).json()).find((x) => x.id === mac.id);
-  ok(darwinShells === 1 && !m.out.includes('常驻会话没开起来') && hm?.os === 'other', 'macOS：照常开普通终端，不提示，不标「常驻」: ' + JSON.stringify(hm?.os));
+  ok(darwinShells === 1 && m.out.includes('没有 darwin-arm64 版 sshwebd') && hm?.os === 'mac',
+    'macOS、服务器上没有 macOS 版：说清楚缺 darwin-arm64 版，改用普通终端；记下是 macOS: ' + JSON.stringify([hm?.os, m.out.slice(-160)]));
   m.ws.close();
+  // 有 macOS 版：传 sshwebd-v<版本> (加执行权限)，开常驻会话；往上滚取服务器上这个终端的记录 (同 Windows，不找 tmux)
+  const linuxBin = fs.readdirSync(BIN_DIR).find((n) => n.startsWith('sshwebd-linux-'));
+  fs.copyFileSync(path.join(BIN_DIR, linuxBin), path.join(BIN_DIR, 'sshwebd-darwin-arm64'));
+  const m2 = tab(mac.id);
+  await until(() => m2.out.includes('新建常驻会话 1') && m2.last('status')?.status === 'connected', 15000);
+  const upm = fs.readdirSync(path.join(macHome, '.ssh-web')).find((n) => /^sshwebd-v[0-9.]+$/.test(n));
+  ok(darwinShells === 1 && upm && (fs.statSync(path.join(macHome, '.ssh-web', upm)).mode & 0o111),
+    'macOS：传 sshwebd-v<版本> (有执行权限)，新建常驻会话，不再开普通终端: ' + JSON.stringify([upm, darwinShells, m2.out.slice(-160)]));
+  m2.type('echo MAC-$((40+2))\r');
+  await until(() => m2.out.includes('MAC-42'), 8000);
+  const mh = await m2.hist();
+  ok(mh?.ok && mh.data.includes('MAC-42'), 'macOS 常驻会话：往上滚取到服务器上的终端记录: ' + JSON.stringify((mh?.data || mh?.reason || '').slice(-120)));
+  // 关掉标签再开：会话还在，弹列表接回去
+  await fetch(BASE + '/api/sessions/' + m2.sid(), { method: 'DELETE' });
+  m2.ws.close(); await wait(800);
+  const m3 = tab(mac.id);
+  await until(() => m3.picks.length, 15000);
+  ok(m3.picks[0]?.sessions?.some((x) => x.id === '1'), 'macOS：关了标签会话还在，新开标签列出来: ' + JSON.stringify(m3.picks[0]?.sessions?.map((x) => x.id)));
+  m3.send({ type: 'daemon-pick-response', id: '1' });
+  await until(() => m3.out.includes('接上常驻会话 1') && m3.out.includes('MAC-42'), 15000);
+  ok(m3.out.includes('MAC-42'), 'macOS：接回去，补发之前的输出');
+  m3.type('exit\r');
+  await until(() => /常驻会话 1 已结束/.test(m3.out), 8000);
+  m3.ws.close();
 
   for (const x of await (await fetch(BASE + '/api/sessions')).json()) await fetch(BASE + '/api/sessions/' + x.id, { method: 'DELETE' });
   await wait(4000); // 守护进程没事做了自己退出 (SSHWEBD_IDLE=3s)
   ok(/没有会话了，退出/.test(fs.readFileSync(path.join(home, '.ssh-web', 'sshwebd.log'), 'utf8')), '守护进程没有会话后自己退出');
   try { execFileSync('tmux', ['kill-server'], { env: ENV, stdio: 'ignore' }); } catch {}
   fs.rmSync(home, { recursive: true, force: true });
+  fs.rmSync(macHome, { recursive: true, force: true });
   fs.rmSync(BIN_DIR, { recursive: true, force: true });
 });

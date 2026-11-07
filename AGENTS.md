@@ -3,7 +3,7 @@
 这份文件写给在这个仓库里干活的 AI 编码助手（Claude Code、Codex、OpenCode 等），也方便人快速了解现状。
 功能细节看 [docs/功能详细说明.md](docs/功能详细说明.md)，开发和测试方法看 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
-更新时间：2026-11-06
+更新时间：2026-11-07
 
 ## 项目是什么
 
@@ -15,15 +15,15 @@ SSH-WEB 是浏览器里的 SSH 终端（Node.js 服务端 + 网页），重点�
 - 会话历史：列出主机上各 Agent 的对话，一键「继续」，在不同 Agent 之间切换。
 - 文件管理、端口预览、资源监控、右边栏（项目文件、代码改动）。
 
-支持的主机：Linux（常驻会话或 tmux）、Windows（常驻会话，sshwebd 用 ConPTY）。
+支持的主机：Linux（常驻会话或 tmux）、Windows（常驻会话，sshwebd 用 ConPTY）、macOS（常驻会话，v1.85.2 起；没在真机上测过）。
 
 ## 当前版本和状态
 
 | 项目 | 状态 |
 |---|---|
-| SSH-WEB（私有库） | v1.85.1 |
+| SSH-WEB（私有库） | v1.85.2 |
 | SSH-WEB（公开库） | v1.85.1（2026-11-06 发版，镜像 1.85.1 / 1.85 / latest；加安卓 App 之前是 v1.84.66） |
-| sshwebd | 0.1.9 |
+| sshwebd | 0.1.9（v1.85.2 加了 macOS 版，Linux、Windows 版功能没变，版本号没升，主机上不用换） |
 | 自动化测试 | 94 组（v1.85.1 加了 wakescroll、bgout），2026-11-06 在 v1.85.1 上全部通过（1G 内存的开发机，`npm test`）。机器内存紧（同时开着别的 Agent、浏览器）时 mob、lscroll、attach 这类按时序判断的测试会偶尔失败，先看可用内存再重跑，别当成代码问题。另在一台 4 核 8G 的测试机上跑过全套（Docker：Playwright 1.49 镜像 + tmux + Node 22.23，同 CI）：93 组通过，sendgap 的「回车 40ms 内写」在容器里实测 44~48ms，v1.85.0 一样，是机器时序 |
 
 ## 目录结构
@@ -66,7 +66,7 @@ SSH-WEB 是浏览器里的 SSH 终端（Node.js 服务端 + 网页），重点�
 
 「实测」= 真的 SSH-WEB + 真的主机 + 真的 Agent：开起来、说一句、状态变化、会话历史、历史画面、退出、互相「继续」切换。
 
-## 最近完成（v1.84.37 ~ v1.85.1）
+## 最近完成（v1.84.37 ~ v1.85.2）
 
 - 加 pi 适配；六个 Agent 实机测试后的一批修复；常驻会话选择框里画各 Agent 的标志。
 - Agent 之间互相「继续」切换的一系列修复（Linux 31 种切换、Windows 6 种切换实测通过）。
@@ -78,6 +78,7 @@ SSH-WEB 是浏览器里的 SSH 终端（Node.js 服务端 + 网页），重点�
 - 手机上快速滑历史画面不再闪出一大片空白：历史画面打开后马上把前面的历史一次补完，手指在历史画面上滑（含惯性）时不往上补（v1.84.61~63）。
 - 安卓 App（私有仓库 SSH-WEB.Android，WebView 套 SSH-WEB）收推送：服务端加 `/api/push/stream`（SSE），内容和 Web Push 一样，断线重连按 Last-Event-ID 补发（v1.84.67）。
 - 手机后台回来 / 点推送通知进来（v1.85.1）：常驻会话里程序没开鼠标（Claude Code）时，历史只走历史视图，还没连上、取历史在冷却时滑动吞掉并提示，不再交给 xterm 把它那份旧画面滚上去（以前滚上去就回不来、也没按钮）；终端滚动区往上翻着时显示「回到实时画面」，从输入栏发字也回到最底下；回到前台不再等 8 秒心跳 + 旧连接关闭握手：触屏设备在后台待了 10 秒以上直接换新连接，其余心跳 3 秒没回话就换；换连接时在等的历史作废、不进冷却；点推送通知切过去时关掉历史视图、回到最底下；网页在后台时输出先攒着不写进 xterm（后台定时器被压慢，xterm 处理不过来，回来时 Claude Code 状态行停在旧时间好一阵），回来攒得少直接写、超过 256KB 发 `sync` 要现在的画面（服务端 `sync` 不再只给 lite 连接用）。Alt+↑ / ↓ 切换标签（同 ← / →）。
+- macOS 主机能用常驻会话（v1.85.2）：以前 `uname` 报 Darwin 就安静地开普通终端（用户反馈「Mac 上用不了常驻」）。Docker 镜像加编 `sshwebd-darwin-arm64` / `-amd64`；sshwebd 按会话找进程在 macOS 上用 sysctl（`proc_darwin.go`，Linux 的 /proc 版挪到 `proc_linux.go`），语言环境都没设时补 `LC_CTYPE=UTF-8`；服务端记 `os: 'mac'`，靠 /proc 的（选择框目录、tmux 里的历史、tmux 提示）同 Windows 跳过，读 ~/.claude/projects 的选择框标题照样用（`stat` 加了 macOS 写法）。测试用 Linux 版冒充 macOS 版跑通（daemonlinux），**没在真 Mac 上跑过**。
 - Windows 上第一次打开 OpenCode 会话历史不再等整个数据库拷完：列表走 OpenCode 2 后台服务的接口，历史画面先导出这一条，数据库在后台慢慢拷（v1.84.65）。
 - OpenCode 2 在 Linux 上实测补全：插件新旧版都能加载、状态里写出你说的话和回复、认出打断、「继续」不再把命令打进还没退干净的 OpenCode（v1.84.64）。
 
@@ -97,6 +98,7 @@ SSH-WEB 是浏览器里的 SSH 终端（Node.js 服务端 + 网页），重点�
 - Windows 上 OpenCode 2 的打断：识别逻辑和 Linux 同一套，Linux 上实测通过；Windows 上读屏幕（你说的话、回复）、旧插件自动换新、OpenCode 和 pi 互相「继续」切换、会话历史都已实测通过（v1.84.65）。
 - agy 的回答、钩子通知没在真机上完整测过（测试机地区不支持 / 没登录）。
 - 手机真机只靠自动化测试模拟；手机历史画面快滑空白已由项目负责人真机确认解决。
+- macOS 常驻会话没在真 Mac 上测过：Go 交叉编译、go vet 通过，Apple 芯片版带签名；守护进程脱离 SSH 后还在不在、钩子 (hook.sh 在 macOS 上)、Claude Code 读钥匙串这些要真机确认。
 - PowerShell 5.1 不认 Ctrl+U：退出 Agent 时发的 Ctrl+U 是给 Agent 的，实际碰不到 PowerShell，不处理。
 
 ## 已经确定不做的
