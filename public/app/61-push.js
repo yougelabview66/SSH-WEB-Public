@@ -35,8 +35,10 @@
         navigator.serviceWorker.addEventListener('message', (e) => {
           if (e.data && e.data.type === 'open-session') {
             const t = sessions.find((x) => x.remoteId === e.data.id);
-            // 点开通知看了：铃铛去掉 (本来就在这个标签上也去掉)；要看的是现在的画面 —— 开着的历史视图关掉、终端滚到最底下
-            if (t) { activate(t); goLive(t); t.tab.classList.remove('ring'); }
+            // 点开通知看了：铃铛去掉 (本来就在这个标签上也去掉)；要看的是现在的画面 —— 开着的历史视图关掉、终端滚到最底下。
+            // 页面一直在前台 (电脑上浏览器窗口开在另一块屏幕上等) 就没有回到前台那一下的检查 (见 10-session.js 的 wakeTabs)：
+            // 连接其实已经断了 (电脑睡眠过、换了网络) 的话要等心跳超时才发现，一直停在旧画面上。这里也查一下，3 秒没回话就换新连接
+            if (t) { activate(t); goLive(t); t.tab.classList.remove('ring'); if (!document.hidden) wakeTab(t, false); }
           }
         });
       } catch {}

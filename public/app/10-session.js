@@ -256,6 +256,7 @@
   function connect(s) {
     clearTimeout(s.retryTimer);
     clearTimeout(s.wakeTimer);
+    s.frozeOff = false; // 冻住时关掉的：这就重连了 (醒来时 resume 不用再连一遍)
     // 新连接接上会话 (服务端发来 status) 之前不算连着：sid 是旧连接的。以前回到前台重连时 sid 还留着，
     // 这时滑动就去要历史，请求发在还没接上的新连接上 / 已经死掉的旧连接上，等 12 秒超时再冷却 30 秒
     if (s.sid) { s.sid = null; updateSftpBtn(); }
@@ -272,7 +273,7 @@
     const ws = new WebSocket(`${proto}://${location.host}/ws`);
     ws.binaryType = 'arraybuffer';
     s.ws = ws;
-    s.lastMsg = Date.now();
+    s.lastMsg = s.connAt = Date.now();
 
     ws.onopen = () => {
       if (s.ws !== ws) return;
@@ -289,8 +290,11 @@
       s.wantClaim = size.cols ? false : size.claim;
       size.device = deviceName;
       if (s.remoteId) {
-        // 打开页面时在后台、还没看过的标签：先只要状态，不要画面 (最多 5000 行的快照)，切过来时再要 (见 activate)
-        s.lite = !s.shown && s !== active;
+        // 打开页面时在后台、还没看过的标签：先只要状态，不要画面 (最多 5000 行的快照)，切过来时再要 (见 activate)。
+        // 冻住 / 后台待久了醒来换连接时 (wakeLite，见 wakeTab) 不在看的标签也这样：醒来一下子十来个标签一起补画面，
+        // 正在看的、点推送要看的那个就得排在后面等。还没要过画面的 (lite) 重连也照旧只要状态
+        s.lite = s !== active && (!s.shown || s.lite || !!s.wakeLite);
+        s.wakeLite = false;
         // offset: 已收到的输出字节数，断线重连时服务端只补发缺的部分
         ws.send(JSON.stringify({ type: 'attach', id: s.remoteId, offset: s.offset, pageId, deviceId, lite: s.lite, ...size }));
       } else {
@@ -308,6 +312,9 @@
     };
     ws.onmessage = (ev) => {
       if (s.ws !== ws) return;
+      // 页面的 JS 停过 (冻住了没收到 freeze 事件、电脑睡眠过) 刚醒：这条多半是排着队的旧输出，后面还有一大堆，
+      // 写进 xterm 就要从旧到新全画一遍。不写，换新连接只补缺的 (旧连接后面的消息都不要了，见上面 s.ws !== ws)
+      if (!document.hidden && Date.now() - tickAt >= PAUSED_MS) { pausedSeen = true; wakeTabs(); if (s.ws !== ws) return; }
       s.lastMsg = Date.now(); // 收到过东西 (输出 / pong) = 连接还活着 (见心跳和 wakeTabs)
       if (ev.data instanceof ArrayBuffer) {
         if (s.awaitScreen) return; // 回到前台向服务端要了画面：在那之前到的输出都包含在回答里了 (见 releaseOut)
@@ -472,31 +479,83 @@
   // - 手机 / 平板在后台待了 WAKE_RECONNECT_MS 以上：不等，直接换新连接
   // - 别的：发心跳，WAKE_PING_MS 内没回话就直接换新连接 (不等旧的关掉)；连接其实还好的话也只是多握一次手。
   //   固定时长，不按测到的延迟放宽：断线重连时扣着的回答一下子到了，测到的延迟会大得离谱
-  // 换新连接时带着已收到的字节数，服务端只补发缺的部分，画面不会重来
+  // - 页面的 JS 停过 (PAUSED_MS，见下面的 tickAt)：电脑睡眠过、页面被冻住过，连接多半已经死了或者积压着一大堆旧输出，也直接换
+  // 换新连接时带着已收到的字节数，服务端只补发缺的部分，画面不会重来；不在看的标签先只要状态 (wakeLite)，切过去再要画面
   const WAKE_RECONNECT_MS = 10000;
   const WAKE_PING_MS = 3000;
   let hiddenAt = document.hidden ? Date.now() : 0;
+  // JS 停过没有：页面在跑时下面的定时器每 TICK_MS 跑一次，后台时浏览器把它压到最慢大约一分钟一次；
+  // 隔了 PAUSED_MS 以上一次都没跑 = 页面被冻住过 / 电脑睡眠过。醒来先跑到的是定时器还是排着队的消息 (见 onmessage) 都认得出
+  const TICK_MS = 15000;
+  const PAUSED_MS = 150000;
+  let tickAt = Date.now(), pausedSeen = false;
   function wakeTabs() {
     if (document.hidden) { hiddenAt ||= Date.now(); return; }
     const away = hiddenAt ? Date.now() - hiddenAt : 0;
     hiddenAt = 0;
-    const stale = isTouch && away >= WAKE_RECONNECT_MS;
+    const paused = pausedSeen || Date.now() - tickAt >= PAUSED_MS;
+    pausedSeen = false;
+    tickAt = Date.now();
+    const stale = paused || (isTouch && away >= WAKE_RECONNECT_MS);
     // 正在看的标签先连
-    for (const s of [active, ...sessions.filter((x) => x !== active)]) {
-      if (!s || s.closed) continue;
-      if (!s.remoteId) { releaseOut(s); continue; }
-      const ws = s.ws;
-      if (!ws || ws.readyState > WebSocket.OPEN || stale) { connect(s); continue; }
-      releaseOut(s); // 后台时攒着的输出 (见 holdOut)
-      if (ws.readyState !== WebSocket.OPEN) continue; // 正在连
-      const at = Date.now();
-      send(s, { type: 'ping' });
-      clearTimeout(s.wakeTimer);
-      s.wakeTimer = setTimeout(() => { if (s.ws === ws && !s.closed && (s.lastMsg || 0) < at) connect(s); }, WAKE_PING_MS);
+    for (const s of [active, ...sessions.filter((x) => x !== active)]) wakeTab(s, stale);
+  }
+  // 一个标签：连接死了 / 要换 (stale) 就换新连接；看着还连着的发心跳，WAKE_PING_MS 内没回话再换。
+  // 刚换过的 (醒来时 resume 已经连了) 不再换一遍
+  function wakeTab(s, stale) {
+    if (!s || s.closed) return;
+    if (!s.remoteId) { releaseOut(s); return; }
+    const ws = s.ws;
+    if (!ws || ws.readyState > WebSocket.OPEN || (stale && Date.now() - (s.connAt || 0) > 2000)) {
+      if (stale && s !== active) s.wakeLite = true;
+      connect(s);
+      return;
     }
+    releaseOut(s); // 后台时攒着的输出 (见 holdOut)
+    if (ws.readyState !== WebSocket.OPEN) return; // 正在连
+    const at = Date.now();
+    send(s, { type: 'ping' });
+    clearTimeout(s.wakeTimer);
+    s.wakeTimer = setTimeout(() => { if (s.ws === ws && !s.closed && (s.lastMsg || 0) < at) connect(s); }, WAKE_PING_MS);
   }
   document.addEventListener('visibilitychange', wakeTabs);
   window.addEventListener('online', wakeTabs);
+
+  // JS 停过没有 (定时器和常量在上面 wakeTabs 前面)
+  setInterval(() => {
+    if (Date.now() - tickAt >= PAUSED_MS) {
+      pausedSeen = true; // 在后台：回到前台时换 (见 wakeTabs)
+      if (!document.hidden) wakeTabs();
+    }
+    tickAt = Date.now();
+  }, TICK_MS);
+
+  // 页面要被冻住了 (Edge 的睡眠标签、Chrome 省电模式冻结后台标签)：冻着时 JS 不跑，连接还开着，服务端照样发，
+  // 消息在浏览器里排着队、服务端那边越积越多 (积压超过 1MB 还会停读 SSH，里面的程序 (Claude Code) 跟着卡住，15 秒后才断开这个页面)；
+  // 醒来时一下子交给网页，已经在前台了就全写进 xterm，几 MB 的状态行重绘从旧到新画一遍 ——
+  // 看着就是点推送进来停在旧消息上、好久才追上。现在冻住前把连接都关掉，醒来再连，只补缺的
+  document.addEventListener('freeze', () => {
+    for (const s of sessions) {
+      if (s.closed || !s.remoteId || !s.ws) continue;
+      const ws = s.ws;
+      s.ws = null; // 它的关闭事件不再管 (不排重连，见 onclose)
+      s.frozeOff = true;
+      clearInterval(s.ping);
+      clearTimeout(s.wakeTimer);
+      try { ws.close(); } catch {}
+    }
+  });
+  document.addEventListener('resume', () => {
+    tickAt = Date.now(); // 冻着时关掉的连接这里就重连了，不用再按「JS 停过」换一遍
+    pausedSeen = false;
+    for (const s of [active, ...sessions.filter((x) => x !== active)]) {
+      if (!s || s.closed || !s.frozeOff) continue;
+      s.frozeOff = false;
+      clearTimeout(s.retryTimer);
+      if (s !== active) s.wakeLite = true;
+      connect(s);
+    }
+  });
 
   // 回到最新的实时画面：关掉历史视图，终端滚动区滚到最底下 (点推送通知进来时：要看的是现在的)
   function goLive(s) {
